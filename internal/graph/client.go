@@ -429,51 +429,79 @@ func (c *Client) GetFolderChildren(teamID, folderID string) ([]DriveItem, error)
 }
 
 // findClassMaterialsFolder localiza la carpeta/shortcut "Materiales de clase"
-// (o "Class Materials") en la raíz del Drive del grupo. Primero intentamos
-// direccionamiento directo por path; si falla (algo que puede pasar con el
-// nuevo formato shortcut/remoteItem en algunos tenants), caemos a listar
-// los hijos de la raíz y buscar por nombre.
+// (o "Class Materials") buscando el Drive independiente asociado a este Site.
 func (c *Client) findClassMaterialsFolder(teamID string) (*DriveItem, error) {
-	names := []string{"Materiales de clase", "Class Materials"}
-
-	// 1. Intento directo por path
-	for _, name := range names {
-		endpoint := fmt.Sprintf("/groups/%s/drive/root:/%s", teamID, url.PathEscape(name))
-		body, err := c.doReq(endpoint)
-		if err == nil {
-			var item DriveItem
-			if json.Unmarshal(body, &item) == nil && item.ID != "" {
-				ensureFolderFacet(&item)
-				return &item, nil
-			}
-		}
-	}
-
-	// 2. Fallback: listar la raíz y buscar por nombre
-	endpoint := fmt.Sprintf("/groups/%s/drive/root/children", teamID)
-	body, err := c.doReq(endpoint)
+	// 1. Obtener el Site asociado al grupo
+	siteEndpoint := fmt.Sprintf("/groups/%s/sites/root", teamID)
+	siteBody, err := c.doReq(siteEndpoint)
 	if err != nil {
 		return nil, err
 	}
-
-	var res struct {
-		Value []DriveItem `json:"value"`
+	var siteRes struct {
+		ID string `json:"id"`
 	}
-	if err := json.Unmarshal(body, &res); err != nil {
-		return nil, fmt.Errorf("error parseando raíz del drive: %w", err)
+	if err := json.Unmarshal(siteBody, &siteRes); err != nil {
+		return nil, err
 	}
 
-	for _, item := range res.Value {
-		for _, name := range names {
-			if strings.EqualFold(item.Name, name) {
-				ensureFolderFacet(&item)
-				foundItem := item
-				return &foundItem, nil
-			}
+	// 2. Obtener todas las librerías (drives) de ese Site
+	drivesEndpoint := fmt.Sprintf("/sites/%s/drives", siteRes.ID)
+	drivesBody, err := c.doReq(drivesEndpoint)
+	if err != nil {
+		return nil, err
+	}
+	
+	var drivesRes struct {
+		Value []struct {
+			ID   string `json:"id"`
+			Name string `json:"name"`
+		} `json:"value"`
+	}
+	if err := json.Unmarshal(drivesBody, &drivesRes); err != nil {
+		return nil, err
+	}
+	
+	// 3. Buscar la librería de Materiales de clase
+	var matDriveID string
+	var matName string
+	for _, d := range drivesRes.Value {
+		if strings.EqualFold(d.Name, "Materiales de clase") || strings.EqualFold(d.Name, "Class Materials") {
+			matDriveID = d.ID
+			matName = d.Name
+			break
 		}
 	}
 
-	return nil, errors.New("no se encontró Materiales de clase")
+	if matDriveID == "" {
+		return nil, errors.New("no se encontró librería de Materiales de clase")
+	}
+
+	// 4. Crear un DriveItem sintético con la faceta RemoteItem.
+	// La TUI está programada para navegar a otro drive si encuentra un RemoteItem.
+	// Ponemos "root" como ID para que el endpoint pida la raíz de esa librería.
+	item := DriveItem{
+		ID:   "root",
+		Name: matName,
+	}
+	item.RemoteItem = &struct {
+		ID              string `json:"id"`
+		Name            string `json:"name"`
+		ParentReference struct {
+			DriveID string `json:"driveId"`
+		} `json:"parentReference"`
+		Folder *struct {
+			ChildCount int `json:"childCount"`
+		} `json:"folder,omitempty"`
+	}{
+		ID:   "root",
+		Name: matName,
+		ParentReference: struct {
+			DriveID string `json:"driveId"`
+		}{DriveID: matDriveID},
+	}
+	
+	ensureFolderFacet(&item)
+	return &item, nil
 }
 
 // ensureFolderFacet garantiza que el ícono de carpeta se muestre en la UI
