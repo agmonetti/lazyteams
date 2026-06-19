@@ -3,6 +3,7 @@ package graph
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html"
 	"io"
@@ -106,6 +107,20 @@ type DriveItem struct {
 	Folder      *struct {
 		ChildCount int `json:"childCount"`
 	} `json:"folder,omitempty"`
+	// RemoteItem indica que este DriveItem es en realidad un "shortcut" (acceso directo)
+	// a contenido que vive físicamente en otro Drive. Desde fines de 2024, Microsoft
+	// cambió "Materiales de clase" (Class Materials) de ser una carpeta real a ser
+	// un shortcut de este tipo en muchos tenants educativos.
+	RemoteItem *struct {
+		ID              string `json:"id"`
+		Name            string `json:"name"`
+		ParentReference struct {
+			DriveID string `json:"driveId"`
+		} `json:"parentReference"`
+		Folder *struct {
+			ChildCount int `json:"childCount"`
+		} `json:"folder,omitempty"`
+	} `json:"remoteItem,omitempty"`
 }
 
 const baseURL = "https://graph.microsoft.com/v1.0"
@@ -382,37 +397,13 @@ func (c *Client) GetChannelFiles(teamID, channelName string) ([]DriveItem, error
 		return nil, fmt.Errorf("error parseando archivos: %w", err)
 	}
 
-	// PARCHE EDUCACIÓN: En los tenants universitarios, la carpeta "Materiales de clase" 
-	// es una carpeta especial de solo lectura que Teams inyecta visualmente adentro de "General".
+	// PARCHE EDUCACIÓN: En los tenants universitarios, la carpeta "Materiales de clase"
+	// es una carpeta especial (hoy día, un shortcut/remoteItem) que Teams inyecta
+	// visualmente adentro de "General".
 	if strings.ToLower(channelName) == "general" {
-		// Fix: Usamos url.PathEscape para los espacios
-		matEndpoint := fmt.Sprintf("/groups/%s/drive/root:/%s", teamID, url.PathEscape("Materiales de clase"))
-		matBody, err := c.doReq(matEndpoint)
-		if err == nil {
-			var matFolder DriveItem
-			if json.Unmarshal(matBody, &matFolder) == nil && matFolder.ID != "" {
-				if matFolder.Folder == nil {
-					matFolder.Folder = &struct {
-						ChildCount int `json:"childCount"`
-					}{ChildCount: 1}
-				}
-				res.Value = append([]DriveItem{matFolder}, res.Value...)
-			}
-		} else {
-			// Fallback: inglés
-			matEndpointEN := fmt.Sprintf("/groups/%s/drive/root:/%s", teamID, url.PathEscape("Class Materials"))
-			matBodyEN, err := c.doReq(matEndpointEN)
-			if err == nil {
-				var matFolder DriveItem
-				if json.Unmarshal(matBodyEN, &matFolder) == nil && matFolder.ID != "" {
-					if matFolder.Folder == nil {
-						matFolder.Folder = &struct {
-							ChildCount int `json:"childCount"`
-						}{ChildCount: 1}
-					}
-					res.Value = append([]DriveItem{matFolder}, res.Value...)
-				}
-			}
+		matFolder, err := c.findClassMaterialsFolder(teamID)
+		if err == nil && matFolder != nil {
+			res.Value = append([]DriveItem{*matFolder}, res.Value...)
 		}
 	}
 
@@ -432,6 +423,85 @@ func (c *Client) GetFolderChildren(teamID, folderID string) ([]DriveItem, error)
 	}
 	if err := json.Unmarshal(body, &res); err != nil {
 		return nil, fmt.Errorf("error parseando subcarpeta: %w", err)
+	}
+
+	return res.Value, nil
+}
+
+// findClassMaterialsFolder localiza la carpeta/shortcut "Materiales de clase"
+// (o "Class Materials") en la raíz del Drive del grupo. Primero intentamos
+// direccionamiento directo por path; si falla (algo que puede pasar con el
+// nuevo formato shortcut/remoteItem en algunos tenants), caemos a listar
+// los hijos de la raíz y buscar por nombre.
+func (c *Client) findClassMaterialsFolder(teamID string) (*DriveItem, error) {
+	names := []string{"Materiales de clase", "Class Materials"}
+
+	// 1. Intento directo por path
+	for _, name := range names {
+		endpoint := fmt.Sprintf("/groups/%s/drive/root:/%s", teamID, url.PathEscape(name))
+		body, err := c.doReq(endpoint)
+		if err == nil {
+			var item DriveItem
+			if json.Unmarshal(body, &item) == nil && item.ID != "" {
+				ensureFolderFacet(&item)
+				return &item, nil
+			}
+		}
+	}
+
+	// 2. Fallback: listar la raíz y buscar por nombre
+	endpoint := fmt.Sprintf("/groups/%s/drive/root/children", teamID)
+	body, err := c.doReq(endpoint)
+	if err != nil {
+		return nil, err
+	}
+
+	var res struct {
+		Value []DriveItem `json:"value"`
+	}
+	if err := json.Unmarshal(body, &res); err != nil {
+		return nil, fmt.Errorf("error parseando raíz del drive: %w", err)
+	}
+
+	for _, item := range res.Value {
+		for _, name := range names {
+			if strings.EqualFold(item.Name, name) {
+				ensureFolderFacet(&item)
+				foundItem := item
+				return &foundItem, nil
+			}
+		}
+	}
+
+	return nil, errors.New("no se encontró Materiales de clase")
+}
+
+// ensureFolderFacet garantiza que el ícono de carpeta se muestre en la UI
+// incluso si el item viene únicamente con faceta remoteItem.
+func ensureFolderFacet(item *DriveItem) {
+	if item.Folder == nil {
+		item.Folder = &struct {
+			ChildCount int `json:"childCount"`
+		}{ChildCount: 1}
+	}
+}
+
+// GetItemChildren lista los hijos de un item en un Drive arbitrario (por driveID).
+// Es necesario para navegar dentro de "shortcuts" (remoteItem), como el nuevo
+// formato de "Materiales de clase", cuyo contenido real vive en un Drive
+// distinto al del grupo/equipo (Team).
+func (c *Client) GetItemChildren(driveID, itemID string) ([]DriveItem, error) {
+	endpoint := fmt.Sprintf("/drives/%s/items/%s/children", driveID, itemID)
+	body, err := c.doReq(endpoint)
+	if err != nil {
+		return nil, err
+	}
+
+	var res struct {
+		Value []DriveItem `json:"value"`
+	}
+	if err := json.Unmarshal(body, &res); err != nil {
+		return nil, fmt.Errorf("error parseando hijos remotos: %w", err)
 	}
 
 	return res.Value, nil

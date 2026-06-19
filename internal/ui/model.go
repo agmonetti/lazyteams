@@ -36,8 +36,11 @@ const (
 )
 
 type FolderNode struct {
-	ID   string
-	Name string
+	ID      string
+	Name    string
+	// DriveID, si no está vacío, indica que este nodo vive en un Drive
+	// distinto al del Team (caso shortcut/remoteItem, ej: Materiales de clase).
+	DriveID string
 }
 
 type Model struct {

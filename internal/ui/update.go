@@ -69,9 +69,18 @@ func loadFilesCmd(client *graph.Client, teamID, channelName string) tea.Cmd {
 	}
 }
 
-func loadFolderCmd(client *graph.Client, teamID, folderID string) tea.Cmd {
+func loadFolderCmd(client *graph.Client, teamID string, node FolderNode) tea.Cmd {
 	return func() tea.Msg {
-		files, err := client.GetFolderChildren(teamID, folderID)
+		var (
+			files []graph.DriveItem
+			err   error
+		)
+		if node.DriveID != "" {
+			// El contenido vive en otro Drive (shortcut/remoteItem)
+			files, err = client.GetItemChildren(node.DriveID, node.ID)
+		} else {
+			files, err = client.GetFolderChildren(teamID, node.ID)
+		}
 		if err != nil {
 			return filesErrMsg{err}
 		}
@@ -364,7 +373,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					} else {
 						// Volvimos a una subcarpeta
 						parent := m.folderStack[len(m.folderStack)-1]
-						cmds = append(cmds, loadFolderCmd(m.client, m.teams[m.selectedTeam].ID, parent.ID))
+						cmds = append(cmds, loadFolderCmd(m.client, m.teams[m.selectedTeam].ID, parent))
 					}
 				} else {
 					m.focusLeft = true
@@ -406,11 +415,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				cmds = append(cmds, loadMessagesCmd(m.client, m.teams[m.selectedTeam].ID, m.channels[m.selectedChan].ID))
 			} else if !m.focusLeft && m.viewMode == ModeFiles && len(m.files) > 0 {
 				selected := m.files[m.selectedFile]
-				if selected.Folder != nil {
-					// Es un directorio, entramos
+				if selected.RemoteItem != nil {
+					// Shortcut (ej: "Materiales de clase" en tenants educativos nuevos):
+					// el contenido real vive en otro Drive. Navegamos con Drive/Item remoto.
 					m.loading = true
-					m.folderStack = append(m.folderStack, FolderNode{ID: selected.ID, Name: selected.Name})
-					cmds = append(cmds, loadFolderCmd(m.client, m.teams[m.selectedTeam].ID, selected.ID))
+					node := FolderNode{
+						ID:      selected.RemoteItem.ID,
+						Name:    selected.Name,
+						DriveID: selected.RemoteItem.ParentReference.DriveID,
+					}
+					m.folderStack = append(m.folderStack, node)
+					cmds = append(cmds, loadFolderCmd(m.client, m.teams[m.selectedTeam].ID, node))
+				} else if selected.Folder != nil {
+					// Carpeta normal dentro del Drive del equipo
+					m.loading = true
+					node := FolderNode{ID: selected.ID, Name: selected.Name}
+					m.folderStack = append(m.folderStack, node)
+					cmds = append(cmds, loadFolderCmd(m.client, m.teams[m.selectedTeam].ID, node))
 				} else {
 					// Es un archivo, abrimos
 					link := selected.DownloadUrl
