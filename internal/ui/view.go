@@ -95,7 +95,9 @@ func (m Model) View() string {
 
 			title := fmt.Sprintf("# %s", m.channels[m.selectedChan].DisplayName)
 			if m.viewMode == ModeFiles && len(m.folderStack) > 0 {
-				title += " / Subcarpeta"
+				for _, node := range m.folderStack {
+					title += fmt.Sprintf(" / %s", node.Name)
+				}
 			}
 			header := titleStyle.Render(title)
 			// Agregamos el header y los tabs

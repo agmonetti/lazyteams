@@ -224,10 +224,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case channelsErrMsg:
-		m.channelErr = msg.err
-		m.channels = nil
-		m.messages = nil
-		m.loading = false
+		if msg.teamID == m.teams[m.selectedTeam].ID {
+			m.channelErr = msg.err
+			m.channels = nil
+			m.messages = nil
+			m.loading = false
+		}
 		return m, nil
 
 	case messagesErrMsg:
@@ -268,10 +270,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case channelsMsg:
+		if msg.teamID != m.teams[m.selectedTeam].ID {
+			return m, nil // stale response, discard
+		}
 		m.channels = msg.channels
 		m.selectedChan = 0
 		m.messages = nil
-		m.channelErr = nil // Limpiamos el error si tuvo éxito
+		m.channelErr = nil
 		m.loading = false
 		return m, nil
 
@@ -358,8 +363,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						cmds = append(cmds, loadFilesCmd(m.client, m.teams[m.selectedTeam].ID, m.channels[m.selectedChan].DisplayName))
 					} else {
 						// Volvimos a una subcarpeta
-						parentID := m.folderStack[len(m.folderStack)-1]
-						cmds = append(cmds, loadFolderCmd(m.client, m.teams[m.selectedTeam].ID, parentID))
+						parent := m.folderStack[len(m.folderStack)-1]
+						cmds = append(cmds, loadFolderCmd(m.client, m.teams[m.selectedTeam].ID, parent.ID))
 					}
 				} else {
 					m.focusLeft = true
@@ -404,7 +409,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if selected.Folder != nil {
 					// Es un directorio, entramos
 					m.loading = true
-					m.folderStack = append(m.folderStack, selected.ID)
+					m.folderStack = append(m.folderStack, FolderNode{ID: selected.ID, Name: selected.Name})
 					cmds = append(cmds, loadFolderCmd(m.client, m.teams[m.selectedTeam].ID, selected.ID))
 				} else {
 					// Es un archivo, abrimos

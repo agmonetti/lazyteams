@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"regexp"
 	"strings"
 	"time"
@@ -236,11 +235,6 @@ func (c *Client) GetMessages(teamID, channelID string) ([]Message, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error leyendo respuesta: %w", err)
 	}
-
-	// --- PARCHE DE DEBUG ---
-	// Volcamos el JSON crudo al disco duro para analizarlo
-	os.WriteFile("debug_mensajes.json", body, 0644)
-	// -----------------------
 
 	var res chatSvcResponse
 	if err := json.Unmarshal(body, &res); err != nil {
