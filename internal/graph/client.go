@@ -71,6 +71,72 @@ type Channel struct {
 	DisplayName string `json:"displayName"`
 }
 
+type Chat struct {
+	ID                 string              `json:"id"`
+	Topic              string              `json:"topic"`
+	ChatType           string              `json:"chatType"`
+	Members            []ChatMember        `json:"members"`
+	LastMessagePreview *ChatMessagePreview `json:"lastMessagePreview,omitempty"`
+}
+
+type ChatMessagePreview struct {
+	From *struct {
+		User *struct {
+			ID          string `json:"id"`
+			DisplayName string `json:"displayName"`
+		} `json:"user"`
+	} `json:"from"`
+}
+
+type ChatMember struct {
+	DisplayName string `json:"displayName"`
+	UserID      string `json:"userId"`
+}
+
+// DisplayName resuelve el nombre a mostrar de un chat. Los chats grupales
+// suelen tener "topic"; los 1:1 no, así que ahí usamos el nombre del otro
+// participante (excluyendo al usuario logueado, identificado por selfID).
+func (ch Chat) DisplayName(selfID string) string {
+	if strings.TrimSpace(ch.Topic) != "" {
+		return ch.Topic
+	}
+
+	// Detección exacta e infalible del chat "Notas personales (Vos)".
+	// En Teams, este chat siempre tiene un ID formado por el ID del usuario repetido.
+	expectedSelfChatID := fmt.Sprintf("19:%s_%s@unq.gbl.spaces", selfID, selfID)
+	if ch.ID == expectedSelfChatID {
+		return "Notas personales (Vos)"
+	}
+
+	var names []string
+	for _, m := range ch.Members {
+		if m.UserID != selfID && strings.TrimSpace(m.DisplayName) != "" {
+			names = append(names, m.DisplayName)
+		}
+	}
+	if len(names) > 0 {
+		return strings.Join(names, ", ")
+	}
+
+	// Fallback para chats históricos o huerfanos donde Graph API omite
+	// al otro miembro en la respuesta. Intentamos extraer el nombre
+	// de la persona que envió el último mensaje (si no fuimos nosotros).
+	if ch.LastMessagePreview != nil && ch.LastMessagePreview.From != nil && ch.LastMessagePreview.From.User != nil {
+		u := ch.LastMessagePreview.From.User
+		if u.ID != selfID && strings.TrimSpace(u.DisplayName) != "" {
+			return strings.TrimSpace(u.DisplayName) + " (Histórico)"
+		}
+	}
+
+	if ch.ChatType == "oneOnOne" {
+		return "Chat 1:1 (Histórico)"
+	}
+	if ch.ChatType != "" {
+		return fmt.Sprintf("Chat sin nombre (%s)", ch.ChatType)
+	}
+	return "Chat sin nombre"
+}
+
 type Attachment struct {
 	Name string
 	URL  string
@@ -190,6 +256,37 @@ func (c *Client) GetJoinedTeams() ([]Team, error) {
 		return nil, fmt.Errorf("error parseando equipos: %w", err)
 	}
 
+	return res.Value, nil
+}
+
+// GetMe obtiene el ID del usuario logueado, necesario para resolver
+// el nombre del interlocutor en chats 1:1.
+func (c *Client) GetMe() (string, error) {
+	body, err := c.doReq("/me")
+	if err != nil {
+		return "", err
+	}
+	var me struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(body, &me); err != nil {
+		return "", fmt.Errorf("error parseando /me: %w", err)
+	}
+	return me.ID, nil
+}
+
+// GetChats lista los chats personales (1:1 y grupales) del usuario.
+func (c *Client) GetChats() ([]Chat, error) {
+	body, err := c.doReq("/me/chats?$expand=members&$top=50")
+	if err != nil {
+		return nil, err
+	}
+	var res struct {
+		Value []Chat `json:"value"`
+	}
+	if err := json.Unmarshal(body, &res); err != nil {
+		return nil, fmt.Errorf("error parseando chats: %w", err)
+	}
 	return res.Value, nil
 }
 

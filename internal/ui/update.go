@@ -17,6 +17,30 @@ type messageSentMsg struct{}
 type messageSendErrMsg struct{ err error }
 type filesMsg struct{ files []graph.DriveItem }
 type filesErrMsg struct{ err error }
+type chatsMsg struct{ chats []graph.Chat }
+type chatsErrMsg struct{ err error }
+type meMsg struct{ id string }
+type meErrMsg struct{ err error }
+
+func loadMeCmd(client *graph.Client) tea.Cmd {
+	return func() tea.Msg {
+		id, err := client.GetMe()
+		if err != nil {
+			return meErrMsg{err}
+		}
+		return meMsg{id}
+	}
+}
+
+func loadChatsCmd(client *graph.Client) tea.Cmd {
+	return func() tea.Msg {
+		chats, err := client.GetChats()
+		if err != nil {
+			return chatsErrMsg{err}
+		}
+		return chatsMsg{chats}
+	}
+}
 
 func loadTeamsCmd(client *graph.Client) tea.Cmd {
 	return func() tea.Msg {
@@ -181,13 +205,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			case "enter": // Enviar mensaje
 				v := m.input.Value()
-				if v != "" && len(m.channels) > 0 {
+				if v != "" && m.activeConversationID() != "" {
 					m.input.Reset()
 					m.isTyping = false
 					m.input.Blur()
 					m.loading = true
 					// Enviamos y agregamos el comando
-					return m, sendMessageCmd(m.client, m.channels[m.selectedChan].ID, v)
+					return m, sendMessageCmd(m.client, m.activeConversationID(), v)
 				}
 			}
 		}
@@ -247,8 +271,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case messageSentMsg:
-		// Mensaje enviado correctamente. Recargamos los mensajes del canal
-		return m, loadMessagesCmd(m.client, m.teams[m.selectedTeam].ID, m.channels[m.selectedChan].ID)
+		// Mensaje enviado correctamente. Recargamos los mensajes del canal/chat
+		return m, loadMessagesCmd(m.client, "", m.activeConversationID())
 
 	case messageSendErrMsg:
 		m.viewport.SetContent(fmt.Sprintf("Error enviando mensaje: %v", msg.err))
@@ -289,6 +313,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loading = false
 		return m, nil
 
+	case meMsg:
+		m.selfID = msg.id
+		return m, nil
+
+	case meErrMsg:
+		// No bloqueamos la app: sin selfID, los chats 1:1 simplemente
+		// van a mostrar todos los participantes en vez de excluirme a mí.
+		return m, nil
+
+	case chatsErrMsg:
+		m.err = msg.err
+		m.loading = false
+		return m, nil
+
+	case chatsMsg:
+		m.chats = msg.chats
+		m.chatsLoaded = true
+		m.loading = false
+		m.selectedChat = 0
+		return m, nil
+
 	case messagesMsg:
 		m.messages = msg.messages
 		m.loading = false
@@ -306,6 +351,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "tab":
 			m.focusLeft = !m.focusLeft
 
+		case "1":
+			m.workspace = WorkspaceTeams
+			m.focusLeft = true
+			m.focusList = 0
+
+		case "2":
+			m.workspace = WorkspaceDMs
+			m.focusLeft = true
+			if !m.chatsLoaded {
+				m.loading = true
+				cmds = append(cmds, loadChatsCmd(m.client))
+			}
+
 		case "esc":
 			if !m.focusLeft {
 				m.focusLeft = true
@@ -313,7 +371,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "up", "k":
 			if m.focusLeft {
-				if m.focusList == 0 && len(m.teams) > 0 {
+				if m.workspace == WorkspaceDMs {
+					if len(m.chats) > 0 && m.selectedChat > 0 {
+						m.selectedChat--
+					}
+				} else if m.focusList == 0 && len(m.teams) > 0 {
 					if m.selectedTeam > 0 {
 						m.selectedTeam--
 						m.loading = true
@@ -338,7 +400,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "down", "j":
 			if m.focusLeft {
-				if m.focusList == 0 && len(m.teams) > 0 {
+				if m.workspace == WorkspaceDMs {
+					if len(m.chats) > 0 && m.selectedChat < len(m.chats)-1 {
+						m.selectedChat++
+					}
+				} else if m.focusList == 0 && len(m.teams) > 0 {
 					if m.selectedTeam < len(m.teams)-1 {
 						m.selectedTeam++
 						m.loading = true
@@ -383,12 +449,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case "right", "l":
-			if m.focusLeft {
+			if m.focusLeft && m.workspace == WorkspaceTeams {
 				m.focusList = 1
 			}
 
 		case "f":
-			if !m.isTyping && len(m.channels) > 0 {
+			if !m.isTyping && m.workspace == WorkspaceTeams && len(m.channels) > 0 {
 				if m.viewMode == ModeChat {
 					m.viewMode = ModeFiles
 					m.loading = true
@@ -403,16 +469,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case "i":
-			if !m.focusLeft && len(m.channels) > 0 {
+			if !m.focusLeft && m.activeConversationID() != "" {
 				m.isTyping = true
 				m.input.Focus()
 			}
 
 		case "enter":
-			if m.focusLeft && m.focusList == 1 && len(m.channels) > 0 {
+			if m.focusLeft && m.workspace == WorkspaceDMs && len(m.chats) > 0 {
 				m.loading = true
 				m.focusLeft = false
-				cmds = append(cmds, loadMessagesCmd(m.client, m.teams[m.selectedTeam].ID, m.channels[m.selectedChan].ID))
+				m.viewMode = ModeChat
+				chatID := m.chats[m.selectedChat].ID
+				m.loadedConvID = chatID
+				cmds = append(cmds, loadMessagesCmd(m.client, "", chatID))
+			} else if m.focusLeft && m.focusList == 1 && len(m.channels) > 0 {
+				m.loading = true
+				m.focusLeft = false
+				chanID := m.channels[m.selectedChan].ID
+				m.loadedConvID = chanID
+				cmds = append(cmds, loadMessagesCmd(m.client, m.teams[m.selectedTeam].ID, chanID))
 			} else if !m.focusLeft && m.viewMode == ModeFiles && len(m.files) > 0 {
 				selected := m.files[m.selectedFile]
 				if selected.RemoteItem != nil {
@@ -447,10 +522,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// --- MOTOR DE CÁMARA PANEL IZQUIERDO ---
 		if m.focusLeft && m.ready {
-			// Calculamos en qué línea virtual está nuestro cursor
-			cursorLine := 1 + m.selectedTeam // 1 por el título "Equipos"
-			if m.focusList == 1 {
+			var cursorLine int
+			if m.workspace == WorkspaceDMs {
+				cursorLine = 1 + m.selectedChat // 1 por el título "Chats"
+			} else if m.focusList == 1 {
 				cursorLine = len(m.teams) + 3 + m.selectedChan // Sumamos los equipos y los espacios
+			} else {
+				cursorLine = 1 + m.selectedTeam // 1 por el título "Equipos"
 			}
 			
 			// Centramos la cámara en el cursor

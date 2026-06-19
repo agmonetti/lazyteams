@@ -35,6 +35,13 @@ const (
 	ModeFiles
 )
 
+type Workspace int
+
+const (
+	WorkspaceTeams Workspace = iota
+	WorkspaceDMs
+)
+
 type FolderNode struct {
 	ID      string
 	Name    string
@@ -50,7 +57,13 @@ type Model struct {
 	messages     []graph.Message
 	files        []graph.DriveItem
 	viewMode     ViewMode
+	workspace    Workspace
+	chats        []graph.Chat
+	selectedChat int
+	chatsLoaded  bool
+	selfID       string
 	selectedTeam int
+	loadedConvID string
 	selectedChan int
 	selectedFile int
 	focusLeft    bool // true = foco en panel izquierdo (equipos/canales)
@@ -88,5 +101,18 @@ func New(client *graph.Client) Model {
 }
 
 func (m Model) Init() tea.Cmd {
-	return loadTeamsCmd(m.client)
+	return tea.Batch(loadTeamsCmd(m.client), loadMeCmd(m.client))
+}
+
+func (m Model) activeConversationID() string {
+	if m.workspace == WorkspaceDMs {
+		if m.selectedChat < len(m.chats) {
+			return m.chats[m.selectedChat].ID
+		}
+		return ""
+	}
+	if m.selectedChan < len(m.channels) {
+		return m.channels[m.selectedChan].ID
+	}
+	return ""
 }
