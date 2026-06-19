@@ -328,7 +328,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case chatsMsg:
-		m.chats = msg.chats
+		if m.selfID != "" {
+			// Inyectar el chat personal (Notas personales) manualmente, ya que Graph API 
+			// lo oculta deliberadamente del endpoint /me/chats.
+			selfChat := graph.Chat{
+				ID:       fmt.Sprintf("19:%s_%s@unq.gbl.spaces", m.selfID, m.selfID),
+				Topic:    "Notas personales (Vos)",
+				ChatType: "oneOnOne",
+			}
+			m.chats = append([]graph.Chat{selfChat}, msg.chats...)
+		} else {
+			m.chats = msg.chats
+		}
+		
 		m.chatsLoaded = true
 		m.loading = false
 		m.selectedChat = 0
