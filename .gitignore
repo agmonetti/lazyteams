@@ -1,6 +1,7 @@
 tokens.json
 # Binarios
-/msTTui
+msTTui
+teamsTUI
 *.exe
 
 # Archivos de debug
