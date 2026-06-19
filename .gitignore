@@ -1,0 +1,10 @@
+tokens.json
+# Binarios
+/msTTui
+*.exe
+
+# Archivos de debug
+debug_mensajes.json
+
+# Entorno
+.env
