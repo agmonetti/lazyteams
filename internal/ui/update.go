@@ -132,8 +132,36 @@ func downloadFilesCmd(client *graph.Client, teamID, driveID string, items []grap
 					body, err = client.DownloadItem(teamID, item.ID)
 				}
 			} else if item.WebUrl != "" {
-				// Item sintético de DM: descargar vía la ruta del WebUrl
-				body, err = client.DownloadByPath(item.WebUrl)
+				// Item sintético de DM: intentar resolver via /shares
+				resolved, resolveErr := client.ResolveSharedItem(item.WebUrl)
+				if resolveErr == nil && resolved != nil && resolved.ID != "" {
+					// Resuelto: descargar con el ID y driveId reales
+					resolvedDriveID := ""
+					if resolved.RemoteItem != nil {
+						resolvedDriveID = resolved.RemoteItem.ParentReference.DriveID
+					}
+					if resolvedDriveID != "" {
+						body, err = client.DownloadRemoteItem(resolvedDriveID, resolved.ID)
+					} else {
+						body, err = client.DownloadItem(teamID, resolved.ID)
+					}
+				} else {
+					// No se pudo resolver via /shares
+					if isSharePointURL(item.WebUrl) {
+						// Es un link de SharePoint/OneDrive pero no se pudo resolver
+						// = el archivo no existe o fue eliminado
+						results = append(results, fmt.Sprintf("✗ %s: no existe en SharePoint", item.Name))
+					} else {
+						// Link externo (github, etc.) → navegador
+						link := item.DownloadUrl
+						if link == "" {
+							link = item.WebUrl
+						}
+						openBrowser(link)
+						results = append(results, fmt.Sprintf("⟳ %s: abierto en navegador", item.Name))
+					}
+					continue
+				}
 			} else {
 				err = fmt.Errorf("sin ID ni URL de descarga")
 			}
@@ -165,7 +193,7 @@ func downloadFilesCmd(client *graph.Client, teamID, driveID string, items []grap
 			if cerr != nil {
 				results = append(results, fmt.Sprintf("✗ %s: %v", item.Name, cerr))
 			} else {
-				results = append(results, fmt.Sprintf("✓ %s", item.Name))
+				results = append(results, fmt.Sprintf("✓ %s → %s", item.Name, destPath))
 			}
 		}
 		return downloadDoneMsg{results: results}
@@ -1106,4 +1134,9 @@ func renderFilesContent(m *Model) string {
 	}
 
 	return b.String()
+}
+
+func isSharePointURL(rawURL string) bool {
+	lower := strings.ToLower(rawURL)
+	return strings.Contains(lower, "sharepoint.com") || strings.Contains(lower, "onedrive.live.com")
 }
