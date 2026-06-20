@@ -101,8 +101,20 @@ func (m Model) View() string {
 		rightContent = "Cargando...\n"
 	} else if m.workspace == WorkspaceDMs {
 		if len(m.chats) > 0 && m.selectedChat < len(m.chats) {
+			tabChat := "  Mensajes  "
+			tabFiles := "  Archivos  "
+
+			if m.viewMode == ModeChat {
+				tabChat = activeTabStyle.Render(tabChat)
+				tabFiles = inactiveTabStyle.Render(tabFiles)
+			} else {
+				tabChat = inactiveTabStyle.Render(tabChat)
+				tabFiles = activeTabStyle.Render(tabFiles)
+			}
+
 			title := fmt.Sprintf("@ %s", m.chats[m.selectedChat].DisplayName(m.selfID))
-			rightContent += titleStyle.Render(title) + "\n\n"
+			header := titleStyle.Render(title)
+			rightContent += fmt.Sprintf("%s    %s%s\n\n", header, tabChat, tabFiles)
 		}
 		
 		if m.loadedConvID != "" && m.loadedConvID == m.activeConversationID() {
@@ -111,7 +123,7 @@ func (m Model) View() string {
 			rightContent += helpStyle.Render("Presioná Enter para abrir este chat.") + "\n"
 		}
 
-		if !m.focusLeft {
+		if !m.focusLeft && m.viewMode == ModeChat {
 			if m.isTyping {
 				m.input.PromptStyle = selectedItemStyle
 				m.input.TextStyle = normalItemStyle

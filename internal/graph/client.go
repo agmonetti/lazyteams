@@ -163,6 +163,9 @@ type chatSvcResponse struct {
 		OriginalArrivalTime string                 `json:"originalarrivaltime"`
 		Properties          map[string]interface{} `json:"properties"`
 	} `json:"messages"`
+	Metadata struct {
+		BackwardLink string `json:"backwardLink"`
+	} `json:"_metadata"`
 }
 
 type DriveItem struct {
@@ -187,6 +190,9 @@ type DriveItem struct {
 			ChildCount int `json:"childCount"`
 		} `json:"folder,omitempty"`
 	} `json:"remoteItem,omitempty"`
+	
+	// Flag interno para la UI (no pertenece al JSON de Microsoft)
+	IsExternalLink bool `json:"-"`
 }
 
 const baseURL = "https://graph.microsoft.com/v1.0"
@@ -346,126 +352,144 @@ func (c *Client) GetChannels(teamID string) ([]Channel, error) {
 }
 
 // GetMessages obtiene los mensajes de un canal usando la API interna (ChatSvc)
-func (c *Client) GetMessages(teamID, channelID string) ([]Message, error) {
-	// El channelID que nos da Graph ya tiene el formato interno de Skype (ej: 19:xxx@thread.tacv2)
-	url := fmt.Sprintf("https://teams.microsoft.com/api/chatsvc/amer/v1/users/ME/conversations/%s/messages?view=msnp24Equivalent|supportsMessageProperties&pageSize=200&startTime=1", channelID)
-	
-	req, err := http.NewRequest(http.MethodGet, url, nil)
-	if err != nil {
-		return nil, err
+func (c *Client) GetMessages(teamID, channelID string, pageSize int) ([]Message, error) {
+	var allMsgs []Message
+	batchSize := pageSize
+	if batchSize > 200 {
+		batchSize = 200
 	}
 
-	req.Header.Set("Authorization", "Bearer "+c.WebToken)
-	req.Header.Set("Accept", "application/json, text/plain, */*")
-	req.Header.Set("behavioroverride", "redirectAs404")
-	req.Header.Set("x-ms-migration", "True")
-	req.Header.Set("x-ms-request-priority", "0")
-	req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64; rv:151.0) Gecko/20100101 Firefox/151.0")
-	req.Header.Set("Referer", "https://teams.microsoft.com/")
-	req.Header.Set("Origin", "https://teams.microsoft.com")
+	urlStr := fmt.Sprintf("https://teams.microsoft.com/api/chatsvc/amer/v1/users/ME/conversations/%s/messages?view=msnp24Equivalent|supportsMessageProperties&pageSize=%d&startTime=1", channelID, batchSize)
 
-	resp, err := c.HTTPClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("chatsvc error %d: %s", resp.StatusCode, string(body))
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("error leyendo respuesta: %w", err)
-	}
-
-	var res chatSvcResponse
-	if err := json.Unmarshal(body, &res); err != nil {
-		return nil, fmt.Errorf("error parseando mensajes: %w", err)
-	}
-
-	var msgs []Message
-	for _, m := range res.Messages {
-		t, _ := time.Parse(time.RFC3339, m.OriginalArrivalTime)
-		name := m.ImDisplayName
-		if name == "" {
-			name = "Usuario"
+	for len(allMsgs) < pageSize {
+		req, err := http.NewRequest(http.MethodGet, urlStr, nil)
+		if err != nil {
+			return allMsgs, err
 		}
 
-		var attachments []Attachment
+		req.Header.Set("Authorization", "Bearer "+c.WebToken)
+		req.Header.Set("Accept", "application/json, text/plain, */*")
+		req.Header.Set("behavioroverride", "redirectAs404")
+		req.Header.Set("x-ms-migration", "True")
+		req.Header.Set("x-ms-request-priority", "0")
+		req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64; rv:151.0) Gecko/20100101 Firefox/151.0")
+		req.Header.Set("Referer", "https://teams.microsoft.com/")
+		req.Header.Set("Origin", "https://teams.microsoft.com")
 
-		// Extraer links de OneDrive/SharePoint u otros adjuntos
-		if linksStr, ok := m.Properties["links"].(string); ok && linksStr != "[]" && linksStr != "" {
-			var links []map[string]interface{}
-			if json.Unmarshal([]byte(linksStr), &links) == nil {
-				for _, l := range links {
-					url, _ := l["url"].(string)
-					if url != "" {
-						title := url
-						if preview, ok := l["preview"].(map[string]interface{}); ok {
-							if t, ok := preview["title"].(string); ok && t != "" {
-								title = t
+		resp, err := c.HTTPClient.Do(req)
+		if err != nil {
+			return allMsgs, err
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			return allMsgs, fmt.Errorf("chatsvc error %d: %s", resp.StatusCode, string(body))
+		}
+
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			return allMsgs, fmt.Errorf("error leyendo respuesta: %w", err)
+		}
+
+		var res chatSvcResponse
+		if err := json.Unmarshal(body, &res); err != nil {
+			return allMsgs, fmt.Errorf("error parseando mensajes: %w", err)
+		}
+
+		for _, m := range res.Messages {
+			t, _ := time.Parse(time.RFC3339, m.OriginalArrivalTime)
+			name := m.ImDisplayName
+			if name == "" {
+				name = "Usuario"
+			}
+
+			var attachments []Attachment
+
+			// Extraer links de OneDrive/SharePoint u otros adjuntos
+			if linksStr, ok := m.Properties["links"].(string); ok && linksStr != "[]" && linksStr != "" {
+				var links []map[string]interface{}
+				if json.Unmarshal([]byte(linksStr), &links) == nil {
+					for _, l := range links {
+						u, _ := l["url"].(string)
+						if u != "" {
+							title := u
+							if preview, ok := l["preview"].(map[string]interface{}); ok {
+								if pt, ok := preview["title"].(string); ok && pt != "" {
+									title = pt
+								}
 							}
+							title = strings.ReplaceAll(title, "\n", "")
+							title = strings.ReplaceAll(title, "\r", "")
+							title = strings.TrimSpace(title)
+
+							attachments = append(attachments, Attachment{
+								Name: title,
+								URL:  u,
+								Type: "link",
+							})
 						}
-						// Limpiar saltos de línea basura en el título del link
-						title = strings.ReplaceAll(title, "\n", "")
-						title = strings.ReplaceAll(title, "\r", "")
-						title = strings.TrimSpace(title)
-
-						attachments = append(attachments, Attachment{
-							Name: title,
-							URL:  url,
-							Type: "link",
-						})
 					}
 				}
 			}
-		}
 
-		// Extraer archivos directos
-		if filesStr, ok := m.Properties["files"].(string); ok && filesStr != "[]" && filesStr != "" {
-			var files []map[string]interface{}
-			if json.Unmarshal([]byte(filesStr), &files) == nil {
-				for _, f := range files {
-					name := "Archivo adjunto"
-					if n, ok := f["fileName"].(string); ok && n != "" {
-						name = n
-					} else if n, ok := f["name"].(string); ok && n != "" {
-						name = n
-					} else if n, ok := f["title"].(string); ok && n != "" {
-						name = n
-					}
+			// Extraer archivos directos
+			if filesStr, ok := m.Properties["files"].(string); ok && filesStr != "[]" && filesStr != "" {
+				var files []map[string]interface{}
+				if json.Unmarshal([]byte(filesStr), &files) == nil {
+					for _, f := range files {
+						fname := "Archivo adjunto"
+						if n, ok := f["fileName"].(string); ok && n != "" {
+							fname = n
+						} else if n, ok := f["name"].(string); ok && n != "" {
+							fname = n
+						} else if n, ok := f["title"].(string); ok && n != "" {
+							fname = n
+						}
 
-					url := ""
-					if u, ok := f["fileUrl"].(string); ok {
-						url = u
-					} else if u, ok := f["url"].(string); ok {
-						url = u
-					}
+						furl := ""
+						if u, ok := f["fileUrl"].(string); ok {
+							furl = u
+						} else if u, ok := f["url"].(string); ok {
+							furl = u
+						}
 
-					if url != "" {
-						attachments = append(attachments, Attachment{
-							Name: name,
-							URL:  url,
-							Type: "file",
-						})
+						if furl != "" {
+							attachments = append(attachments, Attachment{
+								Name: fname,
+								URL:  furl,
+								Type: "file",
+							})
+						}
 					}
 				}
 			}
+
+			allMsgs = append(allMsgs, Message{
+				ID:          m.ID,
+				Body:        cleanHTML(m.Content),
+				FromName:    name,
+				CreatedAt:   t,
+				MessageType: m.MessageType,
+				Attachments: attachments,
+			})
 		}
-		
-		msgs = append(msgs, Message{
-			ID:          m.ID,
-			Body:        cleanHTML(m.Content),
-			FromName:    name,
-			CreatedAt:   t,
-			MessageType: m.MessageType,
-			Attachments: attachments,
-		})
+
+		if len(res.Messages) == 0 {
+			break
+		}
+		if res.Metadata.BackwardLink == "" {
+			break
+		}
+		urlStr = res.Metadata.BackwardLink
 	}
 
-	return msgs, nil
+	if len(allMsgs) > pageSize {
+		allMsgs = allMsgs[:pageSize]
+	}
+
+	return allMsgs, nil
 }
 
 // SendMessage envía un mensaje de texto al canal especificado usando la API interna

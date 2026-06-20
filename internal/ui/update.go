@@ -2,10 +2,14 @@ package ui
 
 import (
 	"fmt"
+	"net/url"
 	"os/exec"
+	"regexp"
 	"runtime"
+	"sort"
 	"strings"
 	"teamsTUI/internal/graph"
+	"time"
 
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -21,7 +25,10 @@ type chatsMsg struct{ chats []graph.Chat }
 type chatsErrMsg struct{ err error }
 type meMsg struct{ id string }
 type meErrMsg struct{ err error }
-type selfChatDiscoveredMsg struct{ id string }
+type selfChatDiscoveredMsg struct {
+	id              string
+	newlyDiscovered bool
+}
 
 func loadMeCmd(client *graph.Client) tea.Cmd {
 	return func() tea.Msg {
@@ -43,15 +50,23 @@ func loadChatsCmd(client *graph.Client) tea.Cmd {
 	}
 }
 
-func discoverSelfChatCmd(client *graph.Client, selfID string) tea.Cmd {
+func discoverSelfChatCmd(client *graph.Client, selfID, cachedID string) tea.Cmd {
 	return func() tea.Msg {
 		if selfID == "" {
 			return nil
 		}
+		
+		// 1. Si tenemos caché, bypass total de la red
+		if cachedID != "" {
+			return selfChatDiscoveredMsg{id: cachedID, newlyDiscovered: false}
+		}
+
+		// 2. Sin caché, toca hacer fuerza bruta a la API
 		id := client.DiscoverSelfChatID(selfID)
 		if id != "" {
-			return selfChatDiscoveredMsg{id: id}
+			return selfChatDiscoveredMsg{id: id, newlyDiscovered: true}
 		}
+		
 		return nil // Si fallan todos los formatos, fallamos silenciosamente
 	}
 }
@@ -76,11 +91,11 @@ func loadChannelsCmd(client *graph.Client, teamID string) tea.Cmd {
 	}
 }
 
-func loadMessagesCmd(client *graph.Client, teamID, channelID string) tea.Cmd {
+func loadMessagesCmd(client *graph.Client, teamID, channelID string, pageSize int) tea.Cmd {
 	return func() tea.Msg {
-		msgs, err := client.GetMessages(teamID, channelID)
+		msgs, err := client.GetMessages(teamID, channelID, pageSize)
 		if err != nil {
-			return messagesErrMsg{err}
+			return messagesErrMsg{err: err, conversationID: channelID, partialMsgs: msgs}
 		}
 		
 		return messagesMsg{msgs}
@@ -180,7 +195,82 @@ func formatMessages(messages []graph.Message) string {
 	return content
 }
 
+var urlRegex = regexp.MustCompile(`https?:\/\/(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&//=]*)`)
+
+// aggregateChatAttachments junta todos los adjuntos (archivos y links) de los
+// mensajes ya cargados en memoria, deduplicados por URL, del más reciente al
+// más viejo. No pega a la red: opera 100% sobre m.messages.
+func aggregateChatAttachments(messages []graph.Message) []graph.DriveItem {
+	type entry struct {
+		item    graph.DriveItem
+		created time.Time
+	}
+
+	seen := make(map[string]bool)
+	var entries []entry
+
+	for _, msg := range messages {
+		// 1. Extraer archivos y links del array oficial de Attachments
+		for _, att := range msg.Attachments {
+			if att.URL == "" || seen[att.URL] {
+				continue
+			}
+			seen[att.URL] = true
+			entries = append(entries, entry{
+				item: graph.DriveItem{
+					Name:           att.Name,
+					WebUrl:         att.URL,
+					IsExternalLink: att.Type == "link",
+				},
+				created: msg.CreatedAt,
+			})
+		}
+
+		// 2. Extraer URLs pegadas a mano en el cuerpo del texto
+		urls := urlRegex.FindAllString(msg.Body, -1)
+		for _, u := range urls {
+			if seen[u] {
+				continue
+			}
+			seen[u] = true
+
+			// Intentar deducir un nombre amigable
+			name := u
+			if parsed, err := url.Parse(u); err == nil {
+				parts := strings.Split(parsed.Path, "/")
+				if len(parts) > 0 && parts[len(parts)-1] != "" {
+					name = parts[len(parts)-1]
+				} else {
+					name = parsed.Host
+				}
+			}
+
+			entries = append(entries, entry{
+				item: graph.DriveItem{
+					Name:           name,
+					WebUrl:         u,
+					IsExternalLink: true, // Lo forzamos como link estético
+				},
+				created: msg.CreatedAt,
+			})
+		}
+	}
+
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].created.After(entries[j].created)
+	})
+
+	items := make([]graph.DriveItem, len(entries))
+	for i, e := range entries {
+		items[i] = e.item
+	}
+	return items
+}
+
 func getFileIcon(item graph.DriveItem) string {
+	if item.IsExternalLink {
+		return "[LINK]"
+	}
 	if item.Folder != nil {
 		return "[DIR]"
 	}
@@ -280,13 +370,41 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case messagesErrMsg:
+		if m.selfID != "" && msg.conversationID == m.prefs.SelfChatIDs[m.selfID] && strings.Contains(msg.err.Error(), "404") {
+			// El acceso directo a notas personales falló con 404. 
+			// Probablemente el MRI cambió o el caché quedó sucio.
+			// 1. Borramos el caché
+			delete(m.prefs.SelfChatIDs, m.selfID)
+			savePrefs(m.prefs)
+
+			// 2. Avisamos en la UI
+			m.viewport.SetContent("El identificador del chat expiró. Auto-reparando acceso...")
+			
+			// 3. Relanzamos el descubrimiento forzando red (pasando string vacío)
+			return m, discoverSelfChatCmd(m.client, m.selfID, "")
+		}
+
+		// Carga parcial: si hay mensajes previos al fallo, los mostramos con aviso
+		if len(msg.partialMsgs) > 0 {
+			m.messages = msg.partialMsgs
+			m.loading = false
+			if m.viewMode == ModeFiles {
+				m.files = aggregateChatAttachments(m.messages)
+				m.selectedFile = 0
+				m.viewport.SetContent(renderFilesContent(&m) + "\n\n(carga parcial por error de red)")
+			} else {
+				m.viewport.SetContent(formatMessages(m.messages) + "\n\n(carga parcial por error de red)")
+			}
+			return m, nil
+		}
+
 		m.viewport.SetContent(fmt.Sprintf("Error cargando mensajes: %v", msg.err))
 		m.loading = false
 		return m, nil
 
 	case messageSentMsg:
 		// Mensaje enviado correctamente. Recargamos los mensajes del canal/chat
-		return m, loadMessagesCmd(m.client, "", m.activeConversationID())
+		return m, loadMessagesCmd(m.client, "", m.activeConversationID(), 200)
 
 	case messageSendErrMsg:
 		m.viewport.SetContent(fmt.Sprintf("Error enviando mensaje: %v", msg.err))
@@ -347,25 +465,49 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loading = false
 		m.selectedChat = 0
 		
-		// Encadenamos el autodescubrimiento asíncrono
+		// Encadenamos el autodescubrimiento asíncrono pasándole el caché si existe
 		if m.selfID != "" {
-			return m, discoverSelfChatCmd(m.client, m.selfID)
+			cachedID := m.prefs.SelfChatIDs[m.selfID]
+			return m, discoverSelfChatCmd(m.client, m.selfID, cachedID)
 		}
 		return m, nil
 
 	case selfChatDiscoveredMsg:
-		// Evitar inyecciones duplicadas si por algún motivo se dispara dos veces
-		if len(m.chats) > 0 && m.chats[0].ID == msg.id {
-			return m, nil
+		// Si lo descubrió recién ahora por fuerza bruta, lo guardamos en disco
+		if msg.newlyDiscovered {
+			m.prefs.SelfChatIDs[m.selfID] = msg.id
+			savePrefs(m.prefs)
 		}
-		selfChat := graph.Chat{
-			ID:       msg.id,
-			Topic:    "Notas personales (Vos)",
-			ChatType: "oneOnOne",
+
+		// Buscar si ya existe el chat sintético en la lista
+		found := false
+		for i, ch := range m.chats {
+			if ch.Topic == "Notas personales (Vos)" {
+				oldID := ch.ID
+				m.chats[i].ID = msg.id // Actualización en caliente
+				found = true
+
+				// Si el usuario estaba intentando leer este chat y falló, auto-recuperamos
+				if m.loadedConvID == oldID {
+					m.loadedConvID = msg.id
+					m.loading = true
+					return m, loadMessagesCmd(m.client, "", msg.id, 200)
+				}
+				break
+			}
 		}
-		m.chats = append([]graph.Chat{selfChat}, m.chats...)
-		if m.selectedChat > 0 {
-			m.selectedChat++ // Mantener la selección visual donde estaba
+
+		// Si no existía (primera carga), lo insertamos al principio
+		if !found {
+			selfChat := graph.Chat{
+				ID:       msg.id,
+				Topic:    "Notas personales (Vos)",
+				ChatType: "oneOnOne",
+			}
+			m.chats = append([]graph.Chat{selfChat}, m.chats...)
+			if m.selectedChat > 0 {
+				m.selectedChat++ // Mantener la selección visual donde estaba
+			}
 		}
 		return m, nil
 
@@ -373,9 +515,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.messages = msg.messages
 		m.loading = false
 
-		content := formatMessages(m.messages)
-		m.viewport.SetContent(content)
-		m.viewport.GotoBottom() // Chat: últimos mensajes abajo
+		if m.viewMode == ModeChat {
+			content := formatMessages(m.messages)
+			m.viewport.SetContent(content)
+			m.viewport.GotoBottom()
+		} else if m.viewMode == ModeFiles {
+			m.files = aggregateChatAttachments(m.messages)
+			m.selectedFile = 0
+			m.viewport.SetContent(renderFilesContent(&m))
+			m.viewport.GotoTop()
+		}
 		return m, nil
 
 	case tea.KeyMsg:
@@ -409,6 +558,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.workspace == WorkspaceDMs {
 					if len(m.chats) > 0 && m.selectedChat > 0 {
 						m.selectedChat--
+						if m.viewMode == ModeChat {
+							m.loading = true
+							m.loadedConvID = m.chats[m.selectedChat].ID
+							cmds = append(cmds, loadMessagesCmd(m.client, "", m.loadedConvID, 200))
+						} else if m.viewMode == ModeFiles {
+							m.loadedConvID = m.chats[m.selectedChat].ID
+							m.loading = true
+							cmds = append(cmds, loadMessagesCmd(m.client, "", m.loadedConvID, 200))
+						}
 					}
 				} else if m.focusList == 0 && len(m.teams) > 0 {
 					if m.selectedTeam > 0 {
@@ -438,6 +596,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.workspace == WorkspaceDMs {
 					if len(m.chats) > 0 && m.selectedChat < len(m.chats)-1 {
 						m.selectedChat++
+						if m.viewMode == ModeChat {
+							m.loading = true
+							m.loadedConvID = m.chats[m.selectedChat].ID
+							cmds = append(cmds, loadMessagesCmd(m.client, "", m.loadedConvID, 200))
+						} else if m.viewMode == ModeFiles {
+							m.loadedConvID = m.chats[m.selectedChat].ID
+							m.loading = true
+							cmds = append(cmds, loadMessagesCmd(m.client, "", m.loadedConvID, 200))
+						}
 					}
 				} else if m.focusList == 0 && len(m.teams) > 0 {
 					if m.selectedTeam < len(m.teams)-1 {
@@ -489,22 +656,61 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case "f":
-			if !m.isTyping && m.workspace == WorkspaceTeams && len(m.channels) > 0 {
-				if m.viewMode == ModeChat {
-					m.viewMode = ModeFiles
-					m.loading = true
-					m.folderStack = nil // Reiniciar historial de carpetas
-					cmds = append(cmds, loadFilesCmd(m.client, m.teams[m.selectedTeam].ID, m.channels[m.selectedChan].DisplayName))
-				} else {
-					m.viewMode = ModeChat
-					// Recargar los mensajes para limpiar el viewport de archivos
-					m.loading = true
-					cmds = append(cmds, loadMessagesCmd(m.client, m.teams[m.selectedTeam].ID, m.channels[m.selectedChan].ID))
+			if !m.isTyping {
+				m.isTyping = false // reseteo por seguridad
+				if m.workspace == WorkspaceTeams && len(m.channels) > 0 {
+					if m.viewMode == ModeChat {
+						m.viewMode = ModeFiles
+						m.loading = true
+						m.folderStack = nil
+						cmds = append(cmds, loadFilesCmd(m.client, m.teams[m.selectedTeam].ID, m.channels[m.selectedChan].DisplayName))
+					} else {
+						m.viewMode = ModeChat
+						m.loading = true
+						cmds = append(cmds, loadMessagesCmd(m.client, m.teams[m.selectedTeam].ID, m.channels[m.selectedChan].ID, 200))
+					}
+				} else if m.workspace == WorkspaceDMs && len(m.chats) > 0 {
+					activeID := m.activeConversationID()
+					if m.viewMode == ModeChat {
+						// Si cambiamos de chat sin apretar Enter, igual funciona
+						if m.loadedConvID != activeID {
+							m.loading = true
+							m.loadedConvID = activeID
+							m.viewMode = ModeChat // Forzamos ModeChat porque estamos pidiendo los mensajes desde cero
+							cmds = append(cmds, loadMessagesCmd(m.client, "", activeID, 200))
+						} else {
+							// Agregación local: cero red, usa lo que ya está en m.messages.
+							m.viewMode = ModeFiles
+							m.folderStack = nil
+							m.files = aggregateChatAttachments(m.messages)
+							m.selectedFile = 0
+							m.viewport.SetContent(renderFilesContent(&m))
+							m.viewport.GotoTop()
+						}
+					} else {
+						m.viewMode = ModeChat
+						if m.loadedConvID != activeID {
+							m.loading = true
+							m.loadedConvID = activeID
+							cmds = append(cmds, loadMessagesCmd(m.client, "", activeID, 200))
+						} else {
+							m.viewport.SetContent(formatMessages(m.messages))
+						}
+					}
 				}
 			}
 
+		case "c", "C":
+			if !m.isTyping && m.workspace == WorkspaceDMs && m.viewMode == ModeFiles {
+				m.loading = true
+				m.folderStack = nil
+				// Cargar historial completo (1000 mensajes es el límite práctico de un chunk sin colgar)
+				cmds = append(cmds, loadMessagesCmd(m.client, "", m.activeConversationID(), 1000))
+			}
+
 		case "i":
-			if !m.focusLeft && m.activeConversationID() != "" {
+			// Blindaje total de la UI: Solo funciona en ModeChat
+			if !m.focusLeft && m.viewMode == ModeChat && m.activeConversationID() != "" {
 				m.isTyping = true
 				m.input.Focus()
 			}
@@ -513,16 +719,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.focusLeft && m.workspace == WorkspaceDMs && len(m.chats) > 0 {
 				m.loading = true
 				m.focusLeft = false
-				m.viewMode = ModeChat
+				m.isTyping = false
+				m.viewMode = ModeChat // OBLIGATORIO RESETEAR
 				chatID := m.chats[m.selectedChat].ID
 				m.loadedConvID = chatID
-				cmds = append(cmds, loadMessagesCmd(m.client, "", chatID))
+				cmds = append(cmds, loadMessagesCmd(m.client, "", chatID, 200))
 			} else if m.focusLeft && m.focusList == 1 && len(m.channels) > 0 {
 				m.loading = true
 				m.focusLeft = false
+				m.isTyping = false
+				m.viewMode = ModeChat // OBLIGATORIO RESETEAR
 				chanID := m.channels[m.selectedChan].ID
 				m.loadedConvID = chanID
-				cmds = append(cmds, loadMessagesCmd(m.client, m.teams[m.selectedTeam].ID, chanID))
+				cmds = append(cmds, loadMessagesCmd(m.client, m.teams[m.selectedTeam].ID, chanID, 200))
 			} else if !m.focusLeft && m.viewMode == ModeFiles && len(m.files) > 0 {
 				selected := m.files[m.selectedFile]
 				if selected.RemoteItem != nil {
@@ -628,5 +837,10 @@ func renderFilesContent(m *Model) string {
 		
 		b.WriteString(cursor + clickableLine + "\n")
 	}
+
+	if m.workspace == WorkspaceDMs {
+		b.WriteString("\n\n  " + helpStyle.Render("(Mostrando adjuntos recientes. Presioná 'C' para cargar el historial completo)"))
+	}
+
 	return b.String()
 }

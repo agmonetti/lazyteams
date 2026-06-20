@@ -13,7 +13,11 @@ type channelsErrMsg struct {
 	teamID string
 	err    error
 }
-type messagesErrMsg struct{ err error }
+type messagesErrMsg struct {
+	err            error
+	conversationID string
+	partialMsgs    []graph.Message // mensajes traídos antes del fallo
+}
 
 type teamsMsg struct {
 	teams []graph.Team
@@ -64,6 +68,7 @@ type Model struct {
 	selfID       string
 	selectedTeam int
 	loadedConvID string
+	prefs        Preferences
 	selectedChan int
 	selectedFile int
 	focusLeft    bool // true = foco en panel izquierdo (equipos/canales)
@@ -97,6 +102,7 @@ func New(client *graph.Client) Model {
 		focusList: 0,
 		loading:   true,
 		input:     ti,
+		prefs:     loadPrefs(),
 	}
 }
 
