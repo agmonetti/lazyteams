@@ -18,9 +18,11 @@ import (
 
 // Comandos
 
-const pollInterval = 15 // segundos entre polls de DMs
+const pollInterval = 15       // segundos entre polls de DMs
+const presenceInterval = 60   // segundos entre polls de presencia
 
 type tickMsg struct{}
+type presenceTickMsg struct{}
 type messageSentMsg struct{}
 type messageSendErrMsg struct{ err error }
 type filesMsg struct{ files []graph.DriveItem }
@@ -37,6 +39,18 @@ type selfChatDiscoveredMsg struct {
 func refreshTickCmd() tea.Cmd {
 	return tea.Tick(pollInterval*time.Second, func(t time.Time) tea.Msg {
 		return tickMsg{}
+	})
+}
+
+func refreshPresenceTickCmd() tea.Cmd {
+	return tea.Tick(presenceInterval*time.Second, func(t time.Time) tea.Msg {
+		return presenceTickMsg{}
+	})
+}
+
+func initialPresenceTickCmd() tea.Cmd {
+	return tea.Tick(5*time.Second, func(t time.Time) tea.Msg {
+		return presenceTickMsg{}
 	})
 }
 
@@ -71,6 +85,23 @@ func pollChatsCmd(client *graph.Client) tea.Cmd {
 			return nil // falla silenciosa en poll, no rompemos la UI
 		}
 		return pollChatsMsg{chats}
+	}
+}
+
+type presenceTickResultMsg struct {
+	presences map[string]string
+}
+
+func pollPresenceCmd(client *graph.Client, userIDs []string) tea.Cmd {
+	return func() tea.Msg {
+		if len(userIDs) == 0 {
+			return nil
+		}
+		presences, err := client.GetPresences(userIDs)
+		if err != nil {
+			return nil // falla silenciosa
+		}
+		return presenceTickResultMsg{presences}
 	}
 }
 
@@ -562,6 +593,34 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Re-programar el próximo tick
 		cmds = append(cmds, refreshTickCmd())
 		return m, tea.Batch(cmds...)
+
+	case presenceTickMsg:
+		// Poll presencia: recolectar userIds de chats visibles
+		if m.workspace == WorkspaceDMs && len(m.chats) > 0 {
+			seen := make(map[string]struct{})
+			var ids []string
+			for _, ch := range m.chats {
+				for _, u := range ch.Members {
+					if u.UserID != m.selfID && u.UserID != "" {
+						if _, ok := seen[u.UserID]; !ok {
+							seen[u.UserID] = struct{}{}
+							ids = append(ids, u.UserID)
+						}
+					}
+				}
+			}
+			if len(ids) > 0 {
+				cmds = append(cmds, pollPresenceCmd(m.client, ids))
+			}
+		}
+		cmds = append(cmds, refreshPresenceTickCmd())
+		return m, tea.Batch(cmds...)
+
+	case presenceTickResultMsg:
+		for k, v := range msg.presences {
+			m.presence[k] = v
+		}
+		return m, nil
 
 	case pollChatsMsg:
 		// Actualizar la lista de chats con los datos frescos

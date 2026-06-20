@@ -90,7 +90,8 @@ type Model struct {
 	isTyping bool
 
 	// Polling de DMs
-	chatUnread map[string]bool // chatID → tiene mensajes nuevos
+	chatUnread map[string]bool  // chatID → tiene mensajes nuevos
+	presence   map[string]string // userID → Availability (Available, Busy, Away, Offline, etc.)
 }
 
 func New(client *graph.Client) Model {
@@ -107,11 +108,12 @@ func New(client *graph.Client) Model {
 		input:      ti,
 		prefs:      loadPrefs(),
 		chatUnread: make(map[string]bool),
+		presence:   make(map[string]string),
 	}
 }
 
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(loadTeamsCmd(m.client), loadMeCmd(m.client), refreshTickCmd())
+	return tea.Batch(loadTeamsCmd(m.client), loadMeCmd(m.client), refreshTickCmd(), initialPresenceTickCmd())
 }
 
 func (m Model) activeConversationID() string {

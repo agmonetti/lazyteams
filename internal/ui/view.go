@@ -35,11 +35,23 @@ func (m Model) View() string {
 					}
 				}
 				name := ch.DisplayName(m.selfID)
+
+				// Presencia: buscar el miembro que no soy yo
+				presenceDot := ""
+				for _, u := range ch.Members {
+					if u.UserID != m.selfID {
+						if avail, ok := m.presence[u.UserID]; ok {
+							presenceDot = " " + presenceSymbol(avail)
+						}
+						break
+					}
+				}
+
 				if m.chatUnread[ch.ID] && i != m.selectedChat {
 					name = "● " + name
 					style = style.Copy().Foreground(lipgloss.Color("11")) // amarillo para unread
 				}
-				leftContent += fmt.Sprintf("%s%s\n", cursor, style.Render(name))
+				leftContent += fmt.Sprintf("%s%s%s\n", cursor, style.Render(name), presenceDot)
 			}
 		}
 	} else {
@@ -200,4 +212,21 @@ func (m Model) View() string {
 	help := helpStyle.Render(" [1] Equipos  [2] DMs  [↑/↓] Navegar   [Enter] Leer   [i] Escribir   [f] Archivos   [Esc/h] Volver   [q] Salir")
 
 	return lipgloss.JoinVertical(lipgloss.Left, ui, help)
+}
+
+func presenceSymbol(avail string) string {
+	switch avail {
+	case "Available":
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Render("●") // verde
+	case "Busy", "InACall", "InAMeeting":
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Render("●") // rojo
+	case "Away", "BeRightBack":
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Render("●") // amarillo
+	case "DoNotDisturb":
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Render("●") // rojo
+	case "Offline", "PresenceUnknown":
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render("●") // gris
+	default:
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render("●") // gris por defecto
+	}
 }
