@@ -483,6 +483,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case teamsMsg:
 		m.teams = msg.teams
+		m.teamsLoaded = true
 		m.loading = false
 		if len(m.teams) > 0 {
 			m.loading = true

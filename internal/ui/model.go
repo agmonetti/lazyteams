@@ -57,6 +57,7 @@ type FolderNode struct {
 type Model struct {
 	client       *graph.Client
 	teams        []graph.Team
+	teamsLoaded  bool
 	channels     []graph.Channel
 	messages     []graph.Message
 	files        []graph.DriveItem

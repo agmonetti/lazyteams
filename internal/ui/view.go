@@ -11,7 +11,7 @@ func (m Model) View() string {
 		return fmt.Sprintf("\n[!] Error: %v\n\nPresiona 'q' para salir.\n", m.err)
 	}
 
-	if len(m.teams) == 0 {
+	if m.teamsLoaded && len(m.teams) == 0 {
 		return "\nNo se encontraron equipos. Esta cuenta puede no tener Teams Enterprise o no pertenece a ningún equipo.\n\nPresiona 'q' para salir.\n"
 	}
 
