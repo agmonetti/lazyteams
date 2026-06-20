@@ -21,6 +21,7 @@ type chatsMsg struct{ chats []graph.Chat }
 type chatsErrMsg struct{ err error }
 type meMsg struct{ id string }
 type meErrMsg struct{ err error }
+type selfChatDiscoveredMsg struct{ id string }
 
 func loadMeCmd(client *graph.Client) tea.Cmd {
 	return func() tea.Msg {
@@ -39,6 +40,19 @@ func loadChatsCmd(client *graph.Client) tea.Cmd {
 			return chatsErrMsg{err}
 		}
 		return chatsMsg{chats}
+	}
+}
+
+func discoverSelfChatCmd(client *graph.Client, selfID string) tea.Cmd {
+	return func() tea.Msg {
+		if selfID == "" {
+			return nil
+		}
+		id := client.DiscoverSelfChatID(selfID)
+		if id != "" {
+			return selfChatDiscoveredMsg{id: id}
+		}
+		return nil // Si fallan todos los formatos, fallamos silenciosamente
 	}
 }
 
@@ -328,22 +342,31 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case chatsMsg:
-		if m.selfID != "" {
-			// Inyectar el chat personal (Notas personales) manualmente, ya que Graph API 
-			// lo oculta deliberadamente del endpoint /me/chats.
-			selfChat := graph.Chat{
-				ID:       fmt.Sprintf("19:%s_%s@unq.gbl.spaces", m.selfID, m.selfID),
-				Topic:    "Notas personales (Vos)",
-				ChatType: "oneOnOne",
-			}
-			m.chats = append([]graph.Chat{selfChat}, msg.chats...)
-		} else {
-			m.chats = msg.chats
-		}
-		
+		m.chats = msg.chats
 		m.chatsLoaded = true
 		m.loading = false
 		m.selectedChat = 0
+		
+		// Encadenamos el autodescubrimiento asíncrono
+		if m.selfID != "" {
+			return m, discoverSelfChatCmd(m.client, m.selfID)
+		}
+		return m, nil
+
+	case selfChatDiscoveredMsg:
+		// Evitar inyecciones duplicadas si por algún motivo se dispara dos veces
+		if len(m.chats) > 0 && m.chats[0].ID == msg.id {
+			return m, nil
+		}
+		selfChat := graph.Chat{
+			ID:       msg.id,
+			Topic:    "Notas personales (Vos)",
+			ChatType: "oneOnOne",
+		}
+		m.chats = append([]graph.Chat{selfChat}, m.chats...)
+		if m.selectedChat > 0 {
+			m.selectedChat++ // Mantener la selección visual donde estaba
+		}
 		return m, nil
 
 	case messagesMsg:

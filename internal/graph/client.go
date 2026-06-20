@@ -290,6 +290,38 @@ func (c *Client) GetChats() ([]Chat, error) {
 	return res.Value, nil
 }
 
+// DiscoverSelfChatID realiza fuerza bruta contra ChatSvc para encontrar
+// el identificador real (MRI) del chat "Notas personales" del usuario.
+func (c *Client) DiscoverSelfChatID(selfID string) string {
+	candidates := []string{
+		fmt.Sprintf("8:orgid:%s", selfID),
+		"48:notes",
+		fmt.Sprintf("8:%s", selfID),
+		fmt.Sprintf("19:%s_%s@unq.gbl.spaces", selfID, selfID),
+	}
+
+	for _, id := range candidates {
+		endpoint := fmt.Sprintf("https://teams.microsoft.com/api/chatsvc/amer/v1/users/ME/conversations/%s/messages?pageSize=1", id)
+		req, err := http.NewRequest(http.MethodGet, endpoint, nil)
+		if err != nil {
+			continue
+		}
+
+		req.Header.Set("Authorization", "Bearer "+c.WebToken)
+		req.Header.Set("behavioroverride", "redirectAs404")
+
+		resp, err := c.HTTPClient.Do(req)
+		if err == nil {
+			resp.Body.Close()
+			// Si el servidor responde 200 OK, encontramos el ID correcto.
+			if resp.StatusCode == http.StatusOK {
+				return id
+			}
+		}
+	}
+	return ""
+}
+
 // GetJoinedTeamsRaw obtiene el JSON crudo (útil para la prueba rápida).
 func (c *Client) GetJoinedTeamsRaw() ([]byte, error) {
 	return c.doReq("/me/joinedTeams")
