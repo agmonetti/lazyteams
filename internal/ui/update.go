@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"errors"
 	"fmt"
 	"net/url"
 	"os/exec"
@@ -370,7 +371,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case messagesErrMsg:
-		if m.selfID != "" && msg.conversationID == m.prefs.SelfChatIDs[m.selfID] && strings.Contains(msg.err.Error(), "404") {
+		var chatsvcErr *graph.ChatSvcError
+		if m.selfID != "" && msg.conversationID == m.prefs.SelfChatIDs[m.selfID] && errors.As(msg.err, &chatsvcErr) && chatsvcErr.StatusCode == 404 {
 			// El acceso directo a notas personales falló con 404. 
 			// Probablemente el MRI cambió o el caché quedó sucio.
 			// 1. Borramos el caché

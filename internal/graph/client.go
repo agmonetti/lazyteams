@@ -17,6 +17,15 @@ import (
 var stripTags = regexp.MustCompile(`<[^>]*>`)
 var multipleSpaces = regexp.MustCompile(`[ \t]+`)
 
+type ChatSvcError struct {
+	StatusCode int
+	Message    string
+}
+
+func (e *ChatSvcError) Error() string {
+	return fmt.Sprintf("chatsvc error %d: %s", e.StatusCode, e.Message)
+}
+
 func cleanHTML(content string) string {
 	// 1. Quitar saltos de línea y tabulaciones literales del código HTML
 	content = strings.ReplaceAll(content, "\n", " ")
@@ -359,9 +368,14 @@ func (c *Client) GetMessages(teamID, channelID string, pageSize int) ([]Message,
 		batchSize = 200
 	}
 
+	maxPages := (pageSize + batchSize - 1) / batchSize
+	if maxPages > 10 {
+		maxPages = 10
+	}
+
 	urlStr := fmt.Sprintf("https://teams.microsoft.com/api/chatsvc/amer/v1/users/ME/conversations/%s/messages?view=msnp24Equivalent|supportsMessageProperties&pageSize=%d&startTime=1", channelID, batchSize)
 
-	for len(allMsgs) < pageSize {
+	for page := 0; page < maxPages && len(allMsgs) < pageSize; page++ {
 		req, err := http.NewRequest(http.MethodGet, urlStr, nil)
 		if err != nil {
 			return allMsgs, err
@@ -384,7 +398,7 @@ func (c *Client) GetMessages(teamID, channelID string, pageSize int) ([]Message,
 		if resp.StatusCode != http.StatusOK {
 			body, _ := io.ReadAll(resp.Body)
 			resp.Body.Close()
-			return allMsgs, fmt.Errorf("chatsvc error %d: %s", resp.StatusCode, string(body))
+			return allMsgs, &ChatSvcError{StatusCode: resp.StatusCode, Message: string(body)}
 		}
 
 		body, err := io.ReadAll(resp.Body)
