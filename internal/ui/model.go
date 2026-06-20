@@ -86,6 +86,15 @@ type Model struct {
 	channelErr  error
 	folderStack []FolderNode // Pila de nodos para volver atrás en subcarpetas y armar la ruta
 
+	// Descarga de archivos
+	currentFilesDriveID string          // "" = drive por defecto del equipo; sino, ID de drive explícito
+	selectedFiles       map[int]bool    // índices marcados para descarga múltiple
+	confirmingDownload  bool            // true mientras se muestra el popup de confirmación
+	downloadTargets     []graph.DriveItem
+	downloadStatus      string          // mensaje de resultado
+	downloadStatusID    int             // incrementa con cada descarga, evita que un clear viejo borre un status nuevo
+	downloading         bool            // true mientras se descarga
+
 	// Input para enviar mensajes
 	input    textinput.Model
 	isTyping bool
@@ -110,6 +119,7 @@ func New(client *graph.Client) Model {
 		prefs:      loadPrefs(),
 		chatUnread: make(map[string]bool),
 		presence:   make(map[string]string),
+		selectedFiles: make(map[int]bool),
 	}
 }
 

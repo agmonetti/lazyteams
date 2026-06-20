@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/charmbracelet/lipgloss"
 )
@@ -209,9 +210,22 @@ func (m Model) View() string {
 	ui := lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, rightPanel)
 
 	// Footer (ayuda)
-	help := helpStyle.Render(" [1] Equipos  [2] DMs  [↑/↓] Navegar   [Enter] Leer   [i] Escribir   [f] Archivos   [Esc/h] Volver   [q] Salir")
+	help := helpStyle.Render(" [1] Equipos  [2] DMs  [↑/↓] Navegar   [Enter] Leer   [i] Escribir   [f] Archivos   [Space] Sel   [o] Descargar   [Esc/h] Volver   [q] Salir")
 
-	return lipgloss.JoinVertical(lipgloss.Left, ui, help)
+	ui = lipgloss.JoinVertical(lipgloss.Left, ui, help)
+
+	// Popup de confirmación de descarga
+	if m.confirmingDownload {
+		names := make([]string, len(m.downloadTargets))
+		for i, t := range m.downloadTargets {
+			names[i] = t.Name
+		}
+		question := fmt.Sprintf("¿Descargar %d archivo(s)?\n\n%s\n\n[y] Sí   [n] No", len(names), strings.Join(names, "\n  "))
+		popup := popupStyle.Render(question)
+		ui = lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, popup)
+	}
+
+	return ui
 }
 
 func presenceSymbol(avail string) string {

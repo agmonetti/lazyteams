@@ -50,4 +50,12 @@ var (
 	systemEventStyle = lipgloss.NewStyle().
 		Foreground(lipgloss.Color("245")).
 		Italic(true)
+
+	// Popup de confirmación de descarga
+	popupStyle = lipgloss.NewStyle().
+		Border(lipgloss.DoubleBorder()).
+		BorderForeground(lipgloss.Color("11")). // amarillo
+		Padding(1, 3).
+		Foreground(colorText).
+		Bold(true)
 )

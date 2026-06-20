@@ -769,3 +769,66 @@ func (c *Client) getPresence(userID string) (string, error) {
 	}
 	return res.Availability, nil
 }
+
+func (c *Client) DownloadItem(teamID, itemID string) (io.ReadCloser, error) {
+	endpoint := fmt.Sprintf("https://graph.microsoft.com/v1.0/groups/%s/drive/items/%s/content", teamID, itemID)
+	return c.downloadContent(endpoint)
+}
+
+func (c *Client) DownloadRemoteItem(driveID, itemID string) (io.ReadCloser, error) {
+	endpoint := fmt.Sprintf("https://graph.microsoft.com/v1.0/drives/%s/items/%s/content", driveID, itemID)
+	return c.downloadContent(endpoint)
+}
+
+// DownloadByPath descarga un archivo de OneDrive personal usando la ruta
+// extraída del WebUrl. Funciona para archivos de DMs que no tienen ID real.
+func (c *Client) DownloadByPath(webURL string) (io.ReadCloser, error) {
+	parsed, err := url.Parse(webURL)
+	if err != nil {
+		return nil, fmt.Errorf("URL inválida: %w", err)
+	}
+
+	// Extraer la ruta del archivo del parámetro "file" o de la path directamente
+	filePath := parsed.Query().Get("file")
+	if filePath == "" {
+		filePath = parsed.Path
+	}
+
+	if filePath == "" || filePath == "/" {
+		return nil, fmt.Errorf("no se pudo extraer la ruta del archivo de la URL: %s", webURL)
+	}
+
+	// Limpiar la ruta
+	filePath = strings.TrimPrefix(filePath, "/")
+	if strings.Contains(filePath, "_layouts/15/Doc.aspx") {
+		filePath = parsed.Query().Get("file")
+	}
+
+	if filePath == "" {
+		return nil, fmt.Errorf("no se pudo determinar la ruta del archivo: %s", webURL)
+	}
+
+	// URL-encodear la ruta (espacios, etc.)
+	encodedPath := url.PathEscape(filePath)
+	endpoint := fmt.Sprintf("https://graph.microsoft.com/v1.0/me/drive/root:/%s:/content", encodedPath)
+	return c.downloadContent(endpoint)
+}
+
+func (c *Client) downloadContent(endpoint string) (io.ReadCloser, error) {
+	req, err := http.NewRequest("GET", endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.GraphToken)
+
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("error de red al descargar: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		defer resp.Body.Close()
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("error descargando archivo (status %d): %s", resp.StatusCode, string(body))
+	}
+	return resp.Body, nil
+}

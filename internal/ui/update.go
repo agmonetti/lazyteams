@@ -3,8 +3,11 @@ package ui
 import (
 	"errors"
 	"fmt"
+	"io"
 	"net/url"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"runtime"
 	"sort"
@@ -14,6 +17,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 // Comandos
@@ -103,6 +107,77 @@ func pollPresenceCmd(client *graph.Client, userIDs []string) tea.Cmd {
 		}
 		return presenceTickResultMsg{presences}
 	}
+}
+
+type downloadDoneMsg struct {
+	results []string
+}
+
+func downloadFilesCmd(client *graph.Client, teamID, driveID string, items []graph.DriveItem) tea.Cmd {
+	return func() tea.Msg {
+		home, _ := os.UserHomeDir()
+		destDir := filepath.Join(home, "Downloads")
+		os.MkdirAll(destDir, 0755)
+
+		var results []string
+		for _, item := range items {
+			var body io.ReadCloser
+			var err error
+
+			if item.ID != "" {
+				// Item con ID real de Graph (canales, Materiales de clase)
+				if driveID != "" {
+					body, err = client.DownloadRemoteItem(driveID, item.ID)
+				} else {
+					body, err = client.DownloadItem(teamID, item.ID)
+				}
+			} else if item.WebUrl != "" {
+				// Item sintético de DM: descargar vía la ruta del WebUrl
+				body, err = client.DownloadByPath(item.WebUrl)
+			} else {
+				err = fmt.Errorf("sin ID ni URL de descarga")
+			}
+			if err != nil {
+				// Si falla la descarga nativa y hay WebUrl, abrir en navegador
+				if item.WebUrl != "" {
+					link := item.DownloadUrl
+					if link == "" {
+						link = item.WebUrl
+					}
+					openBrowser(link)
+					results = append(results, fmt.Sprintf("⟳ %s: abierto en navegador", item.Name))
+				} else {
+					results = append(results, fmt.Sprintf("✗ %s: %v", item.Name, err))
+				}
+				continue
+			}
+
+			destPath := filepath.Join(destDir, item.Name)
+			out, ferr := os.Create(destPath)
+			if ferr != nil {
+				body.Close()
+				results = append(results, fmt.Sprintf("✗ %s: %v", item.Name, ferr))
+				continue
+			}
+			_, cerr := io.Copy(out, body)
+			body.Close()
+			out.Close()
+			if cerr != nil {
+				results = append(results, fmt.Sprintf("✗ %s: %v", item.Name, cerr))
+			} else {
+				results = append(results, fmt.Sprintf("✓ %s", item.Name))
+			}
+		}
+		return downloadDoneMsg{results: results}
+	}
+}
+
+type clearDownloadStatusMsg struct{ id int }
+
+func clearStatusAfter(id int) tea.Cmd {
+	return tea.Tick(5*time.Second, func(t time.Time) tea.Msg {
+		return clearDownloadStatusMsg{id: id}
+	})
 }
 
 func discoverSelfChatCmd(client *graph.Client, selfID, cachedID string) tea.Cmd {
@@ -476,6 +551,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.files = msg.files
 		m.loading = false
 		m.selectedFile = 0
+		m.selectedFiles = make(map[int]bool)
 
 		m.viewport.SetContent(renderFilesContent(&m))
 		m.viewport.GotoTop()
@@ -623,12 +699,51 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case downloadDoneMsg:
+		m.downloading = false
+		m.downloadStatus = strings.Join(msg.results, " | ")
+		m.downloadStatusID++
+		if m.viewMode == ModeFiles {
+			m.viewport.SetContent(renderFilesContent(&m))
+			m.viewport.GotoBottom()
+		}
+		return m, clearStatusAfter(m.downloadStatusID)
+
+	case clearDownloadStatusMsg:
+		if msg.id == m.downloadStatusID {
+			m.downloadStatus = ""
+			if m.viewMode == ModeFiles {
+				m.viewport.SetContent(renderFilesContent(&m))
+			}
+		}
+		return m, nil
+
 	case pollChatsMsg:
 		// Actualizar la lista de chats con los datos frescos
 		// (sin badge: lastModifiedDateTime no está disponible en este tenant)
 		return m, nil
 
 	case tea.KeyMsg:
+		// Popup de confirmación de descarga — intercepta teclas antes que todo
+		if m.confirmingDownload {
+			switch msg.String() {
+			case "y", "enter":
+				m.confirmingDownload = false
+				m.downloading = true
+				targets := m.downloadTargets
+				driveID := m.currentFilesDriveID
+				teamID := m.teams[m.selectedTeam].ID
+				cmds = append(cmds, downloadFilesCmd(m.client, teamID, driveID, targets))
+				m.selectedFiles = make(map[int]bool)
+				return m, tea.Batch(cmds...)
+			case "n", "esc":
+				m.confirmingDownload = false
+				m.downloadTargets = nil
+				return m, nil
+			}
+			return m, nil // interceptar todas las teclas mientras el popup está abierto
+		}
+
 		switch msg.String() {
 		case "q", "ctrl+c":
 			return m, tea.Quit
@@ -738,12 +853,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.folderStack = m.folderStack[:len(m.folderStack)-1]
 					if len(m.folderStack) == 0 {
 						// Volvimos a la raíz del canal
+						m.currentFilesDriveID = ""
 						cmds = append(cmds, loadFilesCmd(m.client, m.teams[m.selectedTeam].ID, m.channels[m.selectedChan].DisplayName))
 					} else {
 						// Volvimos a una subcarpeta
 						parent := m.folderStack[len(m.folderStack)-1]
+						m.currentFilesDriveID = parent.DriveID
 						cmds = append(cmds, loadFolderCmd(m.client, m.teams[m.selectedTeam].ID, parent))
 					}
+					m.selectedFiles = make(map[int]bool)
 				} else {
 					m.focusLeft = true
 				}
@@ -801,6 +919,36 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 
+		case " ":
+			// Selección/deselección de archivo para descarga múltiple
+			if !m.focusLeft && m.viewMode == ModeFiles && len(m.files) > 0 {
+				if m.selectedFiles[m.selectedFile] {
+					delete(m.selectedFiles, m.selectedFile)
+				} else {
+					m.selectedFiles[m.selectedFile] = true
+				}
+				m.viewport.SetContent(renderFilesContent(&m))
+			}
+
+		case "o":
+			// Abrir popup de confirmación de descarga
+			if !m.confirmingDownload && !m.focusLeft && m.viewMode == ModeFiles && len(m.files) > 0 {
+				var targets []graph.DriveItem
+				if len(m.selectedFiles) > 0 {
+					for idx := range m.selectedFiles {
+						if idx < len(m.files) && m.files[idx].Folder == nil {
+							targets = append(targets, m.files[idx])
+						}
+					}
+				} else if m.files[m.selectedFile].Folder == nil {
+					targets = append(targets, m.files[m.selectedFile])
+				}
+				if len(targets) > 0 {
+					m.downloadTargets = targets
+					m.confirmingDownload = true
+				}
+			}
+
 		case "c", "C":
 			if !m.isTyping && m.workspace == WorkspaceDMs && m.viewMode == ModeFiles {
 				m.loading = true
@@ -846,12 +994,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						DriveID: selected.RemoteItem.ParentReference.DriveID,
 					}
 					m.folderStack = append(m.folderStack, node)
+					m.currentFilesDriveID = node.DriveID
 					cmds = append(cmds, loadFolderCmd(m.client, m.teams[m.selectedTeam].ID, node))
 				} else if selected.Folder != nil {
-					// Carpeta normal dentro del Drive del equipo
+					// Carpeta normal: hereda el DriveID del nodo actual
 					m.loading = true
-					node := FolderNode{ID: selected.ID, Name: selected.Name}
+					currentDriveID := ""
+					if len(m.folderStack) > 0 {
+						currentDriveID = m.folderStack[len(m.folderStack)-1].DriveID
+					}
+					node := FolderNode{ID: selected.ID, Name: selected.Name, DriveID: currentDriveID}
 					m.folderStack = append(m.folderStack, node)
+					m.currentFilesDriveID = currentDriveID
 					cmds = append(cmds, loadFolderCmd(m.client, m.teams[m.selectedTeam].ID, node))
 				} else {
 					// Es un archivo, abrimos
@@ -923,25 +1077,32 @@ func renderFilesContent(m *Model) string {
 			cursor = "▶ "
 			style = selectedItemStyle
 		}
-		
+
+		checkbox := "  "
+		if m.selectedFiles[i] {
+			checkbox = lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Render("✓ ") // verde
+		}
+
 		icon := getFileIcon(f)
 		link := f.DownloadUrl
 		if link == "" {
 			link = f.WebUrl
 		}
-		
-		// Aplicamos el estilo de selección a toda la línea
-		line := fmt.Sprintf("%s %s", icon, f.Name)
+
+		line := fmt.Sprintf("%s%s %s", checkbox, icon, f.Name)
 		line = style.Render(line)
-		
-		// Lo hacemos clickeable
+
 		clickableLine := makeClickableLink(line, link)
-		
+
 		b.WriteString(cursor + clickableLine + "\n")
 	}
 
 	if m.workspace == WorkspaceDMs {
 		b.WriteString("\n\n  " + helpStyle.Render("(Mostrando adjuntos recientes. Presioná 'C' para cargar el historial completo)"))
+	}
+
+	if m.downloadStatus != "" {
+		b.WriteString("\n\n  " + lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Render(m.downloadStatus))
 	}
 
 	return b.String()
