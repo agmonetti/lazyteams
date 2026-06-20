@@ -18,6 +18,9 @@ import (
 
 // Comandos
 
+const pollInterval = 15 // segundos entre polls de DMs
+
+type tickMsg struct{}
 type messageSentMsg struct{}
 type messageSendErrMsg struct{ err error }
 type filesMsg struct{ files []graph.DriveItem }
@@ -29,6 +32,12 @@ type meErrMsg struct{ err error }
 type selfChatDiscoveredMsg struct {
 	id              string
 	newlyDiscovered bool
+}
+
+func refreshTickCmd() tea.Cmd {
+	return tea.Tick(pollInterval*time.Second, func(t time.Time) tea.Msg {
+		return tickMsg{}
+	})
 }
 
 func loadMeCmd(client *graph.Client) tea.Cmd {
@@ -48,6 +57,20 @@ func loadChatsCmd(client *graph.Client) tea.Cmd {
 			return chatsErrMsg{err}
 		}
 		return chatsMsg{chats}
+	}
+}
+
+type pollChatsMsg struct {
+	chats []graph.Chat
+}
+
+func pollChatsCmd(client *graph.Client) tea.Cmd {
+	return func() tea.Msg {
+		chats, err := client.GetChats()
+		if err != nil {
+			return nil // falla silenciosa en poll, no rompemos la UI
+		}
+		return pollChatsMsg{chats}
 	}
 }
 
@@ -529,6 +552,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case tickMsg:
+		// Poll: refrescar chats si estamos en DMs y la conversación cargada sigue abierta
+		cmds = append(cmds, pollChatsCmd(m.client))
+		// Refrescar mensajes si hay una conversación abierta y el usuario no está escribiendo
+		if m.loadedConvID != "" && m.viewMode == ModeChat && !m.isTyping && !m.focusLeft {
+			cmds = append(cmds, loadMessagesCmd(m.client, "", m.loadedConvID, 200))
+		}
+		// Re-programar el próximo tick
+		cmds = append(cmds, refreshTickCmd())
+		return m, tea.Batch(cmds...)
+
+	case pollChatsMsg:
+		// Actualizar la lista de chats con los datos frescos
+		// (sin badge: lastModifiedDateTime no está disponible en este tenant)
+		return m, nil
+
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "q", "ctrl+c":
@@ -725,6 +764,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.viewMode = ModeChat // OBLIGATORIO RESETEAR
 				chatID := m.chats[m.selectedChat].ID
 				m.loadedConvID = chatID
+				delete(m.chatUnread, chatID) // Limpiar badge al abrir
 				cmds = append(cmds, loadMessagesCmd(m.client, "", chatID, 200))
 			} else if m.focusLeft && m.focusList == 1 && len(m.channels) > 0 {
 				m.loading = true

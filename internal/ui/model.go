@@ -88,6 +88,9 @@ type Model struct {
 	// Input para enviar mensajes
 	input    textinput.Model
 	isTyping bool
+
+	// Polling de DMs
+	chatUnread map[string]bool // chatID → tiene mensajes nuevos
 }
 
 func New(client *graph.Client) Model {
@@ -97,17 +100,18 @@ func New(client *graph.Client) Model {
 	ti.Width = 50
 
 	return Model{
-		client:    client,
-		focusLeft: true,
-		focusList: 0,
-		loading:   true,
-		input:     ti,
-		prefs:     loadPrefs(),
+		client:     client,
+		focusLeft:  true,
+		focusList:  0,
+		loading:    true,
+		input:      ti,
+		prefs:      loadPrefs(),
+		chatUnread: make(map[string]bool),
 	}
 }
 
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(loadTeamsCmd(m.client), loadMeCmd(m.client))
+	return tea.Batch(loadTeamsCmd(m.client), loadMeCmd(m.client), refreshTickCmd())
 }
 
 func (m Model) activeConversationID() string {

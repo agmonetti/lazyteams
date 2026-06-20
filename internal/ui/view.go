@@ -34,7 +34,12 @@ func (m Model) View() string {
 						style = style.Copy().Foreground(lipgloss.Color("245"))
 					}
 				}
-				leftContent += fmt.Sprintf("%s%s\n", cursor, style.Render(ch.DisplayName(m.selfID)))
+				name := ch.DisplayName(m.selfID)
+				if m.chatUnread[ch.ID] && i != m.selectedChat {
+					name = "● " + name
+					style = style.Copy().Foreground(lipgloss.Color("11")) // amarillo para unread
+				}
+				leftContent += fmt.Sprintf("%s%s\n", cursor, style.Render(name))
 			}
 		}
 	} else {
