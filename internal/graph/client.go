@@ -449,10 +449,16 @@ func (c *Client) GetMessages(teamID, channelID string, pageSize int) ([]Message,
 						}
 
 						furl := ""
-						if u, ok := f["fileUrl"].(string); ok {
+						if u, ok := f["fileUrl"].(string); ok && u != "" {
 							furl = u
-						} else if u, ok := f["url"].(string); ok {
+						} else if u, ok := f["url"].(string); ok && u != "" {
 							furl = u
+						} else if fi, ok := f["fileInfo"].(map[string]interface{}); ok {
+							if u, ok := fi["fileUrl"].(string); ok && u != "" {
+								furl = u
+							} else if u, ok := fi["serverRelativeUrl"].(string); ok && u != "" {
+								furl = u
+							}
 						}
 
 						if furl != "" {
