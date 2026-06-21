@@ -40,17 +40,31 @@ func (c *Client) GetJoinedTeamsRaw() ([]byte, error) {
 // GetChannels obtiene los canales de un equipo específico.
 func (c *Client) GetChannels(teamID string) ([]Channel, error) {
 	endpoint := fmt.Sprintf("/teams/%s/channels", teamID)
-	body, err := c.doReq(endpoint)
-	if err != nil {
-		return nil, err
+	
+	var allChannels []Channel
+
+	for endpoint != "" {
+		body, err := c.doReq(endpoint)
+		if err != nil {
+			return nil, err
+		}
+
+		var res struct {
+			Value    []Channel `json:"value"`
+			NextLink string    `json:"@odata.nextLink"`
+		}
+		if err := json.Unmarshal(body, &res); err != nil {
+			return nil, fmt.Errorf("error parseando canales: %w", err)
+		}
+
+		allChannels = append(allChannels, res.Value...)
+
+		if res.NextLink != "" {
+			endpoint = res.NextLink
+		} else {
+			endpoint = ""
+		}
 	}
 
-	var res struct {
-		Value []Channel `json:"value"`
-	}
-	if err := json.Unmarshal(body, &res); err != nil {
-		return nil, fmt.Errorf("error parseando canales: %w", err)
-	}
-
-	return res.Value, nil
+	return allChannels, nil
 }

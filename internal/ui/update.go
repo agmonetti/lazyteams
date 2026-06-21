@@ -517,6 +517,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.channels = msg.channels
 		m.selectedChan = 0
+		m.channelWindowStart = 0
 		m.messages = nil
 		m.channelErr = nil
 		m.loading = false
@@ -749,11 +750,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if m.selectedTeam > 0 {
 						m.selectedTeam--
 						m.loading = true
+						m.channelWindowStart = 0
 						cmds = append(cmds, loadChannelsCmd(m.client, m.teams[m.selectedTeam].ID))
 					}
 				} else if m.focusList == 1 && len(m.channels) > 0 {
 					if m.selectedChan > 0 {
 						m.selectedChan--
+						// Ajustar sliding window
+						if m.selectedChan < m.channelWindowStart {
+							m.channelWindowStart = m.selectedChan
+						}
 					}
 				}
 			} else {
@@ -787,11 +793,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if m.selectedTeam < len(m.teams)-1 {
 						m.selectedTeam++
 						m.loading = true
+						m.channelWindowStart = 0
 						cmds = append(cmds, loadChannelsCmd(m.client, m.teams[m.selectedTeam].ID))
 					}
 				} else if m.focusList == 1 && len(m.channels) > 0 {
 					if m.selectedChan < len(m.channels)-1 {
 						m.selectedChan++
+						// Ajustar sliding window
+						// Para saber el maxChannels necesitamos calcularlo igual que en view.go
+						teamsLines := len(m.teams) + 3
+						viewportH := m.leftVp.Height
+						if viewportH <= 0 {
+							viewportH = m.height - 6
+						}
+						maxChannels := viewportH - teamsLines - 2
+						if maxChannels < 5 {
+							maxChannels = 5
+						}
+						if m.selectedChan >= m.channelWindowStart + maxChannels {
+							m.channelWindowStart = m.selectedChan - maxChannels + 1
+						}
 					}
 				}
 			} else {

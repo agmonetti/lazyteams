@@ -106,14 +106,20 @@ func (m Model) View() string {
 
 			totalChans := len(m.channels)
 
-			// Sliding window: desplazar cuando el cursor supera el área visible
-			windowStart := 0
-			if m.selectedChan >= maxChannels {
-				windowStart = m.selectedChan - maxChannels + 1
+			// Sliding window
+			windowStart := m.channelWindowStart
+			if windowStart < 0 {
+				windowStart = 0
 			}
 			windowEnd := windowStart + maxChannels
 			if windowEnd > totalChans {
 				windowEnd = totalChans
+				// Ajustar windowStart si estamos al final y sobran espacios
+				if totalChans >= maxChannels {
+					windowStart = totalChans - maxChannels
+				} else {
+					windowStart = 0
+				}
 			}
 
 			// Indicador de canales ocultos arriba

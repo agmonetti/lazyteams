@@ -103,6 +103,9 @@ type Model struct {
 	// Usuario
 	userName string
 
+	// Ventana deslizante para canales
+	channelWindowStart int
+
 	// Polling de DMs
 	chatUnread map[string]bool  // chatID → tiene mensajes nuevos
 	presence   map[string]string // userID → Availability (Available, Busy, Away, Offline, etc.)
