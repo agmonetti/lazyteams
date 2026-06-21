@@ -64,21 +64,29 @@ Este token se usa para: leer/escribir mensajes (API interna de Teams).
 | `Enter` | Abrir conversación |
 | `i` | Escribir mensaje |
 | `f` | Ver archivos adjuntos |
+| `p` | Menú para cambiar tu estado de presencia |
 | `C` | Cargar historial completo de archivos |
 | `Esc` / `h` | Volver atrás |
 | `q` | Salir |
 
 ### Presencia
 
-La presencia de contactos se actualiza automáticamente:
-- Primera carga: 5 segundos después de iniciar
-- Actualizaciones: cada 60 segundos
+La presencia de contactos se actualiza automáticamente. Tu propio estado aparece en la barra superior derecha.
 
-Colores del indicador `●`:
+**Para cambiar tu propio estado:**
+Presioná `p` para abrir el menú de presencia. Los cambios se reflejan inmediatamente tanto en la TUI como en las aplicaciones oficiales de Microsoft Teams.
+
+**Colores del indicador `●`:**
 - Verde: Available
 - Rojo: Busy / DoNotDisturb
 - Amarillo: Away / BeRightBack
 - Gris: Offline / PresenceUnknown
+- Hueco `○`: Reset (Automático)
+
+**Limitaciones Conocidas (Microsoft Graph API):**
+- La API de Microsoft (v1.0) prohíbe explícitamente configurar el estado **"Offline" (Aparecer desconectado)** de manera manual. Por ese motivo, el estado "Offline" fue removido de las opciones de la TUI, ya que Microsoft Graph devuelve un error `400 InvalidArgument` si se intenta usar.
+- Para setear tu presencia se requiere el permiso `Presence.ReadWrite.All`. En *Graph Explorer*, tenés que cambiar el método a `POST` con la URL `https://graph.microsoft.com/v1.0/me/presence/setUserPreferredPresence` para poder visualizar la pestaña de consentimiento de este permiso.
+- Para leer la presencia de otros se requiere `Presence.Read.All` (o `Presence.Read` vía iteración de IDs).
 
 ## Arquitectura
 
@@ -103,6 +111,5 @@ msTTui/
 
 ## Notas
 
-- Los tokens expiran. Si ves errores 401, regeneralos.
-- El endpoint de presencia (`/users/{id}/presence`) requiere el permiso `Presence.Read.All` en Graph Explorer. Si no lo consentís, los puntos simplemente no aparecen (la app no crashea).
+- Los tokens expiran. Si ves errores `401`, la TUI te mostrará un mensaje amigable indicando que debes regenerar el `TEAMS_WEB_TOKEN` o el `MS_GRAPH_TOKEN`.
 - La app guarda preferencias en `~/.config/msTTui/prefs.json`.
