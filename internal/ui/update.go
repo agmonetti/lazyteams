@@ -4,15 +4,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"runtime"
-	"sort"
 	"strings"
 	"teamsTUI/internal/graph"
+	"teamsTUI/internal/teams"
 	"time"
 
 	"github.com/charmbracelet/bubbles/viewport"
@@ -353,103 +351,6 @@ func formatMessages(messages []graph.Message) string {
 	return content
 }
 
-var urlRegex = regexp.MustCompile(`https?:\/\/(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&//=]*)`)
-
-// aggregateChatAttachments junta todos los adjuntos (archivos y links) de los
-// mensajes ya cargados en memoria, deduplicados por URL, del más reciente al
-// más viejo. No pega a la red: opera 100% sobre m.messages.
-func aggregateChatAttachments(messages []graph.Message) []graph.DriveItem {
-	type entry struct {
-		item    graph.DriveItem
-		created time.Time
-	}
-
-	seen := make(map[string]bool)
-	var entries []entry
-
-	for _, msg := range messages {
-		// 1. Extraer archivos y links del array oficial de Attachments
-		for _, att := range msg.Attachments {
-			if att.URL == "" || seen[att.URL] {
-				continue
-			}
-			seen[att.URL] = true
-			entries = append(entries, entry{
-				item: graph.DriveItem{
-					Name:           att.Name,
-					WebUrl:         att.URL,
-					IsExternalLink: att.Type == "link",
-				},
-				created: msg.CreatedAt,
-			})
-		}
-
-		// 2. Extraer URLs pegadas a mano en el cuerpo del texto
-		urls := urlRegex.FindAllString(msg.Body, -1)
-		for _, u := range urls {
-			if seen[u] {
-				continue
-			}
-			seen[u] = true
-
-			// Intentar deducir un nombre amigable
-			name := u
-			if parsed, err := url.Parse(u); err == nil {
-				parts := strings.Split(parsed.Path, "/")
-				if len(parts) > 0 && parts[len(parts)-1] != "" {
-					name = parts[len(parts)-1]
-				} else {
-					name = parsed.Host
-				}
-			}
-
-			entries = append(entries, entry{
-				item: graph.DriveItem{
-					Name:           name,
-					WebUrl:         u,
-					IsExternalLink: true, // Lo forzamos como link estético
-				},
-				created: msg.CreatedAt,
-			})
-		}
-	}
-
-	sort.Slice(entries, func(i, j int) bool {
-		return entries[i].created.After(entries[j].created)
-	})
-
-	items := make([]graph.DriveItem, len(entries))
-	for i, e := range entries {
-		items[i] = e.item
-	}
-	return items
-}
-
-func getFileIcon(item graph.DriveItem) string {
-	if item.IsExternalLink {
-		return "[LINK]"
-	}
-	if item.Folder != nil {
-		return "[DIR]"
-	}
-	name := strings.ToLower(item.Name)
-	switch {
-	case strings.HasSuffix(name, ".pdf"):
-		return "[PDF]"
-	case strings.HasSuffix(name, ".pptx") || strings.HasSuffix(name, ".ppt"):
-		return "[PPT]"
-	case strings.HasSuffix(name, ".docx") || strings.HasSuffix(name, ".doc"):
-		return "[DOC]"
-	case strings.HasSuffix(name, ".xlsx") || strings.HasSuffix(name, ".xls"):
-		return "[XLS]"
-	case strings.HasSuffix(name, ".mp4") || strings.HasSuffix(name, ".mkv"):
-		return "[VID]"
-	case strings.HasSuffix(name, ".zip") || strings.HasSuffix(name, ".rar"):
-		return "[ZIP]"
-	default:
-		return "[FILE]"
-	}
-}
 
 // Update
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -548,7 +449,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.messages = msg.partialMsgs
 			m.loading = false
 			if m.viewMode == ModeFiles {
-				m.files = aggregateChatAttachments(m.messages)
+				m.files = teams.AggregateChatAttachments(m.messages)
 				m.selectedFile = 0
 				m.viewport.SetContent(renderFilesContent(&m) + "\n\n(carga parcial por error de red)")
 			} else {
@@ -681,7 +582,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.viewport.SetContent(content)
 			m.viewport.GotoBottom()
 		} else if m.viewMode == ModeFiles {
-			m.files = aggregateChatAttachments(m.messages)
+			m.files = teams.AggregateChatAttachments(m.messages)
 			m.selectedFile = 0
 			m.viewport.SetContent(renderFilesContent(&m))
 			m.viewport.GotoTop()
@@ -929,7 +830,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							// Agregación local: cero red, usa lo que ya está en m.messages.
 							m.viewMode = ModeFiles
 							m.folderStack = nil
-							m.files = aggregateChatAttachments(m.messages)
+							m.files = teams.AggregateChatAttachments(m.messages)
 							m.selectedFile = 0
 							m.viewport.SetContent(renderFilesContent(&m))
 							m.viewport.GotoTop()
@@ -1111,7 +1012,7 @@ func renderFilesContent(m *Model) string {
 			checkbox = lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Render("✓ ") // verde
 		}
 
-		icon := getFileIcon(f)
+		icon := teams.GetFileIcon(f)
 		link := f.DownloadUrl
 		if link == "" {
 			link = f.WebUrl
