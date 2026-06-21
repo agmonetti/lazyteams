@@ -103,6 +103,12 @@ type Model struct {
 	// Usuario
 	userName string
 
+	// Presencia (selección)
+	showPresenceMenu bool
+	presenceCursor   int
+	presenceOptions  []string
+	presenceError    string
+
 	// Ventana deslizante para canales
 	channelWindowStart int
 
@@ -129,6 +135,7 @@ func New(client *graph.Client, userName string) Model {
 		selectedFiles: make(map[int]bool),
 		folderCache:  make(map[string][]graph.DriveItem),
 		userName:     userName,
+		presenceOptions: []string{"Available", "Busy", "DoNotDisturb", "BeRightBack", "Away", "Reset (Automático)"},
 	}
 }
 

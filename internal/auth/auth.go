@@ -47,10 +47,19 @@ func ParseUserNameFromToken(token string) string {
 	if err := json.Unmarshal(b, &claims); err != nil {
 		return ""
 	}
-	if name, ok := claims["name"].(string); ok {
+	if name, ok := claims["name"].(string); ok && name != "" {
 		return name
 	}
-	if name, ok := claims["unique_name"].(string); ok {
+	if name, ok := claims["unique_name"].(string); ok && name != "" {
+		return name
+	}
+	if name, ok := claims["preferred_username"].(string); ok && name != "" {
+		return name
+	}
+	if name, ok := claims["upn"].(string); ok && name != "" {
+		return name
+	}
+	if name, ok := claims["given_name"].(string); ok && name != "" {
 		return name
 	}
 	return ""

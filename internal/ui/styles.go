@@ -61,6 +61,13 @@ var (
 		Foreground(colorText).
 		Bold(true)
 
+	// Popup de presencia
+	presencePopupStyle = lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(colorFocus).
+		Padding(0, 2).
+		Width(30)
+
 	// Splash screen
 	splashLogoStyle = lipgloss.NewStyle().
 		Foreground(lipgloss.Color("62")). // Indigo

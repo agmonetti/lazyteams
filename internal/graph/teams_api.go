@@ -3,6 +3,7 @@ package graph
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 )
 
 type Team struct {
@@ -60,7 +61,12 @@ func (c *Client) GetChannels(teamID string) ([]Channel, error) {
 		allChannels = append(allChannels, res.Value...)
 
 		if res.NextLink != "" {
-			endpoint = res.NextLink
+			// NextLink suele ser absoluta, le quitamos la baseURL si la tiene
+			if strings.HasPrefix(res.NextLink, baseURL) {
+				endpoint = strings.TrimPrefix(res.NextLink, baseURL)
+			} else {
+				endpoint = res.NextLink
+			}
 		} else {
 			endpoint = ""
 		}

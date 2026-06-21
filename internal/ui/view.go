@@ -157,15 +157,17 @@ func (m Model) View() string {
 	}
 
 	// Aplicar estilos al panel izquierdo
-	lStyle := paneStyle.Width((m.width / 3) - 2).Height(m.height - 4)
+	// Reducimos la altura en 1 para evitar que la terminal scrollee y oculte la topBar
+	panelOuterHeight := m.height - 5
+	lStyle := paneStyle.Width((m.width / 3) - 2).Height(panelOuterHeight)
 	if m.focusLeft {
-		lStyle = focusedPaneStyle.Width((m.width / 3) - 2).Height(m.height - 4)
+		lStyle = focusedPaneStyle.Width((m.width / 3) - 2).Height(panelOuterHeight)
 	}
 	leftPanel := lStyle.Render(leftContent)
 
 	// === Panel Derecho ===
 	vpWidth := (m.width * 2 / 3) - 4
-	vpHeight := m.height - 4
+	vpHeight := panelOuterHeight
 	rightContent := ""
 
 	// Estado de carga: solo mostrar "Cargando..." en el splash
@@ -264,27 +266,15 @@ func (m Model) View() string {
 		}
 	}
 
-	// Aplicar estilos al panel derecho
-	rStyle := paneStyle.Width(vpWidth).Height(vpHeight)
+	// Aplicar estilos al panel derecho — PRIMERO con el contenido normal
+	rStyle := paneStyle.Width(vpWidth).MaxWidth(vpWidth).Height(vpHeight).MaxHeight(vpHeight)
 	if !m.focusLeft {
-		rStyle = focusedPaneStyle.Width(vpWidth).Height(vpHeight)
+		rStyle = focusedPaneStyle.Width(vpWidth).MaxWidth(vpWidth).Height(vpHeight).MaxHeight(vpHeight)
 	}
 	rightPanel := rStyle.Render(rightContent)
 
-	// Juntar paneles
-	ui := lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, rightPanel)
-
-	// Status bar superior
-	if m.userName != "" && m.ready {
-		statusDot := lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Render("●")
-		topBar := fmt.Sprintf("%s  %s", splashSubStyle.Render(m.userName), statusDot)
-		ui = lipgloss.JoinVertical(lipgloss.Left, topBar, ui)
-	}
-
-	// Footer contextual
-	ui = lipgloss.JoinVertical(lipgloss.Left, ui, footerStyle.Render(m.footerText()))
-
-	// Popup de confirmación de descarga
+	// Popups: se centran usando las dimensiones REALES ya renderizadas del panel,
+	// no vpWidth/vpHeight "crudos" — así nunca chocan con el border/padding de paneStyle.
 	if m.confirmingDownload {
 		names := make([]string, len(m.downloadTargets))
 		for i, t := range m.downloadTargets {
@@ -292,8 +282,49 @@ func (m Model) View() string {
 		}
 		question := fmt.Sprintf("¿Descargar %d archivo(s)?\n\n%s\n\n[y] Sí   [n] No", len(names), strings.Join(names, "\n  "))
 		popup := popupStyle.Render(question)
-		ui = lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, popup)
+		rightPanel = lipgloss.Place(lipgloss.Width(rightPanel), lipgloss.Height(rightPanel), lipgloss.Center, lipgloss.Center, popup)
+	} else if m.showPresenceMenu {
+		var menu string
+		menu += titleStyle.Render("Establecer Estado") + "\n\n"
+		for i, opt := range m.presenceOptions {
+			cursor := "  "
+			style := normalItemStyle
+			if i == m.presenceCursor {
+				cursor = "▶ "
+				style = selectedItemStyle
+			}
+			menu += fmt.Sprintf("%s%s %s\n", cursor, presenceSymbol(opt), style.Render(opt))
+		}
+		popup := presencePopupStyle.Render(menu)
+		rightPanel = lipgloss.Place(lipgloss.Width(rightPanel), lipgloss.Height(rightPanel), lipgloss.Center, lipgloss.Center, popup)
 	}
+
+	// Juntar paneles
+	ui := lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, rightPanel)
+
+	// Status bar superior: nombre + presencia propia, siempre visible y alineado a la derecha
+	if m.ready {
+		name := m.userName
+		if name == "" {
+			name = "Yo"
+		}
+		myStatus := "Offline"
+		if s, ok := m.presence[m.selfID]; ok && s != "" {
+			myStatus = s
+		}
+		statusDot := presenceSymbol(myStatus)
+		statusLabel := splashSubStyle.Render(fmt.Sprintf("(%s)", myStatus))
+		userInfo := fmt.Sprintf("%s %s %s", splashSubStyle.Render(name), statusDot, statusLabel)
+		topBar := lipgloss.NewStyle().Width(m.width).Align(lipgloss.Right).PaddingRight(2).Render(userInfo)
+		ui = lipgloss.JoinVertical(lipgloss.Left, topBar, ui)
+	}
+
+	// Footer contextual
+	footerLine := footerStyle.Render(m.footerText())
+	if m.presenceError != "" {
+		footerLine += "\n" + lipgloss.NewStyle().Foreground(lipgloss.Color("203")).Render("Error de presencia: "+m.presenceError)
+	}
+	ui = lipgloss.JoinVertical(lipgloss.Left, ui, footerLine)
 
 	return ui
 }
@@ -310,6 +341,8 @@ func presenceSymbol(avail string) string {
 		return lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Render("●") // rojo
 	case "Offline", "PresenceUnknown":
 		return lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render("●") // gris
+	case "Reset (Automático)":
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("252")).Render("○") // círculo hueco
 	default:
 		return lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render("●") // gris por defecto
 	}
@@ -329,15 +362,17 @@ func renderTabs(current, active ViewMode, nameA, nameB string) (string, string) 
 
 func (m Model) footerText() string {
 	switch {
+	case m.showPresenceMenu:
+		return " [↑/↓] Navegar   [Enter] Confirmar   [Esc/q] Cancelar"
 	case m.confirmingDownload:
 		return " [y] Confirmar   [n] Cancelar"
 	case m.focusLeft && m.loadedConvID == "":
-		return " [1] Equipos  [2] DMs  [↑/↓] Navegar  [Enter] Abrir  [q] Salir"
+		return " [1] Equipos  [2] DMs  [↑/↓] Navegar  [Enter] Abrir  [p] Estado  [q] Salir"
 	case !m.focusLeft && m.viewMode == ModeFiles:
-		return " [↑/↓] Navegar  [Enter] Abrir  [Space] Seleccionar  [o] Descargar  [Esc/h] Volver"
+		return " [↑/↓] Navegar  [Enter] Abrir  [Space] Seleccionar  [o] Descargar  [p] Estado  [Esc/h] Volver"
 	case !m.focusLeft && m.viewMode == ModeChat:
-		return " [↑/↓] Scroll  [i] Escribir  [f] Archivos  [Esc/h] Volver"
+		return " [↑/↓] Scroll  [i] Escribir  [f] Archivos  [p] Estado  [Esc/h] Volver"
 	default:
-		return " [1] Equipos  [2] DMs  [↑/↓] Navegar  [Enter] Abrir  [q] Salir"
+		return " [1] Equipos  [2] DMs  [↑/↓] Navegar  [Enter] Abrir  [p] Estado  [q] Salir"
 	}
 }

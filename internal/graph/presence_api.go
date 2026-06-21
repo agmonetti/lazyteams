@@ -1,11 +1,74 @@
 package graph
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 )
+
+// SetPresence actualiza el estado de presencia preferido del usuario.
+// Posibles valores para availability y activity:
+// "Available", "Busy", "DoNotDisturb", "BeRightBack", "Away", "Offline"
+func (c *Client) SetPresence(userID, availability, activity string) error {
+	endpoint := fmt.Sprintf("%s/users/%s/presence/setUserPreferredPresence", baseURL, userID)
+
+	payload := map[string]interface{}{
+		"availability":       availability,
+		"activity":           activity,
+		"expirationDuration": "PT1H", // 1 hora por defecto (Graph lo recomienda o lo exige a veces)
+	}
+	jsonBody, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequest("POST", endpoint, bytes.NewReader(jsonBody))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.GraphToken)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("error de red: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("status %d: %s", resp.StatusCode, string(body))
+	}
+
+	return nil
+}
+
+// ClearPresence borra la presencia preferida (vuelve a la presencia calculada automáticamente por Teams).
+func (c *Client) ClearPresence(userID string) error {
+	endpoint := fmt.Sprintf("%s/users/%s/presence/clearUserPreferredPresence", baseURL, userID)
+
+	req, err := http.NewRequest("POST", endpoint, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.GraphToken)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("error de red: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("status %d: %s", resp.StatusCode, string(body))
+	}
+
+	return nil
+}
 
 func (c *Client) GetPresences(userIDs []string) (map[string]string, error) {
 	if len(userIDs) == 0 {

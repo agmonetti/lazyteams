@@ -97,6 +97,22 @@ type presenceTickResultMsg struct {
 	presences map[string]string
 }
 
+type setPresenceMsg struct {
+	err error
+}
+
+func setPresenceCmd(client *graph.Client, userID, availability string) tea.Cmd {
+	return func() tea.Msg {
+		var err error
+		if availability == "Reset (Automático)" {
+			err = client.ClearPresence(userID)
+		} else {
+			err = client.SetPresence(userID, availability, availability)
+		}
+		return setPresenceMsg{err}
+	}
+}
+
 func pollPresenceCmd(client *graph.Client, userIDs []string) tea.Cmd {
 	return func() tea.Msg {
 		if len(userIDs) == 0 {
@@ -404,14 +420,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Cálculo exacto para que NO desborde el panel derecho
 		vpWidth := (m.width * 2 / 3) - 6
-		vpHeight := (m.height - 4) - 5 // Restamos 1 extra para la caja de texto
+		vpHeight := (m.height - 5) - 5 // Restamos 5 a la altura y luego 5 extra para header/input
 
 		// Ajustar tamaño del textinput
 		m.input.Width = vpWidth - 2
 
 		// Cálculo para el panel izquierdo
 		leftWidth := (m.width / 3) - 4
-		leftHeight := m.height - 6 
+		leftHeight := m.height - 7 
 
 		if !m.ready {
 			m.viewport = viewport.New(vpWidth, vpHeight)
@@ -468,7 +484,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		m.viewport.SetContent(fmt.Sprintf("Error cargando mensajes: %v", msg.err))
+		if strings.Contains(msg.err.Error(), "401") {
+			m.viewport.SetContent("Error 401: El token TEAMS_WEB_TOKEN expiró.\n\nPor favor, copiá uno nuevo desde la web de Teams (Network > 'messages' > Authorization)\ny actualizá la variable de entorno para poder leer mensajes.")
+		} else {
+			m.viewport.SetContent(fmt.Sprintf("Error cargando mensajes: %v", msg.err))
+		}
 		m.loading = false
 		return m, nil
 
@@ -548,7 +568,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var ids []string
 		for _, ch := range m.chats {
 			for _, u := range ch.Members {
-				if u.UserID != m.selfID && u.UserID != "" {
+				if u.UserID != "" {
 					if _, ok := seen[u.UserID]; !ok {
 						seen[u.UserID] = struct{}{}
 						ids = append(ids, u.UserID)
@@ -634,13 +654,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmds...)
 
 	case presenceTickMsg:
-		// Poll presencia: recolectar userIds de chats visibles
+		// Poll presencia: recolectar userIds de chats visibles (incluye self)
 		if m.workspace == WorkspaceDMs && len(m.chats) > 0 {
 			seen := make(map[string]struct{})
 			var ids []string
 			for _, ch := range m.chats {
 				for _, u := range ch.Members {
-					if u.UserID != m.selfID && u.UserID != "" {
+					if u.UserID != "" {
 						if _, ok := seen[u.UserID]; !ok {
 							seen[u.UserID] = struct{}{}
 							ids = append(ids, u.UserID)
@@ -660,6 +680,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.presence[k] = v
 		}
 		return m, nil
+
+	case setPresenceMsg:
+		if msg.err != nil {
+			m.presenceError = msg.err.Error()
+		} else {
+			m.presenceError = ""
+		}
+		// Refrescar presencia propia inmediatamente
+		if m.selfID != "" {
+			cmds = append(cmds, pollPresenceCmd(m.client, []string{m.selfID}))
+		}
+		return m, tea.Batch(cmds...)
 
 	case downloadDoneMsg:
 		m.downloading = false
@@ -686,6 +718,30 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		// Menú de presencia — intercepta teclas
+		if m.showPresenceMenu {
+			switch msg.String() {
+			case "esc", "q":
+				m.showPresenceMenu = false
+			case "up", "k":
+				if m.presenceCursor > 0 {
+					m.presenceCursor--
+				}
+			case "down", "j":
+				if m.presenceCursor < len(m.presenceOptions)-1 {
+					m.presenceCursor++
+				}
+			case "enter":
+				m.showPresenceMenu = false
+				avail := m.presenceOptions[m.presenceCursor]
+				// m.selfID ya lo tenemos desde la carga inicial
+				if m.selfID != "" {
+					cmds = append(cmds, setPresenceCmd(m.client, m.selfID, avail))
+				}
+			}
+			return m, tea.Batch(cmds...)
+		}
+
 		// Popup de confirmación de descarga — intercepta teclas antes que todo
 		if m.confirmingDownload {
 			switch msg.String() {
@@ -709,6 +765,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "q", "ctrl+c":
 			return m, tea.Quit
+
+		case "p":
+			m.showPresenceMenu = !m.showPresenceMenu
+			m.presenceCursor = 0
 
 		case "tab":
 			m.focusLeft = !m.focusLeft
