@@ -35,12 +35,14 @@ var (
 	activeTabStyle = lipgloss.NewStyle().
 		Foreground(colorFocus).
 		Bold(true).
-		Underline(true).
 		Padding(0, 1)
 
 	inactiveTabStyle = lipgloss.NewStyle().
 		Foreground(colorNormal).
 		Padding(0, 1)
+
+	tabDividerStyle = lipgloss.NewStyle().
+		Foreground(lipgloss.Color("240"))
 
 	// Gris oscuro para horas y fechas
 	metaStyle = lipgloss.NewStyle().

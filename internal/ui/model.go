@@ -94,32 +94,38 @@ type Model struct {
 	downloadStatus      string          // mensaje de resultado
 	downloadStatusID    int             // incrementa con cada descarga, evita que un clear viejo borre un status nuevo
 	downloading         bool            // true mientras se descarga
+	folderCache         map[string][]graph.DriveItem // cache de carpetas: folderID → contenido
 
 	// Input para enviar mensajes
 	input    textinput.Model
 	isTyping bool
+
+	// Usuario
+	userName string
 
 	// Polling de DMs
 	chatUnread map[string]bool  // chatID → tiene mensajes nuevos
 	presence   map[string]string // userID → Availability (Available, Busy, Away, Offline, etc.)
 }
 
-func New(client *graph.Client) Model {
+func New(client *graph.Client, userName string) Model {
 	ti := textinput.New()
 	ti.Placeholder = "Presiona 'i' para escribir un mensaje..."
 	ti.CharLimit = 1000
 	ti.Width = 50
 
 	return Model{
-		client:     client,
-		focusLeft:  true,
-		focusList:  0,
-		loading:    true,
-		input:      ti,
-		prefs:      loadPrefs(),
-		chatUnread: make(map[string]bool),
-		presence:   make(map[string]string),
+		client:       client,
+		focusLeft:    true,
+		focusList:    0,
+		loading:      true,
+		input:        ti,
+		prefs:        loadPrefs(),
+		chatUnread:   make(map[string]bool),
+		presence:     make(map[string]string),
 		selectedFiles: make(map[int]bool),
+		folderCache:  make(map[string][]graph.DriveItem),
+		userName:     userName,
 	}
 }
 

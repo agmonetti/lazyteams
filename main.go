@@ -21,8 +21,11 @@ func main() {
 	// 2. Inicializar el cliente
 	graphClient := graph.NewClient(graphToken, webToken)
 
-	// 3. (Sprint 2) Levantar la TUI y dejar que ella cargue los equipos de fondo
-	p := tea.NewProgram(ui.New(graphClient), tea.WithAltScreen())
+	// 3. Extraer nombre del usuario del token
+	userName := auth.ParseUserNameFromToken(graphToken)
+
+	// 4. Levantar la TUI
+	p := tea.NewProgram(ui.New(graphClient, userName), tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		fmt.Printf("Error fatal en la TUI: %v\n", err)
 		os.Exit(1)

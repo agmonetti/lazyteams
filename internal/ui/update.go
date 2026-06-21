@@ -27,7 +27,10 @@ type tickMsg struct{}
 type presenceTickMsg struct{}
 type messageSentMsg struct{}
 type messageSendErrMsg struct{ err error }
-type filesMsg struct{ files []graph.DriveItem }
+type filesMsg struct {
+	files    []graph.DriveItem
+	folderID string // para cachear: folderID o "root:<chanID>"
+}
 type filesErrMsg struct{ err error }
 type chatsMsg struct{ chats []graph.Chat }
 type chatsErrMsg struct{ err error }
@@ -268,13 +271,13 @@ func sendMessageCmd(client *graph.Client, channelID, content string) tea.Cmd {
 	}
 }
 
-func loadFilesCmd(client *graph.Client, teamID, channelName string) tea.Cmd {
+func loadFilesCmd(client *graph.Client, teamID, channelName, channelID string) tea.Cmd {
 	return func() tea.Msg {
 		files, err := client.GetChannelFiles(teamID, channelName)
 		if err != nil {
 			return filesErrMsg{err}
 		}
-		return filesMsg{files}
+		return filesMsg{files: files, folderID: "root:" + channelID}
 	}
 }
 
@@ -285,7 +288,6 @@ func loadFolderCmd(client *graph.Client, teamID string, node FolderNode) tea.Cmd
 			err   error
 		)
 		if node.DriveID != "" {
-			// El contenido vive en otro Drive (shortcut/remoteItem)
 			files, err = client.GetItemChildren(node.DriveID, node.ID)
 		} else {
 			files, err = client.GetFolderChildren(teamID, node.ID)
@@ -293,15 +295,23 @@ func loadFolderCmd(client *graph.Client, teamID string, node FolderNode) tea.Cmd
 		if err != nil {
 			return filesErrMsg{err}
 		}
-		return filesMsg{files}
+		return filesMsg{files: files, folderID: node.ID}
 	}
 }
 
 // formatMessages convierte la lista de mensajes en un string renderizable para el viewport
 func formatMessages(messages []graph.Message) string {
 	var content string
+	var lastDate string
 	for i := len(messages) - 1; i >= 0; i-- {
 		msg := messages[i]
+
+		// Separador sutil entre días distintos
+		msgDate := msg.CreatedAt.Local().Format("02/01/2006")
+		if lastDate != "" && msgDate != lastDate {
+			content += metaStyle.Render("─────────────────────────────────────") + "\n"
+		}
+		lastDate = msgDate
 
 		timeStr := msg.CreatedAt.Local().Format("02/01 15:04")
 		formattedTime := metaStyle.Render(fmt.Sprintf("[%s]", timeStr))
@@ -481,6 +491,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loading = false
 		m.selectedFile = 0
 		m.selectedFiles = make(map[int]bool)
+
+		// Cachear resultado
+		if msg.folderID != "" {
+			m.folderCache[msg.folderID] = msg.files
+		}
 
 		m.viewport.SetContent(renderFilesContent(&m))
 		m.viewport.GotoTop()
@@ -794,20 +809,35 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "left", "h":
 			if !m.focusLeft {
 				if m.viewMode == ModeFiles && len(m.folderStack) > 0 {
-					// Volver atrás en el árbol de directorios
-					m.loading = true
 					m.folderStack = m.folderStack[:len(m.folderStack)-1]
+					m.selectedFiles = make(map[int]bool)
 					if len(m.folderStack) == 0 {
-						// Volvimos a la raíz del canal
 						m.currentFilesDriveID = ""
-						cmds = append(cmds, loadFilesCmd(m.client, m.teams[m.selectedTeam].ID, m.channels[m.selectedChan].DisplayName))
+						// Checkear caché para la raíz
+						cacheKey := "root:" + m.channels[m.selectedChan].ID
+						if cached, ok := m.folderCache[cacheKey]; ok {
+							m.files = cached
+							m.selectedFile = 0
+							m.viewport.SetContent(renderFilesContent(&m))
+							m.viewport.GotoTop()
+						} else {
+							m.loading = true
+							cmds = append(cmds, loadFilesCmd(m.client, m.teams[m.selectedTeam].ID, m.channels[m.selectedChan].DisplayName, m.channels[m.selectedChan].ID))
+						}
 					} else {
-						// Volvimos a una subcarpeta
 						parent := m.folderStack[len(m.folderStack)-1]
 						m.currentFilesDriveID = parent.DriveID
-						cmds = append(cmds, loadFolderCmd(m.client, m.teams[m.selectedTeam].ID, parent))
+						// Checkear caché
+						if cached, ok := m.folderCache[parent.ID]; ok {
+							m.files = cached
+							m.selectedFile = 0
+							m.viewport.SetContent(renderFilesContent(&m))
+							m.viewport.GotoTop()
+						} else {
+							m.loading = true
+							cmds = append(cmds, loadFolderCmd(m.client, m.teams[m.selectedTeam].ID, parent))
+						}
 					}
-					m.selectedFiles = make(map[int]bool)
 				} else {
 					m.focusLeft = true
 				}
@@ -826,9 +856,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.workspace == WorkspaceTeams && len(m.channels) > 0 {
 					if m.viewMode == ModeChat {
 						m.viewMode = ModeFiles
-						m.loading = true
 						m.folderStack = nil
-						cmds = append(cmds, loadFilesCmd(m.client, m.teams[m.selectedTeam].ID, m.channels[m.selectedChan].DisplayName))
+						// Checkear caché para la raíz
+						cacheKey := "root:" + m.channels[m.selectedChan].ID
+						if cached, ok := m.folderCache[cacheKey]; ok {
+							m.files = cached
+							m.selectedFile = 0
+							m.selectedFiles = make(map[int]bool)
+							m.viewport.SetContent(renderFilesContent(&m))
+							m.viewport.GotoTop()
+						} else {
+							m.loading = true
+							cmds = append(cmds, loadFilesCmd(m.client, m.teams[m.selectedTeam].ID, m.channels[m.selectedChan].DisplayName, m.channels[m.selectedChan].ID))
+						}
 					} else {
 						m.viewMode = ModeChat
 						m.loading = true
@@ -935,9 +975,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else if !m.focusLeft && m.viewMode == ModeFiles && len(m.files) > 0 {
 				selected := m.files[m.selectedFile]
 				if selected.RemoteItem != nil {
-					// Shortcut (ej: "Materiales de clase" en tenants educativos nuevos):
-					// el contenido real vive en otro Drive. Navegamos con Drive/Item remoto.
-					m.loading = true
 					node := FolderNode{
 						ID:      selected.RemoteItem.ID,
 						Name:    selected.Name,
@@ -945,10 +982,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 					m.folderStack = append(m.folderStack, node)
 					m.currentFilesDriveID = node.DriveID
-					cmds = append(cmds, loadFolderCmd(m.client, m.teams[m.selectedTeam].ID, node))
+					// Checkear caché
+					if cached, ok := m.folderCache[node.ID]; ok {
+						m.files = cached
+						m.selectedFile = 0
+						m.selectedFiles = make(map[int]bool)
+						m.viewport.SetContent(renderFilesContent(&m))
+						m.viewport.GotoTop()
+					} else {
+						m.loading = true
+						cmds = append(cmds, loadFolderCmd(m.client, m.teams[m.selectedTeam].ID, node))
+					}
 				} else if selected.Folder != nil {
-					// Carpeta normal: hereda el DriveID del nodo actual
-					m.loading = true
 					currentDriveID := ""
 					if len(m.folderStack) > 0 {
 						currentDriveID = m.folderStack[len(m.folderStack)-1].DriveID
@@ -956,7 +1001,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					node := FolderNode{ID: selected.ID, Name: selected.Name, DriveID: currentDriveID}
 					m.folderStack = append(m.folderStack, node)
 					m.currentFilesDriveID = currentDriveID
-					cmds = append(cmds, loadFolderCmd(m.client, m.teams[m.selectedTeam].ID, node))
+					// Checkear caché
+					if cached, ok := m.folderCache[node.ID]; ok {
+						m.files = cached
+						m.selectedFile = 0
+						m.selectedFiles = make(map[int]bool)
+						m.viewport.SetContent(renderFilesContent(&m))
+						m.viewport.GotoTop()
+					} else {
+						m.loading = true
+						cmds = append(cmds, loadFolderCmd(m.client, m.teams[m.selectedTeam].ID, node))
+					}
 				} else {
 					// Es un archivo, abrimos
 					link := selected.DownloadUrl

@@ -8,12 +8,13 @@ import (
 )
 
 const asciiLogo = `
-___________                                  ___________    .__ 
-\__    ___/___ _____    _____   ______       \__    ___/_ __|__|
-  |    |_/ __ \\__  \  /     \ /  ___/  ______ |    | |  |  \  |
-  |    |\  ___/ / __ \|  Y Y  \\___ \  /_____/ |    | |  |  /  |
-  |____| \___  >____  /__|_|  /____  >         |____| |____/|__|
-             \/     \/      \/     \/                           `
+████████ ███████  █████  ███    ███ ███████       ████████ ██    ██ ██ 
+   ██    ██      ██   ██ ████  ████ ██               ██    ██    ██ ██ 
+   ██    █████   ███████ ██ ████ ██ ███████ █████    ██    ██    ██ ██ 
+   ██    ██      ██   ██ ██  ██  ██      ██          ██    ██    ██ ██ 
+   ██    ███████ ██   ██ ██      ██ ███████          ██     ██████  ██ 
+                                                                       
+                                                                       `
 
 
 func (m Model) View() string {
@@ -75,7 +76,6 @@ func (m Model) View() string {
 					cursor = "▶ "
 					style = selectedItemStyle
 				} else {
-					// Resaltar suave si no tiene foco activo pero está seleccionado
 					style = style.Copy().Foreground(lipgloss.Color("245"))
 				}
 			}
@@ -88,12 +88,41 @@ func (m Model) View() string {
 		leftContent += titleStyle.Render("Canales") + "\n"
 		
 		if m.channelErr != nil {
-			// Mostrar error de API de forma elegante (Ej: Materia bloqueada)
 			leftContent += lipgloss.NewStyle().Foreground(lipgloss.Color("203")).Render(fmt.Sprintf("  [Bloqueado: %v]\n", m.channelErr))
 		} else if len(m.channels) == 0 {
 			leftContent += "  (sin canales)\n"
 		} else {
-			for i, c := range m.channels {
+			// Calcular cuántos canales caben en el viewport
+			teamsLines := len(m.teams) + 3
+			viewportH := m.leftVp.Height
+			if viewportH <= 0 {
+				viewportH = m.height - 6
+			}
+			// Reservar 2 líneas para indicadores
+			maxChannels := viewportH - teamsLines - 2
+			if maxChannels < 5 {
+				maxChannels = 5
+			}
+
+			totalChans := len(m.channels)
+
+			// Sliding window: desplazar cuando el cursor supera el área visible
+			windowStart := 0
+			if m.selectedChan >= maxChannels {
+				windowStart = m.selectedChan - maxChannels + 1
+			}
+			windowEnd := windowStart + maxChannels
+			if windowEnd > totalChans {
+				windowEnd = totalChans
+			}
+
+			// Indicador de canales ocultos arriba
+			if windowStart > 0 {
+				leftContent += metaStyle.Render(fmt.Sprintf("  ... (%d arriba)\n", windowStart))
+			}
+
+			for i := windowStart; i < windowEnd; i++ {
+				c := m.channels[i]
 				cursor := "  "
 				style := normalItemStyle
 				if i == m.selectedChan {
@@ -105,6 +134,12 @@ func (m Model) View() string {
 					}
 				}
 				leftContent += fmt.Sprintf("%s%s\n", cursor, style.Render(c.DisplayName))
+			}
+
+			// Indicador de más canales abajo
+			if windowEnd < totalChans {
+				hidden := totalChans - windowEnd
+				leftContent += metaStyle.Render(fmt.Sprintf("  ... (%d más)\n", hidden))
 			}
 		}
 	}
@@ -162,18 +197,10 @@ func (m Model) View() string {
 	} else if m.workspace == WorkspaceDMs {
 		// Cabecera: solo si hay datos cargados
 		if m.loadedConvID != "" && m.loadedConvID == m.activeConversationID() && len(m.chats) > 0 && m.selectedChat < len(m.chats) {
-			tabChat := "  Mensajes  "
-			tabFiles := "  Archivos  "
-			if m.viewMode == ModeChat {
-				tabChat = activeTabStyle.Render(tabChat)
-				tabFiles = inactiveTabStyle.Render(tabFiles)
-			} else {
-				tabChat = inactiveTabStyle.Render(tabChat)
-				tabFiles = activeTabStyle.Render(tabFiles)
-			}
+			tabChat, tabFiles := renderTabs(m.viewMode, ModeChat, "Mensajes", "Archivos")
 			title := fmt.Sprintf("@ %s", m.chats[m.selectedChat].DisplayName(m.selfID))
 			header := titleStyle.Render(title)
-			rightContent += fmt.Sprintf("%s    %s%s\n\n", header, tabChat, tabFiles)
+			rightContent += fmt.Sprintf("%s\n%s %s %s\n\n", header, tabChat, tabDividerStyle.Render("·"), tabFiles)
 		}
 
 		if m.loadedConvID != "" && m.loadedConvID == m.activeConversationID() {
@@ -197,15 +224,7 @@ func (m Model) View() string {
 	} else {
 		// Cabecera: solo si hay datos cargados
 		if m.loadedConvID != "" && m.loadedConvID == m.activeConversationID() && len(m.channels) > 0 && m.selectedChan < len(m.channels) {
-			tabChat := "  Publicaciones  "
-			tabFiles := "  Archivos  "
-			if m.viewMode == ModeChat {
-				tabChat = activeTabStyle.Render(tabChat)
-				tabFiles = inactiveTabStyle.Render(tabFiles)
-			} else {
-				tabChat = inactiveTabStyle.Render(tabChat)
-				tabFiles = activeTabStyle.Render(tabFiles)
-			}
+			tabChat, tabFiles := renderTabs(m.viewMode, ModeChat, "Publicaciones", "Archivos")
 			title := fmt.Sprintf("# %s", m.channels[m.selectedChan].DisplayName)
 			if m.viewMode == ModeFiles && len(m.folderStack) > 0 {
 				for _, node := range m.folderStack {
@@ -213,7 +232,7 @@ func (m Model) View() string {
 				}
 			}
 			header := titleStyle.Render(title)
-			rightContent += fmt.Sprintf("%s    %s%s\n\n", header, tabChat, tabFiles)
+			rightContent += fmt.Sprintf("%s\n%s %s %s\n\n", header, tabChat, tabDividerStyle.Render("·"), tabFiles)
 		}
 
 		if m.viewMode == ModeChat {
@@ -249,6 +268,13 @@ func (m Model) View() string {
 	// Juntar paneles
 	ui := lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, rightPanel)
 
+	// Status bar superior
+	if m.userName != "" && m.ready {
+		statusDot := lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Render("●")
+		topBar := fmt.Sprintf("%s  %s", splashSubStyle.Render(m.userName), statusDot)
+		ui = lipgloss.JoinVertical(lipgloss.Left, topBar, ui)
+	}
+
 	// Footer contextual
 	ui = lipgloss.JoinVertical(lipgloss.Left, ui, footerStyle.Render(m.footerText()))
 
@@ -281,6 +307,18 @@ func presenceSymbol(avail string) string {
 	default:
 		return lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render("●") // gris por defecto
 	}
+}
+
+func renderTabs(current, active ViewMode, nameA, nameB string) (string, string) {
+	var tabA, tabB string
+	if current == active {
+		tabA = activeTabStyle.Render("[ " + nameA + " ]")
+		tabB = inactiveTabStyle.Render("[ " + nameB + " ]")
+	} else {
+		tabA = inactiveTabStyle.Render("[ " + nameA + " ]")
+		tabB = activeTabStyle.Render("[ " + nameB + " ]")
+	}
+	return tabA, tabB
 }
 
 func (m Model) footerText() string {
