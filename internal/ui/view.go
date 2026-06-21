@@ -7,6 +7,15 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+const asciiLogo = `
+___________                                  ___________    .__ 
+\__    ___/___ _____    _____   ______       \__    ___/_ __|__|
+  |    |_/ __ \\__  \  /     \ /  ___/  ______ |    | |  |  \  |
+  |    |\  ___/ / __ \|  Y Y  \\___ \  /_____/ |    | |  |  /  |
+  |____| \___  >____  /__|_|  /____  >         |____| |____/|__|
+             \/     \/      \/     \/                           `
+
+
 func (m Model) View() string {
 	if m.err != nil {
 		return fmt.Sprintf("\n[!] Error: %v\n\nPresiona 'q' para salir.\n", m.err)
@@ -114,14 +123,47 @@ func (m Model) View() string {
 	leftPanel := lStyle.Render(leftContent)
 
 	// === Panel Derecho ===
+	vpWidth := (m.width * 2 / 3) - 4
+	vpHeight := m.height - 4
 	rightContent := ""
-	if m.loading {
-		rightContent = "Cargando...\n"
+
+	// Estado de carga: solo mostrar "Cargando..." en el splash
+	if m.loading && m.focusLeft {
+		splashContent := lipgloss.JoinVertical(lipgloss.Center,
+			splashLogoStyle.Render(asciiLogo),
+			"",
+			splashTitleStyle.Render("Microsoft Teams Terminal UI"),
+			splashSubStyle.Render("v1.0.0-beta"),
+			"",
+			splashHintStyle.Render("[↑/↓] Navegar equipos  ·  [Enter] Abrir canal"),
+			"",
+			splashHintStyle.Render("Cargando..."),
+		)
+		if m.ready {
+			rightContent = lipgloss.Place(vpWidth, vpHeight, lipgloss.Center, lipgloss.Center, splashContent)
+		} else {
+			rightContent = "Cargando..."
+		}
+	} else if m.focusLeft && m.loadedConvID == "" {
+		// === SPLASH SCREEN ===
+		splashContent := lipgloss.JoinVertical(lipgloss.Center,
+			splashLogoStyle.Render(asciiLogo),
+			"",
+			splashTitleStyle.Render("Microsoft Teams Terminal UI"),
+			splashSubStyle.Render("v1.0.0-beta"),
+			"",
+			splashHintStyle.Render("[↑/↓] Navegar equipos  ·  [Enter] Abrir canal"),
+		)
+		if m.ready {
+			rightContent = lipgloss.Place(vpWidth, vpHeight, lipgloss.Center, lipgloss.Center, splashContent)
+		} else {
+			rightContent = splashContent
+		}
 	} else if m.workspace == WorkspaceDMs {
-		if len(m.chats) > 0 && m.selectedChat < len(m.chats) {
+		// Cabecera: solo si hay datos cargados
+		if m.loadedConvID != "" && m.loadedConvID == m.activeConversationID() && len(m.chats) > 0 && m.selectedChat < len(m.chats) {
 			tabChat := "  Mensajes  "
 			tabFiles := "  Archivos  "
-
 			if m.viewMode == ModeChat {
 				tabChat = activeTabStyle.Render(tabChat)
 				tabFiles = inactiveTabStyle.Render(tabFiles)
@@ -129,16 +171,17 @@ func (m Model) View() string {
 				tabChat = inactiveTabStyle.Render(tabChat)
 				tabFiles = activeTabStyle.Render(tabFiles)
 			}
-
 			title := fmt.Sprintf("@ %s", m.chats[m.selectedChat].DisplayName(m.selfID))
 			header := titleStyle.Render(title)
 			rightContent += fmt.Sprintf("%s    %s%s\n\n", header, tabChat, tabFiles)
 		}
-		
+
 		if m.loadedConvID != "" && m.loadedConvID == m.activeConversationID() {
 			rightContent += m.viewport.View() + "\n"
-		} else {
-			rightContent += helpStyle.Render("Presioná Enter para abrir este chat.") + "\n"
+		} else if !m.focusLeft {
+			//Centrar texto de ayuda cuando no hay conversación cargada
+			emptyState := helpStyle.Render("Presioná Enter para abrir este chat.")
+			rightContent = lipgloss.Place(vpWidth, vpHeight, lipgloss.Center, lipgloss.Center, emptyState)
 		}
 
 		if !m.focusLeft && m.viewMode == ModeChat {
@@ -152,10 +195,10 @@ func (m Model) View() string {
 			rightContent += m.input.View()
 		}
 	} else {
-		if len(m.channels) > 0 && m.selectedChan < len(m.channels) {
+		// Cabecera: solo si hay datos cargados
+		if m.loadedConvID != "" && m.loadedConvID == m.activeConversationID() && len(m.channels) > 0 && m.selectedChan < len(m.channels) {
 			tabChat := "  Publicaciones  "
 			tabFiles := "  Archivos  "
-
 			if m.viewMode == ModeChat {
 				tabChat = activeTabStyle.Render(tabChat)
 				tabFiles = inactiveTabStyle.Render(tabFiles)
@@ -163,7 +206,6 @@ func (m Model) View() string {
 				tabChat = inactiveTabStyle.Render(tabChat)
 				tabFiles = activeTabStyle.Render(tabFiles)
 			}
-
 			title := fmt.Sprintf("# %s", m.channels[m.selectedChan].DisplayName)
 			if m.viewMode == ModeFiles && len(m.folderStack) > 0 {
 				for _, node := range m.folderStack {
@@ -171,22 +213,20 @@ func (m Model) View() string {
 				}
 			}
 			header := titleStyle.Render(title)
-			// Agregamos el header y los tabs
 			rightContent += fmt.Sprintf("%s    %s%s\n\n", header, tabChat, tabFiles)
 		}
-		
+
 		if m.viewMode == ModeChat {
 			if m.loadedConvID != "" && m.loadedConvID == m.activeConversationID() {
 				rightContent += m.viewport.View() + "\n"
-			} else {
-				rightContent += helpStyle.Render("Presioná Enter para abrir este canal.") + "\n"
+			} else if !m.focusLeft {
+				emptyState := helpStyle.Render("Presioná Enter para abrir este canal.")
+				rightContent = lipgloss.Place(vpWidth, vpHeight, lipgloss.Center, lipgloss.Center, emptyState)
 			}
 		} else {
-			// Modo Archivos - Renderizar viewport normalmente
 			rightContent += m.viewport.View() + "\n"
 		}
 
-		// Renderizar la barra de texto solo en modo chat
 		if !m.focusLeft && m.viewMode == ModeChat && m.loadedConvID == m.activeConversationID() {
 			if m.isTyping {
 				m.input.PromptStyle = selectedItemStyle
@@ -200,19 +240,17 @@ func (m Model) View() string {
 	}
 
 	// Aplicar estilos al panel derecho
-	rStyle := paneStyle.Width((m.width * 2 / 3) - 4).Height(m.height - 4)
+	rStyle := paneStyle.Width(vpWidth).Height(vpHeight)
 	if !m.focusLeft {
-		rStyle = focusedPaneStyle.Width((m.width * 2 / 3) - 4).Height(m.height - 4)
+		rStyle = focusedPaneStyle.Width(vpWidth).Height(vpHeight)
 	}
 	rightPanel := rStyle.Render(rightContent)
 
 	// Juntar paneles
 	ui := lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, rightPanel)
 
-	// Footer (ayuda)
-	help := helpStyle.Render(" [1] Equipos  [2] DMs  [↑/↓] Navegar   [Enter] Leer   [i] Escribir   [f] Archivos   [Space] Sel   [o] Descargar   [Esc/h] Volver   [q] Salir")
-
-	ui = lipgloss.JoinVertical(lipgloss.Left, ui, help)
+	// Footer contextual
+	ui = lipgloss.JoinVertical(lipgloss.Left, ui, footerStyle.Render(m.footerText()))
 
 	// Popup de confirmación de descarga
 	if m.confirmingDownload {
@@ -242,5 +280,20 @@ func presenceSymbol(avail string) string {
 		return lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render("●") // gris
 	default:
 		return lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render("●") // gris por defecto
+	}
+}
+
+func (m Model) footerText() string {
+	switch {
+	case m.confirmingDownload:
+		return " [y] Confirmar   [n] Cancelar"
+	case m.focusLeft && m.loadedConvID == "":
+		return " [1] Equipos  [2] DMs  [↑/↓] Navegar  [Enter] Abrir  [q] Salir"
+	case !m.focusLeft && m.viewMode == ModeFiles:
+		return " [↑/↓] Navegar  [Enter] Abrir  [Space] Seleccionar  [o] Descargar  [Esc/h] Volver"
+	case !m.focusLeft && m.viewMode == ModeChat:
+		return " [↑/↓] Scroll  [i] Escribir  [f] Archivos  [Esc/h] Volver"
+	default:
+		return " [1] Equipos  [2] DMs  [↑/↓] Navegar  [Enter] Abrir  [q] Salir"
 	}
 }

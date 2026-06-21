@@ -58,4 +58,22 @@ var (
 		Padding(1, 3).
 		Foreground(colorText).
 		Bold(true)
+
+	// Splash screen
+	splashLogoStyle = lipgloss.NewStyle().
+		Foreground(lipgloss.Color("62")). // Indigo
+		Bold(true)
+
+	splashTitleStyle = lipgloss.NewStyle().
+		Foreground(colorFocus).
+		Bold(true)
+
+	splashSubStyle = lipgloss.NewStyle().
+		Foreground(colorNormal)
+
+	splashHintStyle = lipgloss.NewStyle().
+		Foreground(lipgloss.Color("243"))
+
+	// Footer contextual
+	footerStyle = helpStyle
 )

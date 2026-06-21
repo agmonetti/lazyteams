@@ -526,13 +526,30 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.chatsLoaded = true
 		m.loading = false
 		m.selectedChat = 0
-		
+
+		// Disparar presencia inmediatamente al cargar chats
+		seen := make(map[string]struct{})
+		var ids []string
+		for _, ch := range m.chats {
+			for _, u := range ch.Members {
+				if u.UserID != m.selfID && u.UserID != "" {
+					if _, ok := seen[u.UserID]; !ok {
+						seen[u.UserID] = struct{}{}
+						ids = append(ids, u.UserID)
+					}
+				}
+			}
+		}
+		if len(ids) > 0 {
+			cmds = append(cmds, pollPresenceCmd(m.client, ids))
+		}
+
 		// Encadenamos el autodescubrimiento asíncrono pasándole el caché si existe
 		if m.selfID != "" {
 			cachedID := m.prefs.SelfChatIDs[m.selfID]
 			return m, discoverSelfChatCmd(m.client, m.selfID, cachedID)
 		}
-		return m, nil
+		return m, tea.Batch(cmds...)
 
 	case selfChatDiscoveredMsg:
 		// Si lo descubrió recién ahora por fuerza bruta, lo guardamos en disco
@@ -899,6 +916,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.focusLeft = false
 				m.isTyping = false
 				m.viewMode = ModeChat // OBLIGATORIO RESETEAR
+				m.selectedFiles = make(map[int]bool)
+				m.folderStack = nil
 				chatID := m.chats[m.selectedChat].ID
 				m.loadedConvID = chatID
 				delete(m.chatUnread, chatID) // Limpiar badge al abrir
@@ -908,6 +927,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.focusLeft = false
 				m.isTyping = false
 				m.viewMode = ModeChat // OBLIGATORIO RESETEAR
+				m.selectedFiles = make(map[int]bool)
+				m.folderStack = nil
 				chanID := m.channels[m.selectedChan].ID
 				m.loadedConvID = chanID
 				cmds = append(cmds, loadMessagesCmd(m.client, m.teams[m.selectedTeam].ID, chanID, 200))
