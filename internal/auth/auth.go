@@ -5,10 +5,40 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
+// loadTokensFile carga el archivo de tokens en el entorno si existe.
+// Las variables de entorno existentes tienen prioridad sobre el archivo.
+func loadTokensFile() {
+	path := filepath.Join(os.Getenv("HOME"), ".config", "teamstui", "tokens.env")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return // archivo no existe, continuar con env vars
+	}
+
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		line = strings.TrimPrefix(line, "export ")
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		key := strings.TrimSpace(parts[0])
+		val := strings.Trim(strings.TrimSpace(parts[1]), `"`)
+		if os.Getenv(key) == "" {
+			os.Setenv(key, val)
+		}
+	}
+}
+
 func GetTokens() (string, string, string, string, string, string, error) {
+	loadTokensFile()
+
 	graphToken := os.Getenv("MS_GRAPH_TOKEN")
 	webToken := os.Getenv("TEAMS_WEB_TOKEN")
 	notifToken := os.Getenv("TEAMS_NOTIF_TOKEN")
@@ -17,7 +47,10 @@ func GetTokens() (string, string, string, string, string, string, error) {
 	eduCookie := os.Getenv("EDU_COOKIE")
 
 	if graphToken == "" || webToken == "" {
-		return "", "", "", "", "", "", errors.New("Faltan tokens de entorno.\nAsegurate de exportar MS_GRAPH_TOKEN y TEAMS_WEB_TOKEN.")
+		return "", "", "", "", "", "", errors.New(
+			"Tokens no encontrados.\n\n" +
+			"Corré primero: ./msTTui-auth\n" +
+			"para capturar los tokens automáticamente.")
 	}
 	if cookie == "" {
 		return "", "", "", "", "", "", errors.New("Falta TEAMS_COOKIE en el entorno.")
