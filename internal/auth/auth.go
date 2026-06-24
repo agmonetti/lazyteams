@@ -8,26 +8,28 @@ import (
 	"strings"
 )
 
-// GetTokens lee ambos tokens JWT desde el entorno.
-func GetTokens() (string, string, error) {
+func GetTokens() (string, string, string, string, string, string, error) {
 	graphToken := os.Getenv("MS_GRAPH_TOKEN")
 	webToken := os.Getenv("TEAMS_WEB_TOKEN")
+	notifToken := os.Getenv("TEAMS_NOTIF_TOKEN")
+	eduToken := os.Getenv("EDU_TOKEN")
 	cookie := os.Getenv("TEAMS_COOKIE")
+	eduCookie := os.Getenv("EDU_COOKIE")
 
 	if graphToken == "" || webToken == "" {
-		return "", "", errors.New("Faltan tokens de entorno.\nAsegurate de exportar MS_GRAPH_TOKEN y TEAMS_WEB_TOKEN.")
+		return "", "", "", "", "", "", errors.New("Faltan tokens de entorno.\nAsegurate de exportar MS_GRAPH_TOKEN y TEAMS_WEB_TOKEN.")
 	}
 	if cookie == "" {
-		return "", "", errors.New("Falta TEAMS_COOKIE en el entorno.\nAsegurate de exportar la cookie capturada desde el navegador.")
+		return "", "", "", "", "", "", errors.New("Falta TEAMS_COOKIE en el entorno.")
 	}
 
-	graphToken = strings.TrimPrefix(graphToken, "Bearer ")
-	graphToken = strings.TrimSpace(graphToken)
+	graphToken = strings.TrimSpace(strings.TrimPrefix(graphToken, "Bearer "))
+	webToken = strings.TrimSpace(strings.TrimPrefix(webToken, "Bearer "))
+	notifToken = strings.TrimSpace(strings.TrimPrefix(notifToken, "Bearer "))
+	eduToken = strings.TrimSpace(strings.TrimPrefix(eduToken, "Bearer "))
+	eduCookie = strings.TrimSpace(eduCookie)
 
-	webToken = strings.TrimPrefix(webToken, "Bearer ")
-	webToken = strings.TrimSpace(webToken)
-
-	return graphToken, webToken, nil
+	return graphToken, webToken, notifToken, eduToken, cookie, eduCookie, nil
 }
 
 func ParseUserNameFromToken(token string) string {

@@ -6,6 +6,7 @@ var (
 	colorFocus  = lipgloss.Color("62") // Indigo
 	colorNormal = lipgloss.Color("240") // Dark gray
 	colorText   = lipgloss.Color("252")
+	colorRed    = lipgloss.Color("9") // Rojo
 
 	titleStyle = lipgloss.NewStyle().
 		Bold(true).
@@ -30,6 +31,10 @@ var (
 	helpStyle = lipgloss.NewStyle().
 		Foreground(colorNormal).
 		MarginTop(1)
+
+	errorStyle = lipgloss.NewStyle().
+		Foreground(colorRed).
+		Bold(true)
 
 	// Estilos para el Navbar
 	activeTabStyle = lipgloss.NewStyle().

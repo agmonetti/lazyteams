@@ -32,6 +32,20 @@ type messagesMsg struct {
 	messages []graph.Message
 }
 
+type notificationsMsg struct {
+	items []graph.NotificationItem
+}
+type notificationsErrMsg struct {
+	err error
+}
+
+type assignmentsMsg struct {
+	items []graph.Assignment
+}
+type assignmentsErrMsg struct {
+	err error
+}
+
 type ViewMode int
 
 const (
@@ -39,11 +53,22 @@ const (
 	ModeFiles
 )
 
+type ActivityFilter int
+
+const (
+	FilterAll      ActivityFilter = iota
+	FilterUpcoming                 // Próximamente (vence en ≤7 días)
+	FilterOverdue                  // Vencida
+	FilterCompleted                // Completada/Entregada
+)
+
 type Workspace int
 
 const (
-	WorkspaceTeams Workspace = iota
+	WorkspaceTeams       Workspace = iota
 	WorkspaceDMs
+	WorkspaceActivity
+	WorkspaceAssignments
 )
 
 type FolderNode struct {
@@ -96,6 +121,9 @@ type Model struct {
 	downloading         bool            // true mientras se descarga
 	folderCache         map[string][]graph.DriveItem // cache de carpetas: folderID → contenido
 
+	// Mapa channelID → teamID para navegación desde notificaciones
+	channelToTeam map[string]string
+
 	// Input para enviar mensajes
 	input    textinput.Model
 	isTyping bool
@@ -111,6 +139,21 @@ type Model struct {
 
 	// Ventana deslizante para canales
 	channelWindowStart int
+
+	// Activity / Notificaciones
+	notifications      []graph.NotificationItem
+	notifLoaded        bool
+	selectedNotif      int
+	notifErr           error
+	activityFilter     ActivityFilter
+
+
+	// Assignments / Tareas
+	assignments      []graph.Assignment
+	assignLoaded     bool
+	selectedAssign   int
+	assignErr        error
+	assignFilter     ActivityFilter
 
 	// Polling de DMs
 	chatUnread map[string]bool  // chatID → tiene mensajes nuevos
@@ -134,6 +177,7 @@ func New(client *graph.Client, userName string) Model {
 		presence:     make(map[string]string),
 		selectedFiles: make(map[int]bool),
 		folderCache:  make(map[string][]graph.DriveItem),
+		channelToTeam: make(map[string]string),
 		userName:     userName,
 		presenceOptions: []string{"Available", "Busy", "DoNotDisturb", "BeRightBack", "Away", "Reset (Automático)"},
 	}

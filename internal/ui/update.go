@@ -41,6 +41,12 @@ type selfChatDiscoveredMsg struct {
 	newlyDiscovered bool
 }
 
+type navigateToThreadMsg struct {
+	threadID string
+	teamID   string
+	channels []graph.Channel
+}
+
 func refreshTickCmd() tea.Cmd {
 	return tea.Tick(pollInterval*time.Second, func(t time.Time) tea.Msg {
 		return tickMsg{}
@@ -123,6 +129,47 @@ func pollPresenceCmd(client *graph.Client, userIDs []string) tea.Cmd {
 			return nil // falla silenciosa
 		}
 		return presenceTickResultMsg{presences}
+	}
+}
+
+func loadNotificationsCmd(client *graph.Client) tea.Cmd {
+	return func() tea.Msg {
+		items, err := client.FetchNotifications()
+		if err != nil {
+			return notificationsErrMsg{err}
+		}
+		return notificationsMsg{items}
+	}
+}
+
+func loadAssignmentsCmd(client *graph.Client) tea.Cmd {
+	return func() tea.Msg {
+		items, err := client.FetchAssignments()
+		if err != nil {
+			return assignmentsErrMsg{err}
+		}
+		return assignmentsMsg{items}
+	}
+}
+
+func navigateToThreadCmd(client *graph.Client, teams []graph.Team, threadID string) tea.Cmd {
+	return func() tea.Msg {
+		for _, team := range teams {
+			channels, err := client.GetChannels(team.ID)
+			if err != nil {
+				continue
+			}
+			for _, ch := range channels {
+				if ch.ID == threadID {
+					return navigateToThreadMsg{
+						threadID: threadID,
+						teamID:   team.ID,
+						channels: channels,
+					}
+				}
+			}
+		}
+		return nil
 	}
 }
 
@@ -418,30 +465,48 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 
-		// Cálculo exacto para que NO desborde el panel derecho
-		vpWidth := (m.width * 2 / 3) - 6
-		vpHeight := (m.height - 5) - 5 // Restamos 5 a la altura y luego 5 extra para header/input
+		// Altura total disponible para los paneles (dejamos 1 línea para topBar y 1 para footer)
+		panelOuterHeight := m.height - 2
+
+		// Dimensiones EXTERNAS del panel izquierdo
+		leftOuterWidth := (m.width / 3) - 2
+
+		// Dimensiones EXTERNAS del panel derecho
+		rightOuterWidth := m.width - leftOuterWidth
+
+		// El estilo `paneStyle` tiene Border (2 líneas) y Padding(0, 1) (2 columnas)
+		// Por lo tanto, las dimensiones INTERNAS son Outer - 2 (alto) y Outer - 4 (ancho)
+
+		leftInnerWidth := leftOuterWidth - 4
+		leftInnerHeight := panelOuterHeight - 2
+
+		rightInnerWidth := rightOuterWidth - 4
+		rightInnerHeight := panelOuterHeight - 2
+
+		// Para el viewport derecho, hay que descontar el header (4 líneas) y el input (1 línea) si aplican
+		// Usamos un tamaño seguro
+		vpInnerHeight := rightInnerHeight - 5
 
 		// Ajustar tamaño del textinput
-		m.input.Width = vpWidth - 2
-
-		// Cálculo para el panel izquierdo
-		leftWidth := (m.width / 3) - 4
-		leftHeight := m.height - 7 
+		m.input.Width = rightInnerWidth - 2
 
 		if !m.ready {
-			m.viewport = viewport.New(vpWidth, vpHeight)
-			m.leftVp = viewport.New(leftWidth, leftHeight)
+			m.viewport = viewport.New(rightInnerWidth, vpInnerHeight)
+			m.leftVp = viewport.New(leftInnerWidth, leftInnerHeight)
 			m.ready = true
 		} else {
-			m.viewport.Width = vpWidth
-			m.viewport.Height = vpHeight
-			m.leftVp.Width = leftWidth
-			m.leftVp.Height = leftHeight
+			m.viewport.Width = rightInnerWidth
+			m.viewport.Height = vpInnerHeight
+			m.leftVp.Width = leftInnerWidth
+			m.leftVp.Height = leftInnerHeight
 		}
 
 	case errMsg:
-		m.err = msg.err
+		if strings.Contains(msg.err.Error(), "Lifetime validation failed") {
+			m.err = fmt.Errorf("El token MS_GRAPH_TOKEN expiró.\n\nPor favor, ingresá a Graph Explorer, copiá un nuevo Access Token\ny actualizá la variable de entorno.")
+		} else {
+			m.err = msg.err
+		}
 		m.loading = false
 		return m, nil
 
@@ -541,6 +606,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.messages = nil
 		m.channelErr = nil
 		m.loading = false
+		// Poblar el mapa channelID → teamID
+		for _, ch := range msg.channels {
+			m.channelToTeam[ch.ID] = msg.teamID
+		}
 		return m, nil
 
 	case meMsg:
@@ -553,7 +622,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case chatsErrMsg:
-		m.err = msg.err
+		if strings.Contains(msg.err.Error(), "Lifetime validation failed") {
+			m.err = fmt.Errorf("El token MS_GRAPH_TOKEN expiró.\n\nPor favor, ingresá a Graph Explorer, copiá un nuevo Access Token\ny actualizá la variable de entorno.")
+		} else {
+			m.err = msg.err
+		}
 		m.loading = false
 		return m, nil
 
@@ -681,6 +754,52 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case notificationsMsg:
+		m.notifications = msg.items
+		m.notifLoaded = true
+		m.notifErr = nil
+		return m, nil
+
+	case notificationsErrMsg:
+		m.notifErr = msg.err
+		m.notifLoaded = true
+		return m, nil
+
+	case assignmentsMsg:
+		m.assignments = msg.items
+		m.assignLoaded = true
+		m.assignErr = nil
+		return m, nil
+
+	case assignmentsErrMsg:
+		m.assignErr = msg.err
+		m.assignLoaded = true
+		return m, nil
+
+	case navigateToThreadMsg:
+		for _, ch := range msg.channels {
+			m.channelToTeam[ch.ID] = msg.teamID
+		}
+		for i, t := range m.teams {
+			if t.ID == msg.teamID {
+				m.selectedTeam = i
+				break
+			}
+		}
+		m.channels = msg.channels
+		m.workspace = WorkspaceTeams
+		m.focusLeft = false
+		m.viewMode = ModeChat
+		m.loadedConvID = msg.threadID
+		m.loading = true
+		for i, ch := range msg.channels {
+			if ch.ID == msg.threadID {
+				m.selectedChan = i
+				break
+			}
+		}
+		return m, loadMessagesCmd(m.client, msg.teamID, msg.threadID, 200)
+
 	case setPresenceMsg:
 		if msg.err != nil {
 			m.presenceError = msg.err.Error()
@@ -786,6 +905,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				cmds = append(cmds, loadChatsCmd(m.client))
 			}
 
+		case "3":
+			m.workspace = WorkspaceActivity
+			m.focusLeft = true
+			if !m.notifLoaded {
+				m.loading = true
+				m.selectedNotif = 0
+				cmds = append(cmds, loadNotificationsCmd(m.client))
+			}
+
+		case "4":
+			m.workspace = WorkspaceAssignments
+			m.focusLeft = true
+			if !m.assignLoaded {
+				m.loading = true
+				m.selectedAssign = 0
+				cmds = append(cmds, loadAssignmentsCmd(m.client))
+			}
+
 		case "esc":
 			if !m.focusLeft {
 				m.focusLeft = true
@@ -805,6 +942,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							m.loading = true
 							cmds = append(cmds, loadMessagesCmd(m.client, "", m.loadedConvID, 200))
 						}
+					}
+			} else if m.workspace == WorkspaceActivity {
+				if len(m.notifications) > 0 && m.selectedNotif > 0 {
+					m.selectedNotif--
+				}
+				} else if m.workspace == WorkspaceAssignments {
+					filtered := filteredAssignments(m)
+					if len(filtered) > 0 && m.selectedAssign > 0 {
+						m.selectedAssign--
 					}
 				} else if m.focusList == 0 && len(m.teams) > 0 {
 					if m.selectedTeam > 0 {
@@ -849,6 +995,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							cmds = append(cmds, loadMessagesCmd(m.client, "", m.loadedConvID, 200))
 						}
 					}
+			} else if m.workspace == WorkspaceActivity {
+				if len(m.notifications) > 0 && m.selectedNotif < len(m.notifications)-1 {
+					m.selectedNotif++
+				}
+				} else if m.workspace == WorkspaceAssignments {
+					filtered := filteredAssignments(m)
+					if len(filtered) > 0 && m.selectedAssign < len(filtered)-1 {
+						m.selectedAssign++
+					}
 				} else if m.focusList == 0 && len(m.teams) > 0 {
 					if m.selectedTeam < len(m.teams)-1 {
 						m.selectedTeam++
@@ -888,7 +1043,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case "left", "h":
-			if !m.focusLeft {
+			if m.focusLeft && m.workspace == WorkspaceActivity {
+				if m.activityFilter > FilterAll {
+					m.activityFilter--
+					m.selectedNotif = 0
+				}
+			} else if m.focusLeft && m.workspace == WorkspaceAssignments {
+				if m.assignFilter > FilterAll {
+					m.assignFilter--
+					m.selectedAssign = 0
+				}
+			} else if !m.focusLeft {
 				if m.viewMode == ModeFiles && len(m.folderStack) > 0 {
 					m.folderStack = m.folderStack[:len(m.folderStack)-1]
 					m.selectedFiles = make(map[int]bool)
@@ -927,7 +1092,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case "right", "l":
-			if m.focusLeft && m.workspace == WorkspaceTeams {
+			if m.focusLeft && m.workspace == WorkspaceActivity {
+				if m.activityFilter < FilterOverdue {
+					m.activityFilter++
+					m.selectedNotif = 0
+				}
+			} else if m.focusLeft && m.workspace == WorkspaceAssignments {
+				if m.assignFilter < FilterCompleted {
+					m.assignFilter++
+					m.selectedAssign = 0
+				}
+			} else if m.focusLeft && m.workspace == WorkspaceTeams {
 				m.focusList = 1
 			}
 
@@ -997,8 +1172,36 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.viewport.SetContent(renderFilesContent(&m))
 			}
 
-		case "o":
-			// Abrir popup de confirmación de descarga
+	case "o":
+		// En WorkspaceActivity, panel derecho: navegar al canal de la notificación
+		if m.workspace == WorkspaceActivity && !m.focusLeft {
+			if m.selectedNotif < len(m.notifications) {
+				n := m.notifications[m.selectedNotif]
+				if n.SourceThread != "" {
+					teamID, known := m.channelToTeam[n.SourceThread]
+					if known {
+						// Hit en caché — navegación directa sin red
+						for i, t := range m.teams {
+							if t.ID == teamID {
+								m.selectedTeam = i
+								break
+							}
+						}
+						m.workspace    = WorkspaceTeams
+						m.focusLeft    = false
+						m.viewMode     = ModeChat
+						m.loadedConvID = n.SourceThread
+						m.loading      = true
+						cmds = append(cmds, loadMessagesCmd(m.client, teamID, n.SourceThread, 200))
+					} else {
+						// Miss — buscar async en todos los equipos
+						cmds = append(cmds, navigateToThreadCmd(m.client, m.teams, n.SourceThread))
+					}
+				}
+			}
+			return m, tea.Batch(cmds...)
+		}
+		// Abrir popup de confirmación de descarga
 			if !m.confirmingDownload && !m.focusLeft && m.viewMode == ModeFiles && len(m.files) > 0 {
 				var targets []graph.DriveItem
 				if len(m.selectedFiles) > 0 {
@@ -1014,6 +1217,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.downloadTargets = targets
 					m.confirmingDownload = true
 				}
+			}
+
+		case "r":
+			if m.workspace == WorkspaceActivity && m.notifErr != nil {
+				m.notifErr = nil
+				m.notifLoaded = false
+				return m, loadNotificationsCmd(m.client)
 			}
 
 		case "c", "C":
@@ -1032,7 +1242,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case "enter":
-			if m.focusLeft && m.workspace == WorkspaceDMs && len(m.chats) > 0 {
+			if m.focusLeft && m.workspace == WorkspaceActivity && len(m.notifications) > 0 {
+				m.focusLeft = false
+			} else if m.focusLeft && m.workspace == WorkspaceAssignments {
+				m.focusLeft = false
+			} else if m.focusLeft && m.workspace == WorkspaceDMs && len(m.chats) > 0 {
 				m.loading = true
 				m.focusLeft = false
 				m.isTyping = false

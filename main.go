@@ -11,15 +11,15 @@ import (
 )
 
 func main() {
-	// 1. Obtener los tokens del entorno (BYOT Dual)
-	graphToken, webToken, err := auth.GetTokens()
+	// 1. Obtener los tokens del entorno
+	graphToken, webToken, notifToken, eduToken, cookie, eduCookie, err := auth.GetTokens()
 	if err != nil {
 		fmt.Println("Error de Autenticación:\n", err)
 		os.Exit(1)
 	}
 
 	// 2. Inicializar el cliente
-	graphClient := graph.NewClient(graphToken, webToken)
+	graphClient := graph.NewClient(graphToken, webToken, notifToken, eduToken, cookie, eduCookie)
 
 	// 3. Extraer nombre del usuario del token
 	userName := auth.ParseUserNameFromToken(graphToken)

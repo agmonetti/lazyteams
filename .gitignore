@@ -2,11 +2,15 @@ tokens.json
 # Binarios
 msTTui
 teamsTUI
+main
 *.exe
 
 # Archivos de debug
 debug_mensajes.json
+debug_api.go
+cmd/
 
 # Entorno
 .env
 debug_*.json
+.plan/
