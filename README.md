@@ -91,7 +91,7 @@ msTTui/
 
 ## Documentación
 
-**[Documentación completa](https://msttui-docs.pages.dev)** — Atajos de teclado, configuración, limitaciones, guía de desarrollo y más.
+**[Documentación completa](https://ms-teams-tui.agmonetti.workers.dev/)** — Atajos de teclado, configuración, limitaciones, guía de desarrollo y más.
 
 ## Seguridad
 
