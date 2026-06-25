@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 )
 
 // SetPresence actualiza el estado de presencia preferido del usuario.
@@ -90,9 +91,15 @@ func (c *Client) GetPresences(userIDs []string) (map[string]string, error) {
 		}(uid)
 	}
 
+	errCount := 0
 	for range userIDs {
 		r := <-ch
-		if r.err == nil && r.avail != "" {
+		if r.err != nil {
+			errCount++
+			if errCount == 1 {
+				fmt.Fprintf(os.Stderr, "[presence] error: %v\n", r.err)
+			}
+		} else if r.avail != "" {
 			result[r.id] = r.avail
 		}
 	}
@@ -120,7 +127,7 @@ func (c *Client) getPresence(userID string) (string, error) {
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("presence %d", resp.StatusCode)
+		return "", fmt.Errorf("presence %d: %s", resp.StatusCode, string(body))
 	}
 
 	var res struct {
