@@ -30,25 +30,20 @@ func (m Model) View() string {
 	}
 
 	// Altura total disponible para los paneles
-	// 2 líneas: 1 para footer + 1 para topBar (cuando m.ready)
-	// Si m.ready es false, solo 1 para footer
-	panelOuterHeight := m.height - 2
-
-	// Si hay topBar (m.ready), necesitamos 1 línea más para arriba
-	if m.ready {
-		panelOuterHeight = m.height - 3
+	// topBar(2) + footer(2) + borde panel superior+inferior(2) = 6
+	if m.width == 0 || m.height == 0 {
+		return ""
 	}
+	panelOuterHeight := m.height - 6
 
-	// Dimensiones EXTERNAS del panel izquierdo
-	leftOuterWidth := (m.width / 3) - 2
-
-	// Dimensiones EXTERNAS del panel derecho
-	rightOuterWidth := m.width - leftOuterWidth
+	available       := m.width - 4   // overhead real: +2 por panel × 2 paneles
+	leftOuterWidth  := available / 3
+	rightOuterWidth := available - leftOuterWidth
 
 	// Dimensiones INTERNAS
 	leftInnerHeight := panelOuterHeight - 2
 
-	rightInnerWidth := rightOuterWidth - 4
+	rightInnerWidth := rightOuterWidth - 2
 	rightInnerHeight := panelOuterHeight - 2
 
 	// === Panel Izquierdo ===
@@ -103,7 +98,7 @@ func (m Model) View() string {
 					style = style.Copy().Foreground(lipgloss.Color("245"))
 				}
 			}
-			leftContent += fmt.Sprintf("%s%s\n", cursor, style.Render(t.DisplayName))
+			leftContent += fmt.Sprintf("%s%s\n", cursor, style.Render(truncateText(t.DisplayName, leftOuterWidth-4)))
 		}
 
 		leftContent += "\n"
@@ -163,7 +158,7 @@ func (m Model) View() string {
 						style = style.Copy().Foreground(lipgloss.Color("245"))
 					}
 				}
-				leftContent += fmt.Sprintf("%s%s\n", cursor, style.Render(c.DisplayName))
+				leftContent += fmt.Sprintf("%s%s\n", cursor, style.Render(truncateText(c.DisplayName, leftOuterWidth-4)))
 			}
 
 			// Indicador de más canales abajo
@@ -631,6 +626,7 @@ func renderAssignList(m Model) string {
 		b.WriteString(helpStyle.Render("El WAF de Microsoft bloquea el acceso\ndesde clientes nativos sin sesión de browser.\n\nUsá la pestaña Assignments en teams.microsoft.com\npara ver tus tareas."))
 		return b.String()
 	}
+
 	if !m.assignLoaded {
 		return helpStyle.Render("Cargando tareas...")
 	}
@@ -709,4 +705,15 @@ func renderAssignDetail(m Model) string {
 	}
 
 	return b.String()
+}
+
+func truncateText(text string, maxWidth int) string {
+	if lipgloss.Width(text) <= maxWidth {
+		return text
+	}
+	runes := []rune(text)
+	for len(runes) > 0 && lipgloss.Width(string(runes)) > maxWidth-1 {
+		runes = runes[:len(runes)-1]
+	}
+	return string(runes) + "…"
 }

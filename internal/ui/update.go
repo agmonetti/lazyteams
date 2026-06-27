@@ -363,7 +363,7 @@ func loadFolderCmd(client *graph.Client, teamID string, node FolderNode) tea.Cmd
 }
 
 // formatMessages convierte la lista de mensajes en un string renderizable para el viewport
-func formatMessages(messages []graph.Message) string {
+func formatMessages(messages []graph.Message, width int) string {
 	var content string
 	var lastDate string
 	for i := len(messages) - 1; i >= 0; i-- {
@@ -421,6 +421,9 @@ func formatMessages(messages []graph.Message) string {
 			continue
 		}
 	}
+	if width > 0 {
+		content = lipgloss.NewStyle().Width(width - 2).Render(content)
+	}
 	return content
 }
 
@@ -464,32 +467,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-
-		// Altura total disponible para los paneles (dejamos 1 línea para topBar y 1 para footer)
-		panelOuterHeight := m.height - 2
-
-		// Dimensiones EXTERNAS del panel izquierdo
-		leftOuterWidth := (m.width / 3) - 2
-
-		// Dimensiones EXTERNAS del panel derecho
-		rightOuterWidth := m.width - leftOuterWidth
-
-		// El estilo `paneStyle` tiene Border (2 líneas) y Padding(0, 1) (2 columnas)
-		// Por lo tanto, las dimensiones INTERNAS son Outer - 2 (alto) y Outer - 4 (ancho)
-
-		leftInnerWidth := leftOuterWidth - 4
-		leftInnerHeight := panelOuterHeight - 2
-
-		rightInnerWidth := rightOuterWidth - 4
+		available       := m.width - 4   // overhead real: +2 por panel × 2 paneles
+		leftOuterWidth  := available / 3
+		rightOuterWidth := available - leftOuterWidth
+		leftInnerWidth  := leftOuterWidth - 2
+		rightInnerWidth := rightOuterWidth - 2
+		panelOuterHeight := m.height - 6
+		leftInnerHeight  := panelOuterHeight - 2
 		rightInnerHeight := panelOuterHeight - 2
-
-		// Para el viewport derecho, hay que descontar el header (4 líneas) y el input (1 línea) si aplican
-		// Usamos un tamaño seguro
-		vpInnerHeight := rightInnerHeight - 5
-
-		// Ajustar tamaño del textinput
+		vpInnerHeight    := rightInnerHeight - 5
 		m.input.Width = rightInnerWidth - 2
-
 		if !m.ready {
 			m.viewport = viewport.New(rightInnerWidth, vpInnerHeight)
 			m.leftVp = viewport.New(leftInnerWidth, leftInnerHeight)
@@ -499,6 +486,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.viewport.Height = vpInnerHeight
 			m.leftVp.Width = leftInnerWidth
 			m.leftVp.Height = leftInnerHeight
+		}
+
+		// Re-wrappear contenido existente con el nuevo ancho
+		if m.ready && len(m.messages) > 0 {
+			if m.viewMode == ModeChat {
+				content := formatMessages(m.messages, rightInnerWidth)
+				m.viewport.SetContent(content)
+			} else if m.viewMode == ModeFiles {
+				m.viewport.SetContent(renderFilesContent(&m))
+			}
 		}
 
 	case errMsg:
@@ -544,7 +541,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.selectedFile = 0
 				m.viewport.SetContent(renderFilesContent(&m) + "\n\n(carga parcial por error de red)")
 			} else {
-				m.viewport.SetContent(formatMessages(m.messages) + "\n\n(carga parcial por error de red)")
+				m.viewport.SetContent(formatMessages(m.messages, m.viewport.Width) + "\n\n(carga parcial por error de red)")
 			}
 			return m, nil
 		}
@@ -704,7 +701,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loading = false
 
 		if m.viewMode == ModeChat {
-			content := formatMessages(m.messages)
+			content := formatMessages(m.messages, m.viewport.Width)
 			m.viewport.SetContent(content)
 			m.viewport.GotoBottom()
 		} else if m.viewMode == ModeFiles {
@@ -1155,7 +1152,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							m.loadedConvID = activeID
 							cmds = append(cmds, loadMessagesCmd(m.client, "", activeID, 200))
 						} else {
-							m.viewport.SetContent(formatMessages(m.messages))
+							m.viewport.SetContent(formatMessages(m.messages, m.viewport.Width))
 						}
 					}
 				}

@@ -3,91 +3,130 @@ package ui
 import "github.com/charmbracelet/lipgloss"
 
 var (
-	colorFocus  = lipgloss.Color("62") // Indigo
-	colorNormal = lipgloss.Color("240") // Dark gray
-	colorText   = lipgloss.Color("252")
-	colorRed    = lipgloss.Color("9") // Rojo
+	// Paleta Microsoft Teams — azul corporativo clásico (#0078D4 / #6264A7)
+	colorTeams    = lipgloss.Color("#0078D4") // Azul Teams
+	colorTeamsAlt = lipgloss.Color("#6264A7") // Púrpura Teams alternativo
+	colorAccent   = colorTeams
+	colorFocus    = lipgloss.Color("#2899F5") // Azul brillante para foco
+	colorBorder   = lipgloss.Color("240")     // Gris para bordes sin foco
+	colorBorderF  = lipgloss.Color("245")     // Gris claro para borde enfocado
+	colorText     = lipgloss.Color("252")     // Texto principal
+	colorMuted    = lipgloss.Color("240")     // Texto secundario/meta
+	colorDim      = lipgloss.Color("238")     // Texto muy tenue
+	colorRed      = lipgloss.Color("9")
+	colorYellow   = lipgloss.Color("11")
+	colorGreen    = lipgloss.Color("10")
+	colorSelBg    = lipgloss.Color("235")     // Fondo oscuro para item seleccionado
+	colorSelBgF   = lipgloss.Color("236")     // Fondo para item seleccionado con foco
 
-	titleStyle = lipgloss.NewStyle().
-		Bold(true).
-		Foreground(colorText).
-		MarginBottom(1)
-
+	// === Paneles ===
 	paneStyle = lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(colorNormal).
-		Padding(0, 1)
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(colorBorder).
+			Padding(0, 1)
 
 	focusedPaneStyle = paneStyle.
-		BorderForeground(colorFocus)
+				BorderForeground(colorFocus)
 
+	// === Títulos de sección ===
+	sectionTitleStyle = lipgloss.NewStyle().
+				Foreground(colorAccent).
+				Bold(true)
+
+	// === Items de lista ===
 	selectedItemStyle = lipgloss.NewStyle().
-		Foreground(colorFocus).
-		Bold(true)
+				Foreground(colorAccent).
+				Bold(true)
+
+	selectedItemBgStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("15")).
+				Background(colorSelBgF).
+				Bold(true)
 
 	normalItemStyle = lipgloss.NewStyle().
-		Foreground(colorText)
+			Foreground(colorText)
+
+	dimItemStyle = lipgloss.NewStyle().
+			Foreground(colorMuted)
+
+	// === Texto general ===
+	titleStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(colorText).
+			MarginBottom(1)
 
 	helpStyle = lipgloss.NewStyle().
-		Foreground(colorNormal).
-		MarginTop(1)
+			Foreground(colorMuted).
+			MarginTop(1)
 
 	errorStyle = lipgloss.NewStyle().
-		Foreground(colorRed).
-		Bold(true)
+			Foreground(colorRed).
+			Bold(true)
 
-	// Estilos para el Navbar
+	// === Navbar / Tabs ===
 	activeTabStyle = lipgloss.NewStyle().
-		Foreground(colorFocus).
-		Bold(true).
-		Padding(0, 1)
+			Foreground(colorAccent).
+			Bold(true).
+			Padding(0, 1)
 
 	inactiveTabStyle = lipgloss.NewStyle().
-		Foreground(colorNormal).
-		Padding(0, 1)
+				Foreground(colorMuted).
+				Padding(0, 1)
 
 	tabDividerStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.Color("240"))
+				Foreground(colorMuted)
 
-	// Gris oscuro para horas y fechas
+	// === Meta (horas, fechas) ===
 	metaStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.Color("240"))
+			Foreground(colorMuted)
 
-	// Estilo sutil para eventos del sistema (reuniones) sin emojis
+	// === Eventos del sistema ===
 	systemEventStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.Color("245")).
-		Italic(true)
+				Foreground(colorMuted).
+				Italic(true)
 
-	// Popup de confirmación de descarga
+	// === Popups con doble borde ===
 	popupStyle = lipgloss.NewStyle().
-		Border(lipgloss.DoubleBorder()).
-		BorderForeground(lipgloss.Color("11")). // amarillo
-		Padding(1, 3).
-		Foreground(colorText).
-		Bold(true)
+			Border(lipgloss.DoubleBorder()).
+			BorderForeground(colorAccent).
+			Padding(1, 3).
+			Foreground(colorText).
+			Bold(true)
 
-	// Popup de presencia
 	presencePopupStyle = lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(colorFocus).
-		Padding(0, 2).
-		Width(30)
+				Border(lipgloss.DoubleBorder()).
+				BorderForeground(colorAccent).
+				Padding(0, 2).
+				Width(30)
 
-	// Splash screen
+	// === Splash screen ===
 	splashLogoStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.Color("62")). // Indigo
-		Bold(true)
+			Foreground(colorAccent).
+			Bold(true)
 
 	splashTitleStyle = lipgloss.NewStyle().
-		Foreground(colorFocus).
-		Bold(true)
+				Foreground(colorText).
+				Bold(true)
 
 	splashSubStyle = lipgloss.NewStyle().
-		Foreground(colorNormal)
+			Foreground(colorMuted)
 
 	splashHintStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.Color("243"))
+			Foreground(colorDim)
 
-	// Footer contextual
-	footerStyle = helpStyle
+	// === Footer con línea separadora ===
+	footerStyle = lipgloss.NewStyle().
+			Foreground(colorMuted).
+			BorderForeground(colorBorder).
+			Border(lipgloss.NormalBorder(), true, false, false, false).
+			PaddingTop(0).
+			PaddingLeft(1)
+
+	// === Top bar con línea separadora ===
+	topBarStyle = lipgloss.NewStyle().
+			Foreground(colorMuted).
+			BorderForeground(colorBorder).
+			Border(lipgloss.NormalBorder(), false, false, true, false).
+			PaddingBottom(0).
+			PaddingRight(1)
 )
