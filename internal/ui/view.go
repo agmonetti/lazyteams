@@ -304,7 +304,28 @@ func (m Model) View() string {
 		for i, t := range m.downloadTargets {
 			names[i] = t.Name
 		}
-		question := fmt.Sprintf("¿Descargar %d archivo(s)?\n\n%s\n\n[y] Sí   [n] No", len(names), strings.Join(names, "\n  "))
+
+		var dirLine string
+		if m.editingDownloadDir {
+			dirLine = fmt.Sprintf("Destino: %s", m.downloadDirInput.View())
+		} else {
+			dirLine = fmt.Sprintf("Destino: %s", m.prefs.DownloadDir)
+		}
+
+		var actions string
+		if m.editingDownloadDir {
+			actions = "[Enter] Confirmar ruta   [Esc] Cancelar"
+		} else {
+			actions = "[Enter/y] Descargar   [e] Editar ruta   [Esc/n] Cancelar"
+		}
+
+		question := fmt.Sprintf(
+			"¿Descargar %d archivo(s)?\n\n%s\n\n%s\n\n%s",
+			len(names),
+			strings.Join(names, "\n  "),
+			dirLine,
+			actions,
+		)
 		popup := popupStyle.Render(question)
 		rightPanel = lipgloss.Place(lipgloss.Width(rightPanel), lipgloss.Height(rightPanel), lipgloss.Center, lipgloss.Center, popup)
 	} else if m.showPresenceMenu {
@@ -388,8 +409,10 @@ func (m Model) footerText() string {
 	switch {
 	case m.showPresenceMenu:
 		return " [↑/↓] Navegar   [Enter] Confirmar   [Esc/q] Cancelar"
+	case m.confirmingDownload && m.editingDownloadDir:
+		return " [Enter] Confirmar ruta   [Esc] Cancelar edición"
 	case m.confirmingDownload:
-		return " [y] Confirmar   [n] Cancelar"
+		return " [Enter/y] Descargar   [e] Editar ruta   [Esc/n] Cancelar"
 	case m.workspace == WorkspaceAssignments:
 		return " [1] Equipos  [2] DMs  [3] Actividad  [4] Tareas  [←/→] Filtrar  [↑/↓] Navegar  [Enter] Ver  [q] Salir"
 	case m.workspace == WorkspaceActivity:

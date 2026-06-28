@@ -177,10 +177,12 @@ type downloadDoneMsg struct {
 	results []string
 }
 
-func downloadFilesCmd(client *graph.Client, teamID, driveID string, items []graph.DriveItem) tea.Cmd {
+func downloadFilesCmd(client *graph.Client, teamID, driveID string, items []graph.DriveItem, destDir string) tea.Cmd {
 	return func() tea.Msg {
-		home, _ := os.UserHomeDir()
-		destDir := filepath.Join(home, "Downloads")
+		if destDir == "" {
+			home, _ := os.UserHomeDir()
+			destDir = filepath.Join(home, "Downloads")
+		}
 		os.MkdirAll(destDir, 0755)
 
 		var results []string
@@ -862,6 +864,29 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Popup de confirmación de descarga — intercepta teclas antes que todo
 		if m.confirmingDownload {
+			if m.editingDownloadDir {
+				switch msg.String() {
+				case "enter":
+					newDir := strings.TrimSpace(m.downloadDirInput.Value())
+					if newDir != "" {
+						if strings.HasPrefix(newDir, "~/") {
+							home, _ := os.UserHomeDir()
+							newDir = filepath.Join(home, newDir[2:])
+						}
+						m.prefs.DownloadDir = newDir
+						savePrefs(m.prefs)
+					}
+					m.editingDownloadDir = false
+					m.downloadDirInput.Blur()
+				case "esc":
+					m.editingDownloadDir = false
+					m.downloadDirInput.Blur()
+				default:
+					m.downloadDirInput, cmd = m.downloadDirInput.Update(msg)
+					return m, cmd
+				}
+				return m, nil
+			}
 			switch msg.String() {
 			case "y", "enter":
 				m.confirmingDownload = false
@@ -869,9 +894,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				targets := m.downloadTargets
 				driveID := m.currentFilesDriveID
 				teamID := m.teams[m.selectedTeam].ID
-				cmds = append(cmds, downloadFilesCmd(m.client, teamID, driveID, targets))
+				cmds = append(cmds, downloadFilesCmd(m.client, teamID, driveID, targets, m.prefs.DownloadDir))
 				m.selectedFiles = make(map[int]bool)
 				return m, tea.Batch(cmds...)
+			case "e":
+				m.editingDownloadDir = true
+				m.downloadDirInput.SetValue(m.prefs.DownloadDir)
+				m.downloadDirInput.Focus()
+				return m, nil
 			case "n", "esc":
 				m.confirmingDownload = false
 				m.downloadTargets = nil

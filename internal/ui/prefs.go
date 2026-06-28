@@ -9,6 +9,7 @@ import (
 type Preferences struct {
 	// Mapea UserID -> ChatID para soportar múltiples cuentas sin que el caché colisione
 	SelfChatIDs map[string]string `json:"self_chat_ids"`
+	DownloadDir string            `json:"download_dir,omitempty"`
 }
 
 func prefsPath() string {
@@ -28,6 +29,10 @@ func loadPrefs() Preferences {
 	// Asegurar inicialización por si el JSON estaba vacío o malformado
 	if p.SelfChatIDs == nil {
 		p.SelfChatIDs = make(map[string]string)
+	}
+	if p.DownloadDir == "" {
+		home, _ := os.UserHomeDir()
+		p.DownloadDir = filepath.Join(home, "Downloads")
 	}
 	return p
 }

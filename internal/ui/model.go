@@ -120,6 +120,8 @@ type Model struct {
 	downloadStatusID    int             // incrementa con cada descarga, evita que un clear viejo borre un status nuevo
 	downloading         bool            // true mientras se descarga
 	folderCache         map[string][]graph.DriveItem // cache de carpetas: folderID → contenido
+	editingDownloadDir  bool            // true mientras se edita la carpeta destino
+	downloadDirInput    textinput.Model // input para editar la ruta de descarga
 
 	// Mapa channelID → teamID para navegación desde notificaciones
 	channelToTeam map[string]string
@@ -166,12 +168,17 @@ func New(client *graph.Client, userName string) Model {
 	ti.CharLimit = 1000
 	ti.Width = 50
 
+	dirInput := textinput.New()
+	dirInput.Placeholder = "~/Downloads"
+	dirInput.CharLimit = 256
+
 	return Model{
 		client:       client,
 		focusLeft:    true,
 		focusList:    0,
 		loading:      true,
 		input:        ti,
+		downloadDirInput: dirInput,
 		prefs:        loadPrefs(),
 		chatUnread:   make(map[string]bool),
 		presence:     make(map[string]string),
