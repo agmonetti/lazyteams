@@ -23,7 +23,7 @@ Cliente TUI para Microsoft Teams. Corre en la terminal, sin Electron, sin navega
 
 - **4 Workspaces**: Equipos y canales, DMs, Actividad/Notificaciones, Tareas educacionales
 - **Mensajes**: Leer y enviar mensajes (RichText/Html), auto-refresh cada 15s, links clickeables (OSC 8)
-- **Archivos**: Navegador de Drive recursivo, multi-selección, descarga a `~/Downloads/`
+- **Archivos**: Navegador de Drive recursivo, multi-selección, descarga con directorio personalizable
 - **Presencia**: Leer y cambiar tu estado (Available, Busy, DoNotDisturb, etc.)
 - **Notificaciones**: Filtros por tipo, navegar al canal origen
 - **Auto-descubrimiento**: Chat personal ("Notas personales"), nombres inteligentes de grupos
