@@ -467,11 +467,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		available       := m.width - 4   // overhead real: +2 por panel × 2 paneles
-		leftOuterWidth  := available / 3
-		rightOuterWidth := available - leftOuterWidth
-		leftInnerWidth  := leftOuterWidth - 2
-		rightInnerWidth := rightOuterWidth - 2
+		// Ancho: overhead real = 2 por panel (border) × 2 paneles = 4
+		// + 1 col de margen para Kitty = 5 total
+		available        := m.width - 5
+		leftOuterWidth   := available / 3
+		rightOuterWidth  := available - leftOuterWidth
+		leftInnerWidth   := leftOuterWidth - 2
+		rightInnerWidth  := rightOuterWidth - 2
 		panelOuterHeight := m.height - 6
 		leftInnerHeight  := panelOuterHeight - 2
 		rightInnerHeight := panelOuterHeight - 2

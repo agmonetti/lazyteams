@@ -36,7 +36,8 @@ func (m Model) View() string {
 	}
 	panelOuterHeight := m.height - 6
 
-	available       := m.width - 4   // overhead real: +2 por panel × 2 paneles
+	// Width(n) suma 2 cols de borde por panel; 1 col de margen para Kitty.
+	available       := m.width - 5
 	leftOuterWidth  := available / 3
 	rightOuterWidth := available - leftOuterWidth
 
@@ -180,9 +181,9 @@ func (m Model) View() string {
 	}
 
 	// Aplicar estilos al panel izquierdo
-	lStyle := paneStyle.Width(leftOuterWidth).MaxWidth(leftOuterWidth).Height(panelOuterHeight).MaxHeight(panelOuterHeight)
+	lStyle := paneStyle.Width(leftOuterWidth).Height(panelOuterHeight - 2)
 	if m.focusLeft {
-		lStyle = focusedPaneStyle.Width(leftOuterWidth).MaxWidth(leftOuterWidth).Height(panelOuterHeight).MaxHeight(panelOuterHeight)
+		lStyle = focusedPaneStyle.Width(leftOuterWidth).Height(panelOuterHeight - 2)
 	}
 	leftPanel := lStyle.Render(leftContent)
 
@@ -290,9 +291,9 @@ func (m Model) View() string {
 	}
 
 	// Aplicar estilos al panel derecho — PRIMERO con el contenido normal
-	rStyle := paneStyle.Width(rightOuterWidth).MaxWidth(rightOuterWidth).Height(panelOuterHeight).MaxHeight(panelOuterHeight)
+	rStyle := paneStyle.Width(rightOuterWidth).Height(panelOuterHeight - 2)
 	if !m.focusLeft {
-		rStyle = focusedPaneStyle.Width(rightOuterWidth).MaxWidth(rightOuterWidth).Height(panelOuterHeight).MaxHeight(panelOuterHeight)
+		rStyle = focusedPaneStyle.Width(rightOuterWidth).Height(panelOuterHeight - 2)
 	}
 	rightPanel := rStyle.Render(rightContent)
 
@@ -338,7 +339,7 @@ func (m Model) View() string {
 		statusDot := presenceSymbol(myStatus)
 		statusLabel := splashSubStyle.Render(fmt.Sprintf("(%s)", myStatus))
 		userInfo := fmt.Sprintf("%s %s %s", splashSubStyle.Render(name), statusDot, statusLabel)
-		topBar := lipgloss.NewStyle().Width(m.width).Align(lipgloss.Right).PaddingRight(2).Render(userInfo)
+		topBar := lipgloss.NewStyle().Width(m.width - 1).Align(lipgloss.Right).PaddingRight(2).Render(userInfo)
 		ui = lipgloss.JoinVertical(lipgloss.Left, topBar, ui)
 	}
 
