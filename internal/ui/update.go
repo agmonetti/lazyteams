@@ -429,7 +429,60 @@ func formatMessages(messages []graph.Message, width int) string {
 	return content
 }
 
+func formatMessagesDM(messages []graph.Message, width int, selfName string) string {
+	var content string
+	for i := len(messages) - 1; i >= 0; i-- {
+		msg := messages[i]
+		// Solo filtrar tipos que sabemos que son basura
+		if msg.MessageType == "ThreadActivity/MemberJoined" ||
+			msg.MessageType == "ThreadActivity/MemberLeft" ||
+			msg.MessageType == "ThreadActivity/TopicUpdate" ||
+			msg.MessageType == "ThreadActivity/AddMember" {
+			continue
+		}
+		timeStr := msg.CreatedAt.Local().Format("02/01 15:04")
+		body := strings.TrimSpace(msg.Body)
+		isSelf := msg.FromName == selfName || msg.FromName == "Usuario"
+		if isSelf {
+			timeStr := msg.CreatedAt.Local().Format("02/01 15:04")
 
+			tsRaw := metaStyle.Render(timeStr)
+			tsPad := width - lipgloss.Width(tsRaw)
+			if tsPad < 0 {
+				tsPad = 0
+			}
+			timestamp := strings.Repeat(" ", tsPad) + tsRaw
+
+			rawBody := strings.TrimSpace(body)
+			maxW := width * 2 / 3
+			wrapped := lipgloss.NewStyle().Width(maxW).Render(rawBody)
+			bodyLines := strings.Split(wrapped, "\n")
+			var paddedLines []string
+			for _, line := range bodyLines {
+				line = strings.TrimSpace(line)
+				if line == "" {
+					continue
+				}
+				bodyW := lipgloss.Width(line)
+				pad := width - bodyW
+				if pad < 0 {
+					pad = 0
+				}
+				paddedLines = append(paddedLines, strings.Repeat(" ", pad)+line)
+			}
+
+			content += fmt.Sprintf("%s\n%s\n\n", timestamp, strings.Join(paddedLines, "\n"))
+		} else {
+			if width > 0 {
+				body = lipgloss.NewStyle().Width(width - 2).Render(body)
+			}
+			sender := selectedItemStyle.Render(msg.FromName)
+			formattedTime := metaStyle.Render(fmt.Sprintf("[%s]", timeStr))
+			content += fmt.Sprintf("%s %s:\n%s\n\n", formattedTime, sender, body)
+		}
+	}
+	return content
+}
 // Update
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
@@ -495,7 +548,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Re-wrappear contenido existente con el nuevo ancho
 		if m.ready && len(m.messages) > 0 {
 			if m.viewMode == ModeChat {
-				content := formatMessages(m.messages, rightInnerWidth)
+				var content string
+				if m.workspace == WorkspaceDMs {
+					content = formatMessagesDM(m.messages, rightInnerWidth, m.userName)
+				} else {
+					content = formatMessages(m.messages, rightInnerWidth)
+				}
 				m.viewport.SetContent(content)
 			} else if m.viewMode == ModeFiles {
 				m.viewport.SetContent(renderFilesContent(&m))
@@ -545,7 +603,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.selectedFile = 0
 				m.viewport.SetContent(renderFilesContent(&m) + "\n\n(carga parcial por error de red)")
 			} else {
-				m.viewport.SetContent(formatMessages(m.messages, m.viewport.Width) + "\n\n(carga parcial por error de red)")
+				var partial string
+				if m.workspace == WorkspaceDMs {
+					partial = formatMessagesDM(m.messages, m.viewport.Width, m.userName)
+				} else {
+					partial = formatMessages(m.messages, m.viewport.Width)
+				}
+				m.viewport.SetContent(partial + "\n\n(carga parcial por error de red)")
 			}
 			return m, nil
 		}
@@ -705,7 +769,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loading = false
 
 		if m.viewMode == ModeChat {
-			content := formatMessages(m.messages, m.viewport.Width)
+			var content string
+			if m.workspace == WorkspaceDMs {
+				content = formatMessagesDM(m.messages, m.viewport.Width, m.userName)
+			} else {
+				content = formatMessages(m.messages, m.viewport.Width)
+			}
 			m.viewport.SetContent(content)
 			m.viewport.GotoBottom()
 		} else if m.viewMode == ModeFiles {
@@ -1184,7 +1253,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							m.loadedConvID = activeID
 							cmds = append(cmds, loadMessagesCmd(m.client, "", activeID, 200))
 						} else {
-							m.viewport.SetContent(formatMessages(m.messages, m.viewport.Width))
+							var fresh string
+							if m.workspace == WorkspaceDMs {
+								fresh = formatMessagesDM(m.messages, m.viewport.Width, m.userName)
+							} else {
+								fresh = formatMessages(m.messages, m.viewport.Width)
+							}
+							m.viewport.SetContent(fresh)
 						}
 					}
 				}
