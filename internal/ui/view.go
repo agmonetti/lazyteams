@@ -405,7 +405,21 @@ func renderTabs(current, active ViewMode, nameA, nameB string) (string, string) 
 	return tabA, tabB
 }
 
+func (m Model) unreadCount() int {
+	count := 0
+	for _, n := range m.notifications {
+		if !n.IsRead {
+			count++
+		}
+	}
+	return count
+}
+
 func (m Model) footerText() string {
+	activityTab := "[3] Actividad"
+	if m.notifLoaded && m.unreadCount() > 0 {
+		activityTab = fmt.Sprintf("[3] Actividad %s", selectedItemStyle.Render("●"))
+	}
 	switch {
 	case m.showPresenceMenu:
 		return " [↑/↓] Navegar   [Enter] Confirmar   [Esc/q] Cancelar"
@@ -414,14 +428,14 @@ func (m Model) footerText() string {
 	case m.confirmingDownload:
 		return " [Enter/y] Descargar   [e] Editar ruta   [Esc/n] Cancelar"
 	case m.workspace == WorkspaceAssignments:
-		return " [1] Equipos  [2] DMs  [3] Actividad  [4] Tareas  [←/→] Filtrar  [↑/↓] Navegar  [Enter] Ver  [q] Salir"
+		return fmt.Sprintf(" [1] Equipos  [2] DMs  %s  [4] Tareas  [←/→] Filtrar  [↑/↓] Navegar  [Enter] Ver  [q] Salir", activityTab)
 	case m.workspace == WorkspaceActivity:
 		if !m.focusLeft {
 			return " [o] Ir al canal  [Esc] Volver  [q] Salir"
 		}
-		return " [1-4] Workspace  [←/→] Filtrar  [↑/↓] Navegar  [Enter] Ver detalle  [q] Salir"
+		return fmt.Sprintf(" [1-4] Workspace  [←/→] Filtrar  [↑/↓] Navegar  [Enter] Ver detalle  [q] Salir")
 	case m.focusLeft && m.loadedConvID == "":
-		return " [1] Equipos  [2] DMs  [3] Actividad  [4] Tareas  [↑/↓] Navegar  [Enter] Abrir  [p] Estado  [q] Salir"
+		return fmt.Sprintf(" [1] Equipos  [2] DMs  %s  [4] Tareas  [↑/↓] Navegar  [Enter] Abrir  [p] Estado  [q] Salir", activityTab)
 	case m.previewing:
 		return " [Esc] Volver a archivos  [↑/↓] Scroll"
 	case !m.focusLeft && m.viewMode == ModeFiles:
@@ -429,7 +443,7 @@ func (m Model) footerText() string {
 	case !m.focusLeft && m.viewMode == ModeChat:
 		return " [↑/↓] Scroll  [i] Escribir  [f] Archivos  [p] Estado  [Esc/h] Volver"
 	default:
-		return " [1] Equipos  [2] DMs  [3] Actividad  [4] Tareas  [↑/↓] Navegar  [Enter] Abrir  [p] Estado  [q] Salir"
+		return fmt.Sprintf(" [1] Equipos  [2] DMs  %s  [4] Tareas  [↑/↓] Navegar  [Enter] Abrir  [p] Estado  [q] Salir", activityTab)
 	}
 }
 
