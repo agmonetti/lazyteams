@@ -1039,6 +1039,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if !m.chatsLoaded {
 				m.loading = true
 				cmds = append(cmds, loadChatsCmd(m.client))
+			} else if len(m.chats) > 0 {
+				seen := make(map[string]struct{})
+				var ids []string
+				if m.selfID != "" {
+					seen[m.selfID] = struct{}{}
+					ids = append(ids, m.selfID)
+				}
+				for _, ch := range m.chats {
+					for _, u := range ch.Members {
+						if u.UserID != "" {
+							if _, ok := seen[u.UserID]; !ok {
+								seen[u.UserID] = struct{}{}
+								ids = append(ids, u.UserID)
+							}
+						}
+					}
+				}
+				if len(ids) > 0 {
+					cmds = append(cmds, pollPresenceCmd(m.client, ids))
+				}
 			}
 
 		case "3":
