@@ -160,6 +160,11 @@ type Model struct {
 	// Polling de DMs
 	chatUnread map[string]bool  // chatID → tiene mensajes nuevos
 	presence   map[string]string // userID → Availability (Available, Busy, Away, Offline, etc.)
+
+	// Preview de archivos
+	previewing     bool   // true mientras se muestra preview de archivo
+	previewContent string // contenido del archivo para mostrar
+	previewFileName string // nombre del archivo en preview
 }
 
 func New(client *graph.Client, userName string) Model {

@@ -560,6 +560,36 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
+	case previewResultMsg:
+		m.loading = false
+		if msg.status != "" {
+			m.downloadStatus = msg.status
+			m.downloadStatusID++
+			if m.viewMode == ModeFiles {
+				m.viewport.SetContent(renderFilesContent(&m))
+			}
+		}
+		if msg.openBrowser {
+			return m, clearStatusAfter(m.downloadStatusID)
+		}
+		if msg.err != nil {
+			m.previewContent = fmt.Sprintf("Error al cargar preview: %v", msg.err)
+		} else {
+			// Agregar numeración de líneas
+			lines := strings.Split(msg.content, "\n")
+			var numbered strings.Builder
+			width := len(fmt.Sprintf("%d", len(lines)))
+			for i, line := range lines {
+				numbered.WriteString(fmt.Sprintf("%*d │ %s\n", width, i+1, line))
+			}
+			m.previewContent = numbered.String()
+		}
+		m.previewFileName = msg.fileName
+		m.previewing = true
+		m.viewport.SetContent(m.previewContent)
+		m.viewport.GotoTop()
+		return m, nil
+
 	case errMsg:
 		if strings.Contains(msg.err.Error(), "Lifetime validation failed") {
 			m.err = fmt.Errorf("El token MS_GRAPH_TOKEN expiró.\n\nPor favor, ingresá a Graph Explorer, copiá un nuevo Access Token\ny actualizá la variable de entorno.")
@@ -1022,6 +1052,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case "esc":
+			if m.previewing {
+				m.previewing = false
+				m.previewContent = ""
+				m.previewFileName = ""
+				m.downloadStatus = ""
+				m.viewport.SetContent(renderFilesContent(&m))
+				return m, nil
+			}
 			if !m.focusLeft {
 				m.focusLeft = true
 			}
@@ -1323,6 +1361,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 
+		case "v":
+			// Preview de archivo: texto en TUI, resto en navegador
+			if !m.focusLeft && m.viewMode == ModeFiles && len(m.files) > 0 && !m.previewing {
+				if len(m.selectedFiles) > 1 {
+					m.downloadStatus = "Solo se puede previsualizar un archivo a la vez"
+					m.downloadStatusID++
+					if m.viewMode == ModeFiles {
+						m.viewport.SetContent(renderFilesContent(&m))
+					}
+					return m, clearStatusAfter(m.downloadStatusID)
+				}
+				item := m.files[m.selectedFile]
+				if item.Folder != nil {
+					// Si es carpeta, no preview — ignorar
+				} else {
+					driveID := m.currentFilesDriveID
+					teamID := m.teams[m.selectedTeam].ID
+					m.loading = true
+					cmds = append(cmds, previewFileCmd(m.client, item, driveID, teamID))
+				}
+			}
+
 		case "r":
 			if m.workspace == WorkspaceActivity && m.notifErr != nil {
 				m.notifErr = nil
@@ -1466,6 +1526,78 @@ func openBrowser(url string) {
 	}
 	if err != nil {
 		// Log error if needed, but for TUI we just silently fail or could send an error msg
+	}
+}
+
+type previewResultMsg struct {
+	content     string
+	fileName    string
+	err         error
+	openBrowser bool   // true si se abrió en el navegador
+	status      string // mensaje para mostrar en downloadStatus
+}
+
+func isTextFile(name string) bool {
+	lower := strings.ToLower(name)
+	textExts := []string{".txt", ".md", ".json", ".csv", ".xml", ".html", ".css", ".js", ".go", ".py", ".rs", ".log", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".conf", ".sh", ".bash", ".sql", ".r", ".java", ".c", ".cpp", ".h", ".hpp", ".ts", ".tsx", ".jsx"}
+	for _, ext := range textExts {
+		if strings.HasSuffix(lower, ext) {
+			return true
+		}
+	}
+	return false
+}
+
+func previewFileCmd(client *graph.Client, item graph.DriveItem, driveID, teamID string) tea.Cmd {
+	return func() tea.Msg {
+		if !isTextFile(item.Name) {
+			// Siempre usar WebUrl para que el navegador muestre preview (SharePoint/OneDrive)
+			url := item.WebUrl
+			openBrowser(url)
+			return previewResultMsg{
+				openBrowser: true,
+				status:      fmt.Sprintf("Abriendo %s en el navegador...", item.Name),
+			}
+		}
+
+		// Descargar a temp y leer
+		var body io.ReadCloser
+		var err error
+		if item.ID != "" {
+			if driveID != "" {
+				body, err = client.DownloadRemoteItem(driveID, item.ID)
+			} else {
+				body, err = client.DownloadItem(teamID, item.ID)
+			}
+		} else if item.WebUrl != "" {
+			resolved, resolveErr := client.ResolveSharedItem(item.WebUrl)
+			if resolveErr == nil && resolved != nil && resolved.ID != "" {
+				resolvedDriveID := ""
+				if resolved.RemoteItem != nil {
+					resolvedDriveID = resolved.RemoteItem.ParentReference.DriveID
+				}
+				if resolvedDriveID != "" {
+					body, err = client.DownloadRemoteItem(resolvedDriveID, resolved.ID)
+				} else {
+					body, err = client.DownloadItem(teamID, resolved.ID)
+				}
+			} else {
+				err = resolveErr
+			}
+		}
+		if err != nil {
+			return previewResultMsg{err: err}
+		}
+		defer body.Close()
+
+		// Limitar a 500KB
+		limitedReader := io.LimitReader(body, 500*1024)
+		data, err := io.ReadAll(limitedReader)
+		if err != nil {
+			return previewResultMsg{err: err}
+		}
+
+		return previewResultMsg{content: string(data), fileName: item.Name}
 	}
 }
 

@@ -422,8 +422,10 @@ func (m Model) footerText() string {
 		return " [1-4] Workspace  [←/→] Filtrar  [↑/↓] Navegar  [Enter] Ver detalle  [q] Salir"
 	case m.focusLeft && m.loadedConvID == "":
 		return " [1] Equipos  [2] DMs  [3] Actividad  [4] Tareas  [↑/↓] Navegar  [Enter] Abrir  [p] Estado  [q] Salir"
+	case m.previewing:
+		return " [Esc] Volver a archivos  [↑/↓] Scroll"
 	case !m.focusLeft && m.viewMode == ModeFiles:
-		return " [↑/↓] Navegar  [Enter] Abrir  [Space] Seleccionar  [o] Descargar  [p] Estado  [Esc/h] Volver"
+		return " [↑/↓] Navegar  [Enter] Abrir  [Space] Seleccionar  [v] Preview  [o] Descargar  [p] Estado  [Esc/h] Volver"
 	case !m.focusLeft && m.viewMode == ModeChat:
 		return " [↑/↓] Scroll  [i] Escribir  [f] Archivos  [p] Estado  [Esc/h] Volver"
 	default:
