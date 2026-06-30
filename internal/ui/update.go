@@ -734,6 +734,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Disparar presencia inmediatamente al cargar chats
 		seen := make(map[string]struct{})
 		var ids []string
+		if m.selfID != "" {
+			seen[m.selfID] = struct{}{}
+			ids = append(ids, m.selfID)
+		}
 		for _, ch := range m.chats {
 			for _, u := range ch.Members {
 				if u.UserID != "" {
@@ -827,10 +831,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmds...)
 
 	case presenceTickMsg:
-		// Poll presencia: recolectar userIds de chats visibles (incluye self)
+		// Poll presencia: siempre incluir selfID, otros solo en DMs
+		seen := make(map[string]struct{})
+		var ids []string
+		if m.selfID != "" {
+			seen[m.selfID] = struct{}{}
+			ids = append(ids, m.selfID)
+		}
 		if m.workspace == WorkspaceDMs && len(m.chats) > 0 {
-			seen := make(map[string]struct{})
-			var ids []string
 			for _, ch := range m.chats {
 				for _, u := range ch.Members {
 					if u.UserID != "" {
@@ -841,9 +849,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 			}
-			if len(ids) > 0 {
-				cmds = append(cmds, pollPresenceCmd(m.client, ids))
-			}
+		}
+		if len(ids) > 0 {
+			cmds = append(cmds, pollPresenceCmd(m.client, ids))
 		}
 		cmds = append(cmds, refreshPresenceTickCmd())
 		return m, tea.Batch(cmds...)
