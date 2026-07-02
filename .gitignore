@@ -2,6 +2,7 @@ tokens.json
 # Binaries
 msTTui
 msTTui-auth
+auth-helper
 teamsTUI
 main
 *.exe

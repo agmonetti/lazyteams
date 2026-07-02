@@ -366,6 +366,17 @@ func (m Model) View() string {
 		statusLabel := splashSubStyle.Render(fmt.Sprintf("(%s)", myStatus))
 		userInfo := fmt.Sprintf("%s %s %s", splashSubStyle.Render(name), statusDot, statusLabel)
 		topBar := lipgloss.NewStyle().Width(m.width - 1).Align(lipgloss.Right).PaddingRight(2).Render(userInfo)
+		if m.tokenRenewing {
+			renewBanner := lipgloss.NewStyle().
+				Foreground(colorYellow).Bold(true).
+				Render("⟳ Renewing tokens...")
+			topBar = renewBanner + "  " + topBar
+		} else if m.tokenRenewErr != "" {
+			errBanner := lipgloss.NewStyle().
+				Foreground(colorRed).Bold(true).
+				Render("⚠ Token renewal failed — run ./msTTui-auth")
+			topBar = errBanner + "  " + topBar
+		}
 		ui = lipgloss.JoinVertical(lipgloss.Left, topBar, ui)
 	}
 

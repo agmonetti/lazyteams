@@ -131,6 +131,10 @@ type Model struct {
 	input    textinput.Model
 	isTyping bool
 
+	// Token renewal
+	tokenRenewing bool
+	tokenRenewErr string
+
 	// User
 	userName string
 

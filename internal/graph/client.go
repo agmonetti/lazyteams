@@ -6,6 +6,8 @@ import (
 	"html"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -121,4 +123,43 @@ func (c *Client) doReq(endpoint string) ([]byte, error) {
 	}
 
 	return body, nil
+}
+
+func (c *Client) ReloadTokens() error {
+	path := filepath.Join(os.Getenv("HOME"), ".config", "teamstui", "tokens.env")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	tokens := map[string]string{}
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		line = strings.TrimPrefix(line, "export ")
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		key := strings.TrimSpace(parts[0])
+		val := strings.Trim(strings.TrimSpace(parts[1]), `"`)
+		tokens[key] = val
+	}
+	if v := tokens["MS_GRAPH_TOKEN"]; v != "" {
+		c.GraphToken = strings.TrimPrefix(v, "Bearer ")
+	}
+	if v := tokens["TEAMS_WEB_TOKEN"]; v != "" {
+		c.WebToken = strings.TrimPrefix(v, "Bearer ")
+	}
+	if v := tokens["TEAMS_NOTIF_TOKEN"]; v != "" {
+		c.NotifToken = strings.TrimPrefix(v, "Bearer ")
+	}
+	if v := tokens["EDU_TOKEN"]; v != "" {
+		c.EduToken = strings.TrimPrefix(v, "Bearer ")
+	}
+	if v := tokens["TEAMS_COOKIE"]; v != "" {
+		c.Cookie = v
+	}
+	return nil
 }

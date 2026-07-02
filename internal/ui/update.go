@@ -48,6 +48,50 @@ type navigateToThreadMsg struct {
 }
 type markNotifReadMsg struct{ err error }
 
+type tokenExpiredMsg struct{ token string }
+type tokenRenewedMsg struct{ err error }
+type tokenRenewingMsg struct{}
+
+func launchAuthHelperCmd(expiredToken string) tea.Cmd {
+	return func() tea.Msg {
+		exe, err := os.Executable()
+		if err != nil {
+			return tokenRenewedMsg{err: err}
+		}
+		authHelper := filepath.Join(filepath.Dir(exe), "msTTui-auth")
+		cmd := exec.Command(authHelper, "--renew", expiredToken)
+		cmd.Stdout = nil
+		cmd.Stderr = nil
+		if err := cmd.Run(); err != nil {
+			return tokenRenewedMsg{err: err}
+		}
+		return tokenRenewedMsg{err: nil}
+	}
+}
+
+func reloadTokensCmd(client *graph.Client) tea.Cmd {
+	return func() tea.Msg {
+		err := client.ReloadTokens()
+		return tokenRenewedMsg{err: err}
+	}
+}
+
+func is401(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := err.Error()
+	return strings.Contains(s, "401") || strings.Contains(s, "Lifetime validation failed")
+}
+
+func detectExpiredToken(err error) string {
+	s := err.Error()
+	if strings.Contains(s, "Lifetime validation failed") || strings.Contains(s, "MS_GRAPH") {
+		return "graph"
+	}
+	return "web"
+}
+
 
 func refreshTickCmd() tea.Cmd {
 	return tea.Tick(pollInterval*time.Second, func(t time.Time) tea.Msg {
@@ -593,12 +637,32 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case errMsg:
-		if strings.Contains(msg.err.Error(), "Lifetime validation failed") {
-			m.err = fmt.Errorf("MS_GRAPH_TOKEN has expired.\n\nPlease go to Graph Explorer, copy a new Access Token\nand update the environment variable.")
-		} else {
-			m.err = msg.err
+		if is401(msg.err) {
+			which := detectExpiredToken(msg.err)
+			if which == "graph" {
+				m.err = fmt.Errorf("MS_GRAPH_TOKEN expired — run ./msTTui-auth manually")
+			} else {
+				m.tokenRenewing = true
+				return m, launchAuthHelperCmd("web")
+			}
+			return m, nil
 		}
+		m.err = msg.err
 		m.loading = false
+		return m, nil
+
+	case tokenRenewingMsg:
+		m.tokenRenewing = true
+		return m, launchAuthHelperCmd("web")
+
+	case tokenRenewedMsg:
+		m.tokenRenewing = false
+		if msg.err != nil {
+			m.tokenRenewErr = msg.err.Error()
+		} else {
+			m.tokenRenewErr = ""
+			return m, reloadTokensCmd(m.client)
+		}
 		return m, nil
 
 	case channelsErrMsg:
@@ -647,7 +711,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		if strings.Contains(msg.err.Error(), "401") {
-			m.viewport.SetContent("Error 401: TEAMS_WEB_TOKEN has expired.\n\nPlease copy a new one from the Teams web app (Network > 'messages' > Authorization)\nand update the environment variable to read messages.")
+			if !m.tokenRenewing {
+				m.tokenRenewing = true
+				return m, launchAuthHelperCmd("web")
+			}
 		} else {
 			m.viewport.SetContent(fmt.Sprintf("Error loading messages: %v", msg.err))
 		}
@@ -719,8 +786,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case chatsErrMsg:
-		if strings.Contains(msg.err.Error(), "Lifetime validation failed") {
-			m.err = fmt.Errorf("MS_GRAPH_TOKEN has expired.\n\nPlease go to Graph Explorer, copy a new Access Token\nand update the environment variable.")
+		if is401(msg.err) {
+			which := detectExpiredToken(msg.err)
+			if which == "graph" {
+				m.err = fmt.Errorf("MS_GRAPH_TOKEN expired — run ./msTTui-auth manually")
+			} else if !m.tokenRenewing {
+				m.tokenRenewing = true
+				return m, launchAuthHelperCmd("web")
+			}
 		} else {
 			m.err = msg.err
 		}
@@ -871,7 +944,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case notificationsErrMsg:
-		m.notifErr = msg.err
+		if is401(msg.err) {
+			if !m.tokenRenewing {
+				m.tokenRenewing = true
+				return m, launchAuthHelperCmd("notif")
+			}
+		} else {
+			m.notifErr = msg.err
+		}
 		m.notifLoaded = true
 		return m, nil
 
