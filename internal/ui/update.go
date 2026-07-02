@@ -52,6 +52,11 @@ type tokenExpiredMsg struct{ token string }
 type tokenRenewedMsg struct{ err error }
 type tokenRenewingMsg struct{}
 
+type searchUsersMsg struct{ results []graph.UserSearchResult }
+type searchUsersErrMsg struct{ err error }
+type createDMMsg struct{ chat graph.Chat }
+type createDMErrMsg struct{ err error }
+
 func launchAuthHelperCmd(expiredToken string) tea.Cmd {
 	return func() tea.Msg {
 		exe, err := os.Executable()
@@ -73,6 +78,26 @@ func reloadTokensCmd(client *graph.Client) tea.Cmd {
 	return func() tea.Msg {
 		err := client.ReloadTokens()
 		return tokenRenewedMsg{err: err}
+	}
+}
+
+func searchUsersCmd(client *graph.Client, query string) tea.Cmd {
+	return func() tea.Msg {
+		results, err := client.SearchUsers(query)
+		if err != nil {
+			return searchUsersErrMsg{err}
+		}
+		return searchUsersMsg{results}
+	}
+}
+
+func createDMCmd(client *graph.Client, selfID, targetID string) tea.Cmd {
+	return func() tea.Msg {
+		chat, err := client.CreateOneOnOneChat(selfID, targetID)
+		if err != nil {
+			return createDMErrMsg{err}
+		}
+		return createDMMsg{chat}
 	}
 }
 
@@ -1029,8 +1054,81 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case markNotifReadMsg:
 	    // silent — local state already updated optimistically
 	    return m, nil
+
+	case searchUsersMsg:
+		m.newDMResults = msg.results
+		m.newDMCursor = 0
+		m.newDMErr = ""
+		return m, nil
+
+	case searchUsersErrMsg:
+		m.newDMErr = msg.err.Error()
+		return m, nil
+
+	case createDMMsg:
+		for i, ch := range m.chats {
+			if ch.ID == msg.chat.ID {
+				m.selectedChat = i
+				m.loadedConvID = ch.ID
+				m.focusLeft = false
+				m.viewMode = ModeChat
+				m.loading = true
+				return m, loadMessagesCmd(m.client, "", ch.ID, 200)
+			}
+		}
+		m.chats = append([]graph.Chat{msg.chat}, m.chats...)
+		m.selectedChat = 0
+		m.loadedConvID = msg.chat.ID
+		m.focusLeft = false
+		m.viewMode = ModeChat
+		m.loading = true
+		return m, loadMessagesCmd(m.client, "", msg.chat.ID, 200)
+
+	case createDMErrMsg:
+		m.newDMErr = msg.err.Error()
+		return m, nil
 	    
 	case tea.KeyMsg:
+		// New DM popup — intercepts keys
+		if m.showNewDMPopup {
+			switch msg.String() {
+			case "esc":
+				m.showNewDMPopup = false
+				m.newDMQuery.Reset()
+				m.newDMResults = nil
+				m.newDMErr = ""
+				return m, nil
+			case "up", "k":
+				if m.newDMCursor > 0 {
+					m.newDMCursor--
+				}
+			case "down", "j":
+				if m.newDMCursor < len(m.newDMResults)-1 {
+					m.newDMCursor++
+				}
+			case "enter":
+				if len(m.newDMResults) > 0 {
+					target := m.newDMResults[m.newDMCursor]
+					m.showNewDMPopup = false
+					m.newDMQuery.Reset()
+					m.newDMResults = nil
+					return m, createDMCmd(m.client, m.selfID, target.ID)
+				}
+			default:
+				var cmd tea.Cmd
+				m.newDMQuery, cmd = m.newDMQuery.Update(msg)
+				cmds = append(cmds, cmd)
+				q := strings.TrimSpace(m.newDMQuery.Value())
+				if len(q) >= 2 {
+					cmds = append(cmds, searchUsersCmd(m.client, q))
+				} else {
+					m.newDMResults = nil
+				}
+				return m, tea.Batch(cmds...)
+			}
+			return m, tea.Batch(cmds...)
+		}
+
 		// Presence menu — intercepts keys
 		if m.showPresenceMenu {
 			switch msg.String() {
@@ -1110,6 +1208,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "p":
 			m.showPresenceMenu = !m.showPresenceMenu
 			m.presenceCursor = 0
+
+		case "n":
+			if m.workspace == WorkspaceDMs {
+				m.showNewDMPopup = true
+				m.newDMQuery.Reset()
+				m.newDMResults = nil
+				m.newDMErr = ""
+				m.newDMCursor = 0
+				m.newDMQuery.Focus()
+			}
 
 		case "tab":
 			m.focusLeft = !m.focusLeft

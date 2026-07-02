@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 )
 
@@ -102,6 +103,74 @@ func (c *Client) GetChats() ([]Chat, error) {
 		return nil, fmt.Errorf("error parsing chats: %w", err)
 	}
 	return res.Value, nil
+}
+
+type UserSearchResult struct {
+	ID          string `json:"id"`
+	DisplayName string `json:"displayName"`
+	Mail        string `json:"mail"`
+}
+
+func (c *Client) SearchUsers(query string) ([]UserSearchResult, error) {
+	encoded := url.QueryEscape(fmt.Sprintf(`"displayName:%s"`, query))
+	endpoint := fmt.Sprintf("/users?$search=%s&$select=id,displayName,mail&$top=10", encoded)
+	req, err := http.NewRequest("GET", baseURL+endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.GraphToken)
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("ConsistencyLevel", "eventual")
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	var res struct {
+		Value []UserSearchResult `json:"value"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
+		return nil, fmt.Errorf("error parsing user search: %w", err)
+	}
+	return res.Value, nil
+}
+
+func (c *Client) CreateOneOnOneChat(selfID, targetID string) (Chat, error) {
+	payload := fmt.Sprintf(`{
+		"chatType": "oneOnOne",
+		"members": [
+			{
+				"@odata.type": "#microsoft.graph.aadUserConversationMember",
+				"roles": ["owner"],
+				"user@odata.bind": "https://graph.microsoft.com/v1.0/users/%s"
+			},
+			{
+				"@odata.type": "#microsoft.graph.aadUserConversationMember",
+				"roles": ["owner"],
+				"user@odata.bind": "https://graph.microsoft.com/v1.0/users/%s"
+			}
+		]
+	}`, selfID, targetID)
+
+	req, err := http.NewRequest("POST", baseURL+"/chats", strings.NewReader(payload))
+	if err != nil {
+		return Chat{}, err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.GraphToken)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return Chat{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return Chat{}, fmt.Errorf("create chat error %d", resp.StatusCode)
+	}
+	var chat Chat
+	if err := json.NewDecoder(resp.Body).Decode(&chat); err != nil {
+		return Chat{}, err
+	}
+	return chat, nil
 }
 
 // DiscoverSelfChatID brute-forces ChatSvc to find the real

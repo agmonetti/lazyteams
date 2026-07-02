@@ -170,6 +170,13 @@ type Model struct {
 	previewing     bool   // true while showing file preview
 	previewContent string // file content to display
 	previewFileName string // name of the file being previewed
+
+	// New DM creation
+	showNewDMPopup    bool
+	newDMQuery        textinput.Model
+	newDMResults      []graph.UserSearchResult
+	newDMCursor       int
+	newDMErr          string
 }
 
 func New(client *graph.Client, userName string) Model {
@@ -182,6 +189,11 @@ func New(client *graph.Client, userName string) Model {
 	dirInput.Placeholder = "~/Downloads"
 	dirInput.CharLimit = 256
 
+	newDMInput := textinput.New()
+	newDMInput.Placeholder = "Search by name..."
+	newDMInput.CharLimit = 64
+	newDMInput.Width = 40
+
 	return Model{
 		client:       client,
 		focusLeft:    true,
@@ -189,6 +201,7 @@ func New(client *graph.Client, userName string) Model {
 		loading:      true,
 		input:        ti,
 		downloadDirInput: dirInput,
+		newDMQuery:   newDMInput,
 		prefs:        loadPrefs(),
 		chatUnread:   make(map[string]bool),
 		presence:     make(map[string]string),

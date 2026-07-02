@@ -347,6 +347,32 @@ func (m Model) View() string {
 		}
 		popup := presencePopupStyle.Render(menu)
 		rightPanel = lipgloss.Place(lipgloss.Width(rightPanel), lipgloss.Height(rightPanel), lipgloss.Center, lipgloss.Center, popup)
+	} else if m.showNewDMPopup {
+		var popupContent string
+		popupContent += titleStyle.Render("New Direct Message") + "\n\n"
+		popupContent += m.newDMQuery.View() + "\n\n"
+
+		if m.newDMErr != "" {
+			popupContent += errorStyle.Render(m.newDMErr) + "\n"
+		} else if len(m.newDMResults) == 0 && len(m.newDMQuery.Value()) >= 2 {
+			popupContent += helpStyle.Render("No results found.") + "\n"
+		} else {
+			for i, u := range m.newDMResults {
+				cursor := "  "
+				style := normalItemStyle
+				if i == m.newDMCursor {
+					cursor = "▶ "
+					style = selectedItemStyle
+				}
+				line := fmt.Sprintf("%s%s\n   %s", cursor, style.Render(u.DisplayName), metaStyle.Render(u.Mail))
+				popupContent += line + "\n"
+			}
+		}
+
+		popupContent += "\n" + helpStyle.Render("[↑/↓] Navigate  [Enter] Open DM  [Esc] Cancel")
+
+		popup := popupStyle.Render(popupContent)
+		rightPanel = lipgloss.Place(lipgloss.Width(rightPanel), lipgloss.Height(rightPanel), lipgloss.Center, lipgloss.Center, popup)
 	}
 
 	// Combine panels
@@ -449,6 +475,8 @@ func (m Model) footerText() string {
 		}
 	}
 	switch {
+	case m.showNewDMPopup:
+		return dim.Render(" [↑/↓] Navigate results  [Enter] Open DM  [Esc] Cancel")
 	case m.showPresenceMenu:
 		return dim.Render(" [↑/↓] Navigate   [Enter] Confirm   [Esc/q] Cancel")
 	case m.confirmingDownload && m.editingDownloadDir:
@@ -463,7 +491,7 @@ func (m Model) footerText() string {
 		}
 		return dim.Render(" [1-4] Workspace  [←/→] Filter  [↑/↓] Navigate  [Enter] View details  [q] Quit")
 	case m.focusLeft && m.loadedConvID == "":
-		return dim.Render(" [1] Teams  [2] DMs  ") + activityTab + dim.Render("  [4] Assignments  [↑/↓] Navigate  [Enter] Open  [p] Status  [q] Quit")
+		return dim.Render(" [1] Teams  [2] DMs  ") + activityTab + dim.Render("  [4] Assignments  [↑/↓] Navigate  [Enter] Open  [n] New DM  [p] Status  [q] Quit")
 	case m.previewing:
 		return dim.Render(" [Esc] Back to files  [↑/↓] Scroll")
 	case !m.focusLeft && m.viewMode == ModeFiles:
