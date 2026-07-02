@@ -46,6 +46,8 @@ type navigateToThreadMsg struct {
 	teamID   string
 	channels []graph.Channel
 }
+type markNotifReadMsg struct{ err error }
+
 
 func refreshTickCmd() tea.Cmd {
 	return tea.Tick(pollInterval*time.Second, func(t time.Time) tea.Msg {
@@ -944,6 +946,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// (no badge: lastModifiedDateTime is not available on this tenant)
 		return m, nil
 
+	case markNotifReadMsg:
+	    // silent — local state already updated optimistically
+	    return m, nil
+	    
 	case tea.KeyMsg:
 		// Presence menu — intercepts keys
 		if m.showPresenceMenu {
@@ -1269,6 +1275,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else if m.focusLeft && m.workspace == WorkspaceTeams {
 				m.focusList = 1
 			}
+			
+
 
 		case "f":
 			if !m.isTyping {
@@ -1435,7 +1443,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "enter":
 			if m.focusLeft && m.workspace == WorkspaceActivity && len(m.notifications) > 0 {
-				m.focusLeft = false
+			    n := &m.notifications[m.selectedNotif]
+			    if !n.IsRead {
+			        n.IsRead = true
+			        cmds = append(cmds, markNotifReadCmd(m.client, n.ID))
+			    }
+			    m.focusLeft = false
 			} else if m.focusLeft && m.workspace == WorkspaceAssignments {
 				m.focusLeft = false
 			} else if m.focusLeft && m.workspace == WorkspaceDMs && len(m.chats) > 0 {
@@ -1675,4 +1688,13 @@ func renderFilesContent(m *Model) string {
 func isSharePointURL(rawURL string) bool {
 	lower := strings.ToLower(rawURL)
 	return strings.Contains(lower, "sharepoint.com") || strings.Contains(lower, "onedrive.live.com")
+}
+
+
+
+func markNotifReadCmd(client *graph.Client, msgID string) tea.Cmd {
+    return func() tea.Msg {
+        err := client.MarkNotificationRead(msgID)
+        return markNotifReadMsg{err}
+    }
 }

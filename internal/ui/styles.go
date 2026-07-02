@@ -116,7 +116,6 @@ var (
 
 	// === Footer with separator line ===
 	footerStyle = lipgloss.NewStyle().
-			Foreground(colorMuted).
 			BorderForeground(colorBorder).
 			Border(lipgloss.NormalBorder(), true, false, false, false).
 			PaddingTop(0).

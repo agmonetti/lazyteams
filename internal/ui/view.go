@@ -370,7 +370,14 @@ func (m Model) View() string {
 	}
 
 	// Contextual footer
-	footerLine := footerStyle.Render(m.footerText())
+	footerBorder := lipgloss.NewStyle().
+	    BorderForeground(colorBorder).
+	    Border(lipgloss.NormalBorder(), true, false, false, false).
+	    PaddingTop(0).
+	    PaddingLeft(1)
+	
+	footerLine := footerBorder.Render(m.footerText())
+	
 	if m.presenceError != "" {
 		footerLine += "\n" + lipgloss.NewStyle().Foreground(lipgloss.Color("203")).Render("Presence error: " + m.presenceError)
 	}
@@ -421,34 +428,39 @@ func (m Model) unreadCount() int {
 }
 
 func (m Model) footerText() string {
-	activityTab := "[3] Activity"
-	if m.notifLoaded && m.unreadCount() > 0 {
-		activityTab = fmt.Sprintf("[3] Activity %s", selectedItemStyle.Render("●"))
+	dim := lipgloss.NewStyle().Foreground(colorMuted)
+
+	activityTab := dim.Render("[3] Activity")
+	if m.notifLoaded {
+		if count := m.unreadCount(); count > 0 {
+			badge := lipgloss.NewStyle().Foreground(colorRed).Bold(true).Render(fmt.Sprintf("(%d)", count))
+			activityTab = dim.Render("[3] Activity ") + badge
+		}
 	}
 	switch {
 	case m.showPresenceMenu:
-		return " [↑/↓] Navigate   [Enter] Confirm   [Esc/q] Cancel"
+		return dim.Render(" [↑/↓] Navigate   [Enter] Confirm   [Esc/q] Cancel")
 	case m.confirmingDownload && m.editingDownloadDir:
-		return " [Enter] Confirm path   [Esc] Cancel editing"
+		return dim.Render(" [Enter] Confirm path   [Esc] Cancel editing")
 	case m.confirmingDownload:
-		return " [Enter/y] Download   [e] Edit path   [Esc/n] Cancel"
+		return dim.Render(" [Enter/y] Download   [e] Edit path   [Esc/n] Cancel")
 	case m.workspace == WorkspaceAssignments:
-		return fmt.Sprintf(" [1] Teams  [2] DMs  %s  [4] Assignments  [←/→] Filter  [↑/↓] Navigate  [Enter] View  [q] Quit", activityTab)
+		return dim.Render(" [1] Teams  [2] DMs  ") + activityTab + dim.Render("  [4] Assignments  [←/→] Filter  [↑/↓] Navigate  [Enter] View  [q] Quit")
 	case m.workspace == WorkspaceActivity:
 		if !m.focusLeft {
-			return " [o] Go to channel  [Esc] Back  [q] Quit"
+			return dim.Render(" [o] Go to channel  [Esc] Back  [q] Quit")
 		}
-		return fmt.Sprintf(" [1-4] Workspace  [←/→] Filter  [↑/↓] Navigate  [Enter] View details  [q] Quit")
+		return dim.Render(" [1-4] Workspace  [←/→] Filter  [↑/↓] Navigate  [Enter] View details  [q] Quit")
 	case m.focusLeft && m.loadedConvID == "":
-		return fmt.Sprintf(" [1] Teams  [2] DMs  %s  [4] Assignments  [↑/↓] Navigate  [Enter] Open  [p] Status  [q] Quit", activityTab)
+		return dim.Render(" [1] Teams  [2] DMs  ") + activityTab + dim.Render("  [4] Assignments  [↑/↓] Navigate  [Enter] Open  [p] Status  [q] Quit")
 	case m.previewing:
-		return " [Esc] Back to files  [↑/↓] Scroll"
+		return dim.Render(" [Esc] Back to files  [↑/↓] Scroll")
 	case !m.focusLeft && m.viewMode == ModeFiles:
-		return " [↑/↓] Navigate  [Enter] Open  [Space] Select  [v] Preview  [o] Download  [p] Status  [Esc/h] Back"
+		return dim.Render(" [↑/↓] Navigate  [Enter] Open  [Space] Select  [v] Preview  [o] Download  [p] Status  [Esc/h] Back")
 	case !m.focusLeft && m.viewMode == ModeChat:
-		return " [↑/↓] Scroll  [i] Type  [f] Files  [p] Status  [Esc/h] Back"
+		return dim.Render(" [↑/↓] Scroll  [i] Type  [f] Files  [p] Status  [Esc/h] Back")
 	default:
-		return fmt.Sprintf(" [1] Teams  [2] DMs  %s  [4] Assignments  [↑/↓] Navigate  [Enter] Open  [p] Status  [q] Quit", activityTab)
+		return dim.Render(" [1] Teams  [2] DMs  ") + activityTab + dim.Render("  [4] Assignments  [↑/↓] Navigate  [Enter] Open  [p] Status  [q] Quit")
 	}
 }
 
@@ -464,7 +476,7 @@ func renderNotifList(m Model) string {
 	}
 
 	// Filter tabs
-	filterNames := []string{"All", "Upcoming", "Overdue"}
+	filterNames := []string{"All", "Unread", "Overdue", "Upcoming"}
 	var tabs []string
 	for i, name := range filterNames {
 		if ActivityFilter(i) == m.activityFilter {
@@ -513,7 +525,11 @@ func renderNotifList(m Model) string {
 		title := truncate(n.SenderName, 20)
 		preview := truncate(n.Preview, 30)
 
-		line := fmt.Sprintf("%s%s%s %s\n   %s", cursor, label, style.Render(title), metaStyle.Render(age), preview)
+		unreadDot := ""
+		if !n.IsRead {
+			unreadDot = lipgloss.NewStyle().Foreground(colorRed).Render("● ")
+		}
+		line := fmt.Sprintf("%s%s%s%s %s\n   %s", cursor, unreadDot, label, style.Render(title), metaStyle.Render(age), preview)
 		lines = append(lines, line)
 	}
 	return header + strings.Join(lines, "\n")
@@ -599,6 +615,10 @@ func (m Model) filteredNotifications() []graph.NotificationItem {
 				if containsPastDate(n.Preview, now) {
 					result = append(result, n)
 				}
+			}
+		case FilterUnread:
+			if !n.IsRead {
+				result = append(result, n)
 			}
 		}
 	}

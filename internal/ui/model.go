@@ -57,6 +57,7 @@ type ActivityFilter int
 
 const (
 	FilterAll      ActivityFilter = iota
+	FilterUnread                   // Not read
 	FilterUpcoming                 // Upcoming (due in ≤7 days)
 	FilterOverdue                  // Overdue
 	FilterCompleted                // Completed/Submitted
@@ -196,7 +197,7 @@ func New(client *graph.Client, userName string) Model {
 }
 
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(loadTeamsCmd(m.client), loadMeCmd(m.client), refreshTickCmd(), initialPresenceTickCmd())
+	return tea.Batch(loadTeamsCmd(m.client), loadMeCmd(m.client), refreshTickCmd(), initialPresenceTickCmd(), loadNotificationsCmd(m.client))
 }
 
 func (m Model) activeConversationID() string {

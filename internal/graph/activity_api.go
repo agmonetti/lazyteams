@@ -28,12 +28,13 @@ type activityResponse struct {
 		Composetime  string `json:"composetime"`
 		Properties   struct {
 			Activity *struct {
-				ActivityType    string `json:"activityType"`
-				ActivitySubtype string `json:"activitySubtype"`
+				ActivityType            string `json:"activityType"`
+				ActivitySubtype         string `json:"activitySubtype"`
 				SourceUserImDisplayName string `json:"sourceUserImDisplayName"`
-				MessagePreview  string `json:"messagePreview"`
-				SourceThreadId  string `json:"sourceThreadId"`
+				MessagePreview          string `json:"messagePreview"`
+				SourceThreadId          string `json:"sourceThreadId"`
 			} `json:"activity"`
+			IsRead json.RawMessage `json:"isread"`
 		} `json:"properties"`
 	} `json:"messages"`
 }
@@ -94,6 +95,20 @@ func (c *Client) FetchNotifications() ([]NotificationItem, error) {
 		preview := cleanHTML(act.MessagePreview)
 		preview = strings.TrimSpace(preview)
 
+		// Parsear isread (puede ser bool o string)
+		isRead := false
+		if raw := msg.Properties.IsRead; len(raw) > 0 {
+			var b bool
+			if err := json.Unmarshal(raw, &b); err == nil {
+				isRead = b
+			} else {
+				var s string
+				if err := json.Unmarshal(raw, &s); err == nil {
+					isRead = s == "true"
+				}
+			}
+		}
+
 		items = append(items, NotificationItem{
 			ID:           msg.ID,
 			SequenceID:   fmt.Sprintf("%d", msg.SequenceID),
@@ -103,10 +118,32 @@ func (c *Client) FetchNotifications() ([]NotificationItem, error) {
 			Preview:      preview,
 			Timestamp:    ts,
 			SourceThread: act.SourceThreadId,
+			IsRead:       isRead,
 		})
 	}
 
 	return items, nil
+}
+
+func (c *Client) MarkNotificationRead(msgID string) error {
+    url := fmt.Sprintf("https://teams.microsoft.com/api/chatsvc/amer/v1/users/ME/conversations/48:notifications/messages/%s/properties?name=isread", msgID)
+    body := strings.NewReader(`{"isread":"true"}`)
+    req, err := http.NewRequest("PUT", url, body)
+    if err != nil {
+        return err
+    }
+    req.Header.Set("Authorization", "Bearer "+c.NotifToken)
+    req.Header.Set("Content-Type", "application/json")
+    req.Header.Set("X-Ms-Client-Type", "web")
+    resp, err := c.HTTPClient.Do(req)
+    if err != nil {
+        return err
+    }
+    defer resp.Body.Close()
+    if resp.StatusCode < 200 || resp.StatusCode > 299 {
+        return fmt.Errorf("mark read error %d", resp.StatusCode)
+    }
+    return nil
 }
 
 func ActivityTypeLabel(subtype string) string {
