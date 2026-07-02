@@ -19,11 +19,11 @@ TUI client for Microsoft Teams. Runs in the terminal — no Electron, no browser
 ║ ► Personal notes     ║  Microsoft Teams Terminal UI                           ║
 ║   PRIVATE CHAT 1     ║  v1.0.0-beta                                           ║
 ║   PRIVATE CHAT 2     ║                                                        ║
-║   PRIVATE CHAT 3     ║  [↑/↓] Navigate teams · [Enter]                       ║
+║   PRIVATE CHAT 3     ║  [↑/↓] Navigate teams · [Enter]                        ║
 ║   ...                ║                                                        ║
 ║                      ║                                                        ║
 ╠══════════════════════╩════════════════════════════════════════════════════════╣
-║ [1] Teams  [2] DMs  [3] Activity  [4] Assignments  [p] Status  [q] Quit     ║
+║ [1] Teams  [2] DMs  [3] Activity  [4] Assignments  [p] Status  [q] Quit       ║
 ╚═══════════════════════════════════════════════════════════════════════════════╝
 ```
 
