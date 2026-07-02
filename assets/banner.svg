@@ -17,7 +17,7 @@
                 Consolas,
                 monospace;
             font-size: 16px;
-            fill:#d8a7d7;
+            fill:#15297c;
             white-space: pre;
         }
     </style>
