@@ -16,24 +16,24 @@ type Assignment struct {
 
 func (c *Client) FetchAssignments() ([]Assignment, error) {
 	if c.EduToken == "" {
-		return nil, fmt.Errorf("EDU_TOKEN no configurado")
+		return nil, fmt.Errorf("EDU_TOKEN not configured")
 	}
 	if c.EduCookie == "" {
-		return nil, fmt.Errorf("EDU_COOKIE no configurado.\nCapturalo de DevTools > Network > assignments.edu.cloud.microsoft > header Cookie")
+		return nil, fmt.Errorf("EDU_COOKIE not configured.\nCapture it from DevTools > Network > assignments.edu.cloud.microsoft > Cookie header")
 	}
 
-	return nil, fmt.Errorf("API de Education Assignments bloqueada por WAF (TLS fingerprinting).\nDesde Go no se puede acceder — usá la app de Teams web o escritorio para ver tareas.")
+	return nil, fmt.Errorf("Education Assignments API blocked by WAF (TLS fingerprinting).\nCannot access from Go — use the Teams web or desktop app to view assignments.")
 }
 
 func AssignmentStatusLabel(status string) string {
 	switch status {
 	case "submitted":
-		return "[ENTREGADA]"
+		return "[SUBMITTED]"
 	case "returned":
-		return "[DEVUELTA] "
+		return "[RETURNED] "
 	case "assigned":
-		return "[PENDIENTE]"
+		return "[PENDING]  "
 	default:
-		return "[TAREA]    "
+		return "[ASSIGNMENT]"
 	}
 }

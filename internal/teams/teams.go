@@ -12,9 +12,9 @@ import (
 
 var urlRegex = regexp.MustCompile(`https?:\/\/(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&//=]*)`)
 
-// AggregateChatAttachments junta todos los adjuntos (archivos y links) de los
-// mensajes ya cargados en memoria, deduplicados por URL, del más reciente al
-// más viejo. No pega a la red: opera 100% sobre los mensajes.
+// AggregateChatAttachments collects all attachments (files and links) from
+// messages already loaded in memory, deduplicated by URL, from newest to
+// oldest. No network calls: operates 100% on in-memory messages.
 func AggregateChatAttachments(messages []graph.Message) []graph.DriveItem {
 	type entry struct {
 		item    graph.DriveItem
@@ -25,7 +25,7 @@ func AggregateChatAttachments(messages []graph.Message) []graph.DriveItem {
 	var entries []entry
 
 	for _, msg := range messages {
-		// 1. Extraer archivos y links del array oficial de Attachments
+		// 1. Extract files and links from the official Attachments array
 		for _, att := range msg.Attachments {
 			if att.URL == "" || seen[att.URL] {
 				continue
@@ -41,7 +41,7 @@ func AggregateChatAttachments(messages []graph.Message) []graph.DriveItem {
 			})
 		}
 
-		// 2. Extraer URLs pegadas a mano en el cuerpo del texto
+		// 2. Extract URLs pasted manually in the message body
 		urls := urlRegex.FindAllString(msg.Body, -1)
 		for _, u := range urls {
 			if seen[u] {
@@ -49,7 +49,7 @@ func AggregateChatAttachments(messages []graph.Message) []graph.DriveItem {
 			}
 			seen[u] = true
 
-			// Intentar deducir un nombre amigable
+			// Try to infer a friendly name
 			name := u
 			if parsed, err := url.Parse(u); err == nil {
 				parts := strings.Split(parsed.Path, "/")
@@ -82,7 +82,7 @@ func AggregateChatAttachments(messages []graph.Message) []graph.DriveItem {
 	return items
 }
 
-// GetFileIcon devuelve el ícono de texto para un archivo según su extensión.
+// GetFileIcon returns the text icon for a file based on its extension.
 func GetFileIcon(item graph.DriveItem) string {
 	if item.IsExternalLink {
 		return "[LINK]"

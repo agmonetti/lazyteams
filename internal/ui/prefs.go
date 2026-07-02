@@ -7,7 +7,7 @@ import (
 )
 
 type Preferences struct {
-	// Mapea UserID -> ChatID para soportar múltiples cuentas sin que el caché colisione
+	// Maps UserID -> ChatID to support multiple accounts without cache collisions
 	SelfChatIDs map[string]string `json:"self_chat_ids"`
 	DownloadDir string            `json:"download_dir,omitempty"`
 }
@@ -26,7 +26,7 @@ func loadPrefs() Preferences {
 		json.Unmarshal(data, &p)
 	}
 
-	// Asegurar inicialización por si el JSON estaba vacío o malformado
+	// Ensure initialization in case the JSON was empty or malformed
 	if p.SelfChatIDs == nil {
 		p.SelfChatIDs = make(map[string]string)
 	}
@@ -46,6 +46,6 @@ func savePrefs(p Preferences) error {
 	if err != nil {
 		return err
 	}
-	// Permisos 0600: solo el dueño puede leer/escribir este archivo
+	// Permissions 0600: only the owner can read/write this file
 	return os.WriteFile(path, data, 0600)
 }

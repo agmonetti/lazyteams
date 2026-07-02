@@ -42,12 +42,12 @@ const notifConvURL = "https://teams.microsoft.com/api/chatsvc/amer/v1/users/ME/c
 
 func (c *Client) FetchNotifications() ([]NotificationItem, error) {
 	if c.NotifToken == "" {
-		return nil, fmt.Errorf("TEAMS_NOTIF_TOKEN no configurado")
+		return nil, fmt.Errorf("TEAMS_NOTIF_TOKEN not configured")
 	}
 
 	req, err := http.NewRequest("GET", notifConvURL, nil)
 	if err != nil {
-		return nil, fmt.Errorf("error creando request: %w", err)
+		return nil, fmt.Errorf("error creating request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+c.NotifToken)
 	req.Header.Set("Accept", "application/json")
@@ -55,12 +55,12 @@ func (c *Client) FetchNotifications() ([]NotificationItem, error) {
 
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("error de red: %w", err)
+		return nil, fmt.Errorf("network error: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode == 401 {
-		return nil, fmt.Errorf("TEAMS_NOTIF_TOKEN expirado (401)")
+		return nil, fmt.Errorf("TEAMS_NOTIF_TOKEN expired (401)")
 	}
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		return nil, fmt.Errorf("chatsvc error %d", resp.StatusCode)
@@ -68,12 +68,12 @@ func (c *Client) FetchNotifications() ([]NotificationItem, error) {
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("error leyendo respuesta: %w", err)
+		return nil, fmt.Errorf("error reading response: %w", err)
 	}
 
 	var raw activityResponse
 	if err := json.Unmarshal(body, &raw); err != nil {
-		return nil, fmt.Errorf("error parseando JSON: %w", err)
+		return nil, fmt.Errorf("error parsing JSON: %w", err)
 	}
 
 	items := make([]NotificationItem, 0, len(raw.Messages))
@@ -83,7 +83,7 @@ func (c *Client) FetchNotifications() ([]NotificationItem, error) {
 		}
 		act := msg.Properties.Activity
 
-		// Las tareas van al Workspace 4 (Education Assignments), no al 3
+		// Assignments go to Workspace 4 (Education Assignments), not 3
 		if act.ActivitySubtype == "assignmentPublishedNotification" ||
 			act.ActivitySubtype == "assignmentDueDateNotification" {
 			continue
@@ -112,15 +112,15 @@ func (c *Client) FetchNotifications() ([]NotificationItem, error) {
 func ActivityTypeLabel(subtype string) string {
 	switch subtype {
 	case "assignmentPublishedNotification":
-		return "[TAREA]  "
+		return "[ASSIGN] "
 	case "assignmentDueDateNotification":
-		return "[VENCE]  "
+		return "[DUE]    "
 	case "mention":
 		return "[@]      "
 	case "like":
 		return "[👍]     "
 	case "reply":
-		return "[RESP]   "
+		return "[REPLY]  "
 	case "channelMessage":
 		return "[MSG]    "
 	default:

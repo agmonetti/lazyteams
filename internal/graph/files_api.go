@@ -16,10 +16,10 @@ type DriveItem struct {
 	Folder      *struct {
 		ChildCount int `json:"childCount"`
 	} `json:"folder,omitempty"`
-	// RemoteItem indica que este DriveItem es en realidad un "shortcut" (acceso directo)
-	// a contenido que vive físicamente en otro Drive. Desde fines de 2024, Microsoft
-	// cambió "Materiales de clase" (Class Materials) de ser una carpeta real a ser
-	// un shortcut de este tipo en muchos tenants educativos.
+	// RemoteItem indicates that this DriveItem is actually a "shortcut"
+	// to content that lives in a different Drive. Since late 2024, Microsoft
+	// changed "Class Materials" from being a real folder to being
+	// a shortcut of this type in many educational tenants.
 	RemoteItem *struct {
 		ID              string `json:"id"`
 		Name            string `json:"name"`
@@ -31,15 +31,15 @@ type DriveItem struct {
 		} `json:"folder,omitempty"`
 	} `json:"remoteItem,omitempty"`
 
-	// Flag interno para la UI (no pertenece al JSON de Microsoft)
+	// Internal flag for the UI (not part of Microsoft's JSON)
 	IsExternalLink bool `json:"-"`
 }
 
-// GetChannelFiles obtiene la lista de archivos usando la API directa de SharePoint (Drive)
+// GetChannelFiles fetches the file list using the direct SharePoint Drive API
 func (c *Client) GetChannelFiles(teamID, channelName string) ([]DriveItem, error) {
-	// Bypass del bug "This API is not supported for AAD accounts".
-	// En lugar de usar el endpoint de Teams, le pegamos directamente al disco (Drive)
-	// del grupo de Office 365. La carpeta del canal tiene el mismo nombre que el canal.
+	// Workaround for the "This API is not supported for AAD accounts" bug.
+	// Instead of using the Teams endpoint, we hit the Office 365 group's
+	// Drive directly. The channel folder has the same name as the channel.
 	endpoint := fmt.Sprintf("/groups/%s/drive/root:/%s:/children", teamID, url.PathEscape(channelName))
 	body, err := c.doReq(endpoint)
 	if err != nil {
@@ -50,12 +50,12 @@ func (c *Client) GetChannelFiles(teamID, channelName string) ([]DriveItem, error
 		Value []DriveItem `json:"value"`
 	}
 	if err := json.Unmarshal(body, &res); err != nil {
-		return nil, fmt.Errorf("error parseando archivos: %w", err)
+		return nil, fmt.Errorf("error parsing files: %w", err)
 	}
 
-	// PARCHE EDUCACIÓN: En los tenants universitarios, la carpeta "Materiales de clase"
-	// es una carpeta especial (hoy día, un shortcut/remoteItem) que Teams inyecta
-	// visualmente adentro de "General".
+	// EDUCATION PATCH: In university tenants, the "Class Materials" folder
+	// is a special folder (currently a shortcut/remoteItem) that Teams injects
+	// visually inside "General".
 	if strings.ToLower(channelName) == "general" {
 		matFolder, err := c.findClassMaterialsFolder(teamID)
 		if err == nil && matFolder != nil {
@@ -66,7 +66,7 @@ func (c *Client) GetChannelFiles(teamID, channelName string) ([]DriveItem, error
 	return res.Value, nil
 }
 
-// GetFolderChildren permite navegar de forma recursiva (tipo árbol)
+// GetFolderChildren enables recursive tree-style navigation
 func (c *Client) GetFolderChildren(teamID, folderID string) ([]DriveItem, error) {
 	endpoint := fmt.Sprintf("/groups/%s/drive/items/%s/children", teamID, folderID)
 	body, err := c.doReq(endpoint)
@@ -78,16 +78,16 @@ func (c *Client) GetFolderChildren(teamID, folderID string) ([]DriveItem, error)
 		Value []DriveItem `json:"value"`
 	}
 	if err := json.Unmarshal(body, &res); err != nil {
-		return nil, fmt.Errorf("error parseando subcarpeta: %w", err)
+		return nil, fmt.Errorf("error parsing subfolder: %w", err)
 	}
 
 	return res.Value, nil
 }
 
-// findClassMaterialsFolder localiza la carpeta/shortcut "Materiales de clase"
-// (o "Class Materials") buscando el Drive independiente asociado a este Site.
+// findClassMaterialsFolder locates the "Class Materials" folder/shortcut
+// by finding the independent Drive associated with this Site.
 func (c *Client) findClassMaterialsFolder(teamID string) (*DriveItem, error) {
-	// 1. Obtener el Site asociado al grupo
+	// 1. Get the Site associated with the group
 	siteEndpoint := fmt.Sprintf("/groups/%s/sites/root", teamID)
 	siteBody, err := c.doReq(siteEndpoint)
 	if err != nil {
@@ -100,7 +100,7 @@ func (c *Client) findClassMaterialsFolder(teamID string) (*DriveItem, error) {
 		return nil, err
 	}
 
-	// 2. Obtener todas las librerías (drives) de ese Site
+	// 2. Get all libraries (drives) for that Site
 	drivesEndpoint := fmt.Sprintf("/sites/%s/drives", siteRes.ID)
 	drivesBody, err := c.doReq(drivesEndpoint)
 	if err != nil {
@@ -117,7 +117,7 @@ func (c *Client) findClassMaterialsFolder(teamID string) (*DriveItem, error) {
 		return nil, err
 	}
 
-	// 3. Buscar la librería de Materiales de clase
+	// 3. Find the Class Materials library
 	var matDriveID string
 	var matName string
 	for _, d := range drivesRes.Value {
@@ -129,12 +129,12 @@ func (c *Client) findClassMaterialsFolder(teamID string) (*DriveItem, error) {
 	}
 
 	if matDriveID == "" {
-		return nil, errors.New("no se encontró librería de Materiales de clase")
+		return nil, errors.New("Class Materials library not found")
 	}
 
-	// 4. Crear un DriveItem sintético con la faceta RemoteItem.
-	// La TUI está programada para navegar a otro drive si encuentra un RemoteItem.
-	// Ponemos "root" como ID para que el endpoint pida la raíz de esa librería.
+	// 4. Create a synthetic DriveItem with the RemoteItem facet.
+	// The TUI is programmed to navigate to another drive when it finds a RemoteItem.
+	// We use "root" as the ID so the endpoint requests the root of that library.
 	item := DriveItem{
 		ID:   "root",
 		Name: matName,
@@ -160,8 +160,8 @@ func (c *Client) findClassMaterialsFolder(teamID string) (*DriveItem, error) {
 	return &item, nil
 }
 
-// ensureFolderFacet garantiza que el ícono de carpeta se muestre en la UI
-// incluso si el item viene únicamente con faceta remoteItem.
+// ensureFolderFacet ensures the folder icon is displayed in the UI
+// even if the item only comes with the remoteItem facet.
 func ensureFolderFacet(item *DriveItem) {
 	if item.Folder == nil {
 		item.Folder = &struct {
@@ -170,10 +170,10 @@ func ensureFolderFacet(item *DriveItem) {
 	}
 }
 
-// GetItemChildren lista los hijos de un item en un Drive arbitrario (por driveID).
-// Es necesario para navegar dentro de "shortcuts" (remoteItem), como el nuevo
-// formato de "Materiales de clase", cuyo contenido real vive en un Drive
-// distinto al del grupo/equipo (Team).
+// GetItemChildren lists children of an item in an arbitrary Drive (by driveID).
+// This is needed to navigate inside "shortcuts" (remoteItems), like the new
+// "Class Materials" format whose actual content lives in a Drive
+// different from the group/team's Drive.
 func (c *Client) GetItemChildren(driveID, itemID string) ([]DriveItem, error) {
 	endpoint := fmt.Sprintf("/drives/%s/items/%s/children", driveID, itemID)
 	body, err := c.doReq(endpoint)
@@ -185,7 +185,7 @@ func (c *Client) GetItemChildren(driveID, itemID string) ([]DriveItem, error) {
 		Value []DriveItem `json:"value"`
 	}
 	if err := json.Unmarshal(body, &res); err != nil {
-		return nil, fmt.Errorf("error parseando hijos remotos: %w", err)
+		return nil, fmt.Errorf("error parsing remote children: %w", err)
 	}
 
 	return res.Value, nil

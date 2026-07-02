@@ -9,8 +9,8 @@ import (
 	"os"
 )
 
-// SetPresence actualiza el estado de presencia preferido del usuario.
-// Posibles valores para availability y activity:
+// SetPresence updates the user's preferred presence status.
+// Possible values for availability and activity:
 // "Available", "Busy", "DoNotDisturb", "BeRightBack", "Away", "Offline"
 func (c *Client) SetPresence(userID, availability, activity string) error {
 	endpoint := fmt.Sprintf("%s/users/%s/presence/setUserPreferredPresence", baseURL, userID)
@@ -18,7 +18,7 @@ func (c *Client) SetPresence(userID, availability, activity string) error {
 	payload := map[string]interface{}{
 		"availability":       availability,
 		"activity":           activity,
-		"expirationDuration": "PT1H", // 1 hora por defecto (Graph lo recomienda o lo exige a veces)
+		"expirationDuration": "PT1H", // 1 hour default (Graph recommends or sometimes requires it)
 	}
 	jsonBody, err := json.Marshal(payload)
 	if err != nil {
@@ -34,7 +34,7 @@ func (c *Client) SetPresence(userID, availability, activity string) error {
 
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("error de red: %w", err)
+		return fmt.Errorf("network error: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -46,7 +46,7 @@ func (c *Client) SetPresence(userID, availability, activity string) error {
 	return nil
 }
 
-// ClearPresence borra la presencia preferida (vuelve a la presencia calculada automáticamente por Teams).
+// ClearPresence clears the preferred presence (reverts to the presence automatically calculated by Teams).
 func (c *Client) ClearPresence(userID string) error {
 	endpoint := fmt.Sprintf("%s/users/%s/presence/clearUserPreferredPresence", baseURL, userID)
 
@@ -59,7 +59,7 @@ func (c *Client) ClearPresence(userID string) error {
 
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("error de red: %w", err)
+		return fmt.Errorf("network error: %w", err)
 	}
 	defer resp.Body.Close()
 

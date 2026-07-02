@@ -13,7 +13,7 @@ import (
 type Attachment struct {
 	Name string
 	URL  string
-	Type string // "file" o "link"
+	Type string // "file" or "link"
 }
 
 type Message struct {
@@ -25,7 +25,7 @@ type Message struct {
 	Attachments []Attachment `json:"attachments"`
 }
 
-// Estructuras internas para la respuesta de ChatSvc (Teams Web)
+// Internal structures for ChatSvc (Teams Web) response
 type chatSvcResponse struct {
 	Messages []struct {
 		ID                  string                 `json:"id"`
@@ -41,7 +41,7 @@ type chatSvcResponse struct {
 	} `json:"_metadata"`
 }
 
-// GetMessages obtiene los mensajes de un canal usando la API interna (ChatSvc)
+// GetMessages fetches messages from a channel using the internal API (ChatSvc)
 func (c *Client) GetMessages(teamID, channelID string, pageSize int) ([]Message, error) {
 	var allMsgs []Message
 	batchSize := pageSize
@@ -85,24 +85,24 @@ func (c *Client) GetMessages(teamID, channelID string, pageSize int) ([]Message,
 		body, err := io.ReadAll(resp.Body)
 		resp.Body.Close()
 		if err != nil {
-			return allMsgs, fmt.Errorf("error leyendo respuesta: %w", err)
+			return allMsgs, fmt.Errorf("error reading response: %w", err)
 		}
 
 		var res chatSvcResponse
 		if err := json.Unmarshal(body, &res); err != nil {
-			return allMsgs, fmt.Errorf("error parseando mensajes: %w", err)
+			return allMsgs, fmt.Errorf("error parsing messages: %w", err)
 		}
 
 		for _, m := range res.Messages {
 			t, _ := time.Parse(time.RFC3339, m.OriginalArrivalTime)
 			name := m.ImDisplayName
 			if name == "" {
-				name = "Usuario"
+				name = "User"
 			}
 
 			var attachments []Attachment
 
-			// Extraer links de OneDrive/SharePoint u otros adjuntos
+			// Extract OneDrive/SharePoint links or other attachments
 			if linksStr, ok := m.Properties["links"].(string); ok && linksStr != "[]" && linksStr != "" {
 				var links []map[string]interface{}
 				if json.Unmarshal([]byte(linksStr), &links) == nil {
@@ -129,12 +129,12 @@ func (c *Client) GetMessages(teamID, channelID string, pageSize int) ([]Message,
 				}
 			}
 
-			// Extraer archivos directos
+			// Extract direct files
 			if filesStr, ok := m.Properties["files"].(string); ok && filesStr != "[]" && filesStr != "" {
 				var files []map[string]interface{}
 				if json.Unmarshal([]byte(filesStr), &files) == nil {
 					for _, f := range files {
-						fname := "Archivo adjunto"
+						fname := "Attached file"
 						if n, ok := f["fileName"].(string); ok && n != "" {
 							fname = n
 						} else if n, ok := f["name"].(string); ok && n != "" {
@@ -193,7 +193,7 @@ func (c *Client) GetMessages(teamID, channelID string, pageSize int) ([]Message,
 	return allMsgs, nil
 }
 
-// SendMessage envía un mensaje de texto al canal especificado usando la API interna
+// SendMessage sends a text message to the specified channel using the internal API
 func (c *Client) SendMessage(channelID, content string) error {
 	url := fmt.Sprintf("https://teams.microsoft.com/api/chatsvc/amer/v1/users/ME/conversations/%s/messages", channelID)
 

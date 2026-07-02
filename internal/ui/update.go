@@ -18,10 +18,10 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// Comandos
+// Commands
 
-const pollInterval = 15       // segundos entre polls de DMs
-const presenceInterval = 60   // segundos entre polls de presencia
+const pollInterval = 15       // seconds between DM polls
+const presenceInterval = 60   // seconds between presence polls
 
 type tickMsg struct{}
 type presenceTickMsg struct{}
@@ -29,7 +29,7 @@ type messageSentMsg struct{}
 type messageSendErrMsg struct{ err error }
 type filesMsg struct {
 	files    []graph.DriveItem
-	folderID string // para cachear: folderID o "root:<chanID>"
+	folderID string // for caching: folderID or "root:<chanID>"
 }
 type filesErrMsg struct{ err error }
 type chatsMsg struct{ chats []graph.Chat }
@@ -93,7 +93,7 @@ func pollChatsCmd(client *graph.Client) tea.Cmd {
 	return func() tea.Msg {
 		chats, err := client.GetChats()
 		if err != nil {
-			return nil // falla silenciosa en poll, no rompemos la UI
+			return nil // silent failure on poll, don't break the UI
 		}
 		return pollChatsMsg{chats}
 	}
@@ -110,7 +110,7 @@ type setPresenceMsg struct {
 func setPresenceCmd(client *graph.Client, userID, availability string) tea.Cmd {
 	return func() tea.Msg {
 		var err error
-		if availability == "Reset (Automático)" {
+		if availability == "Reset (Automatic)" {
 			err = client.ClearPresence(userID)
 		} else {
 			err = client.SetPresence(userID, availability, availability)
@@ -126,7 +126,7 @@ func pollPresenceCmd(client *graph.Client, userIDs []string) tea.Cmd {
 		}
 		presences, err := client.GetPresences(userIDs)
 		if err != nil {
-			return nil // falla silenciosa
+			return nil // silent failure
 		}
 		return presenceTickResultMsg{presences}
 	}
@@ -191,17 +191,17 @@ func downloadFilesCmd(client *graph.Client, teamID, driveID string, items []grap
 			var err error
 
 			if item.ID != "" {
-				// Item con ID real de Graph (canales, Materiales de clase)
+				// Item with real Graph ID (channels, Class Materials)
 				if driveID != "" {
 					body, err = client.DownloadRemoteItem(driveID, item.ID)
 				} else {
 					body, err = client.DownloadItem(teamID, item.ID)
 				}
 			} else if item.WebUrl != "" {
-				// Item sintético de DM: intentar resolver via /shares
+				// Synthetic DM item: try to resolve via /shares
 				resolved, resolveErr := client.ResolveSharedItem(item.WebUrl)
 				if resolveErr == nil && resolved != nil && resolved.ID != "" {
-					// Resuelto: descargar con el ID y driveId reales
+					// Resolved: download with the real ID and driveId
 					resolvedDriveID := ""
 					if resolved.RemoteItem != nil {
 						resolvedDriveID = resolved.RemoteItem.ParentReference.DriveID
@@ -212,34 +212,34 @@ func downloadFilesCmd(client *graph.Client, teamID, driveID string, items []grap
 						body, err = client.DownloadItem(teamID, resolved.ID)
 					}
 				} else {
-					// No se pudo resolver via /shares
+					// Could not resolve via /shares
 					if isSharePointURL(item.WebUrl) {
-						// Es un link de SharePoint/OneDrive pero no se pudo resolver
-						// = el archivo no existe o fue eliminado
-						results = append(results, fmt.Sprintf("✗ %s: no existe en SharePoint", item.Name))
+						// It's a SharePoint/OneDrive link but couldn't be resolved
+						// = the file doesn't exist or was deleted
+						results = append(results, fmt.Sprintf("✗ %s: not found on SharePoint", item.Name))
 					} else {
-						// Link externo (github, etc.) → navegador
+						// External link (github, etc.) → open in browser
 						link := item.DownloadUrl
 						if link == "" {
 							link = item.WebUrl
 						}
 						openBrowser(link)
-						results = append(results, fmt.Sprintf("⟳ %s: abierto en navegador", item.Name))
+						results = append(results, fmt.Sprintf("⟳ %s: opened in browser", item.Name))
 					}
 					continue
 				}
 			} else {
-				err = fmt.Errorf("sin ID ni URL de descarga")
+				err = fmt.Errorf("no ID or download URL")
 			}
 			if err != nil {
-				// Si falla la descarga nativa y hay WebUrl, abrir en navegador
+				// If native download fails and there's a WebUrl, open in browser
 				if item.WebUrl != "" {
 					link := item.DownloadUrl
 					if link == "" {
 						link = item.WebUrl
 					}
 					openBrowser(link)
-					results = append(results, fmt.Sprintf("⟳ %s: abierto en navegador", item.Name))
+					results = append(results, fmt.Sprintf("⟳ %s: opened in browser", item.Name))
 				} else {
 					results = append(results, fmt.Sprintf("✗ %s: %v", item.Name, err))
 				}
@@ -279,19 +279,19 @@ func discoverSelfChatCmd(client *graph.Client, selfID, cachedID string) tea.Cmd 
 		if selfID == "" {
 			return nil
 		}
-		
-		// 1. Si tenemos caché, bypass total de la red
+
+		// 1. If we have a cache, bypass the network entirely
 		if cachedID != "" {
 			return selfChatDiscoveredMsg{id: cachedID, newlyDiscovered: false}
 		}
 
-		// 2. Sin caché, toca hacer fuerza bruta a la API
+		// 2. No cache, we need to brute-force the API
 		id := client.DiscoverSelfChatID(selfID)
 		if id != "" {
 			return selfChatDiscoveredMsg{id: id, newlyDiscovered: true}
 		}
-		
-		return nil // Si fallan todos los formatos, fallamos silenciosamente
+
+		return nil // If all formats fail, fail silently
 	}
 }
 
@@ -321,7 +321,7 @@ func loadMessagesCmd(client *graph.Client, teamID, channelID string, pageSize in
 		if err != nil {
 			return messagesErrMsg{err: err, conversationID: channelID, partialMsgs: msgs}
 		}
-		
+
 		return messagesMsg{msgs}
 	}
 }
@@ -364,14 +364,14 @@ func loadFolderCmd(client *graph.Client, teamID string, node FolderNode) tea.Cmd
 	}
 }
 
-// formatMessages convierte la lista de mensajes en un string renderizable para el viewport
+// formatMessages converts the message list into a renderable string for the viewport
 func formatMessages(messages []graph.Message, width int) string {
 	var content string
 	var lastDate string
 	for i := len(messages) - 1; i >= 0; i-- {
 		msg := messages[i]
 
-		// Separador sutil entre días distintos
+		// Subtle separator between different days
 		msgDate := msg.CreatedAt.Local().Format("02/01/2006")
 		if lastDate != "" && msgDate != lastDate {
 			content += metaStyle.Render("─────────────────────────────────────") + "\n"
@@ -383,7 +383,7 @@ func formatMessages(messages []graph.Message, width int) string {
 
 		sender := msg.FromName
 		if sender == "" {
-			sender = "Usuario"
+			sender = "User"
 		}
 
 		switch msg.MessageType {
@@ -392,7 +392,7 @@ func formatMessages(messages []graph.Message, width int) string {
 			for _, att := range msg.Attachments {
 				icon := "[Link]"
 				if att.Type == "file" {
-					icon = "[Archivo]"
+					icon = "[File]"
 				}
 				linkStr := makeClickableLink(att.Name, att.URL)
 				attachmentsStr += fmt.Sprintf("  %s %s\n", systemEventStyle.Render(icon), linkStr)
@@ -414,7 +414,7 @@ func formatMessages(messages []graph.Message, width int) string {
 		case "Event/Call":
 			content += fmt.Sprintf("%s %s\n\n",
 				formattedTime,
-				systemEventStyle.Render("[Reunion / Llamada del Sistema]"))
+				systemEventStyle.Render("[Meeting / System Call]"))
 
 		case "ThreadActivity/AddMember", "ThreadActivity/MemberAdded", "ThreadActivity/DeleteMember", "ThreadActivity/MemberRemoved":
 			continue
@@ -433,7 +433,7 @@ func formatMessagesDM(messages []graph.Message, width int, selfName string) stri
 	var content string
 	for i := len(messages) - 1; i >= 0; i-- {
 		msg := messages[i]
-		// Solo filtrar tipos que sabemos que son basura
+		// Only filter types we know are noise
 		if msg.MessageType == "ThreadActivity/MemberJoined" ||
 			msg.MessageType == "ThreadActivity/MemberLeft" ||
 			msg.MessageType == "ThreadActivity/TopicUpdate" ||
@@ -442,7 +442,7 @@ func formatMessagesDM(messages []graph.Message, width int, selfName string) stri
 		}
 		timeStr := msg.CreatedAt.Local().Format("02/01 15:04")
 		body := strings.TrimSpace(msg.Body)
-		isSelf := msg.FromName == selfName || msg.FromName == "Usuario"
+		isSelf := msg.FromName == selfName || msg.FromName == "User"
 		if isSelf {
 			timeStr := msg.CreatedAt.Local().Format("02/01 15:04")
 
@@ -488,29 +488,29 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 	var cmd tea.Cmd
 
-	// --- MODO INSERT (TEXT INPUT) ---
+	// --- INSERT MODE (TEXT INPUT) ---
 	if m.isTyping {
 		switch msg := msg.(type) {
 		case tea.KeyMsg:
 			switch msg.String() {
-			case "esc": // Salir del modo insert
+			case "esc": // Exit insert mode
 				m.isTyping = false
 				m.input.Blur()
 				return m, nil
-			case "enter": // Enviar mensaje
+			case "enter": // Send message
 				v := m.input.Value()
 				if v != "" && m.activeConversationID() != "" {
 					m.input.Reset()
 					m.isTyping = false
 					m.input.Blur()
 					m.loading = true
-					// Enviamos y agregamos el comando
+					// Send and append the command
 					return m, sendMessageCmd(m.client, m.activeConversationID(), v)
 				}
 			}
 		}
-		
-		// Pasamos todas las demás teclas al input
+
+		// Pass all other keys to the input
 		m.input, cmd = m.input.Update(msg)
 		cmds = append(cmds, cmd)
 		return m, tea.Batch(cmds...)
@@ -522,8 +522,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		// Ancho: overhead real = 2 por panel (border) × 2 paneles = 4
-		// + 1 col de margen para Kitty = 5 total
+		// Width: real overhead = 2 per panel (border) × 2 panels = 4
+		// + 1 col margin for Kitty = 5 total
 		available        := m.width - 5
 		leftOuterWidth   := available / 3
 		rightOuterWidth  := available - leftOuterWidth
@@ -545,7 +545,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.leftVp.Height = leftInnerHeight
 		}
 
-		// Re-wrappear contenido existente con el nuevo ancho
+		// Re-wrap existing content with the new width
 		if m.ready && len(m.messages) > 0 {
 			if m.viewMode == ModeChat {
 				var content string
@@ -573,9 +573,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, clearStatusAfter(m.downloadStatusID)
 		}
 		if msg.err != nil {
-			m.previewContent = fmt.Sprintf("Error al cargar preview: %v", msg.err)
+			m.previewContent = fmt.Sprintf("Error loading preview: %v", msg.err)
 		} else {
-			// Agregar numeración de líneas
+			// Add line numbers
 			lines := strings.Split(msg.content, "\n")
 			var numbered strings.Builder
 			width := len(fmt.Sprintf("%d", len(lines)))
@@ -592,7 +592,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case errMsg:
 		if strings.Contains(msg.err.Error(), "Lifetime validation failed") {
-			m.err = fmt.Errorf("El token MS_GRAPH_TOKEN expiró.\n\nPor favor, ingresá a Graph Explorer, copiá un nuevo Access Token\ny actualizá la variable de entorno.")
+			m.err = fmt.Errorf("MS_GRAPH_TOKEN has expired.\n\nPlease go to Graph Explorer, copy a new Access Token\nand update the environment variable.")
 		} else {
 			m.err = msg.err
 		}
@@ -611,27 +611,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case messagesErrMsg:
 		var chatsvcErr *graph.ChatSvcError
 		if m.selfID != "" && msg.conversationID == m.prefs.SelfChatIDs[m.selfID] && errors.As(msg.err, &chatsvcErr) && chatsvcErr.StatusCode == 404 {
-			// El acceso directo a notas personales falló con 404. 
-			// Probablemente el MRI cambió o el caché quedó sucio.
-			// 1. Borramos el caché
+			// Direct access to personal notes failed with 404.
+			// The MRI probably changed or the cache is stale.
+			// 1. Clear the cache
 			delete(m.prefs.SelfChatIDs, m.selfID)
 			savePrefs(m.prefs)
 
-			// 2. Avisamos en la UI
-			m.viewport.SetContent("El identificador del chat expiró. Auto-reparando acceso...")
-			
-			// 3. Relanzamos el descubrimiento forzando red (pasando string vacío)
+			// 2. Show a message in the UI
+			m.viewport.SetContent("Chat identifier expired. Auto-repairing access...")
+
+			// 3. Re-trigger discovery forcing network (passing empty string)
 			return m, discoverSelfChatCmd(m.client, m.selfID, "")
 		}
 
-		// Carga parcial: si hay mensajes previos al fallo, los mostramos con aviso
+		// Partial load: if there are messages before the failure, show them with a warning
 		if len(msg.partialMsgs) > 0 {
 			m.messages = msg.partialMsgs
 			m.loading = false
 			if m.viewMode == ModeFiles {
 				m.files = teams.AggregateChatAttachments(m.messages)
 				m.selectedFile = 0
-				m.viewport.SetContent(renderFilesContent(&m) + "\n\n(carga parcial por error de red)")
+				m.viewport.SetContent(renderFilesContent(&m) + "\n\n(partial load due to network error)")
 			} else {
 				var partial string
 				if m.workspace == WorkspaceDMs {
@@ -639,30 +639,30 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				} else {
 					partial = formatMessages(m.messages, m.viewport.Width)
 				}
-				m.viewport.SetContent(partial + "\n\n(carga parcial por error de red)")
+				m.viewport.SetContent(partial + "\n\n(partial load due to network error)")
 			}
 			return m, nil
 		}
 
 		if strings.Contains(msg.err.Error(), "401") {
-			m.viewport.SetContent("Error 401: El token TEAMS_WEB_TOKEN expiró.\n\nPor favor, copiá uno nuevo desde la web de Teams (Network > 'messages' > Authorization)\ny actualizá la variable de entorno para poder leer mensajes.")
+			m.viewport.SetContent("Error 401: TEAMS_WEB_TOKEN has expired.\n\nPlease copy a new one from the Teams web app (Network > 'messages' > Authorization)\nand update the environment variable to read messages.")
 		} else {
-			m.viewport.SetContent(fmt.Sprintf("Error cargando mensajes: %v", msg.err))
+			m.viewport.SetContent(fmt.Sprintf("Error loading messages: %v", msg.err))
 		}
 		m.loading = false
 		return m, nil
 
 	case messageSentMsg:
-		// Mensaje enviado correctamente. Recargamos los mensajes del canal/chat
+		// Message sent successfully. Reload messages for the channel/chat
 		return m, loadMessagesCmd(m.client, "", m.activeConversationID(), 200)
 
 	case messageSendErrMsg:
-		m.viewport.SetContent(fmt.Sprintf("Error enviando mensaje: %v", msg.err))
+		m.viewport.SetContent(fmt.Sprintf("Error sending message: %v", msg.err))
 		m.loading = false
 		return m, nil
 
 	case filesErrMsg:
-		m.viewport.SetContent(fmt.Sprintf("Error cargando archivos: %v", msg.err))
+		m.viewport.SetContent(fmt.Sprintf("Error loading files: %v", msg.err))
 		m.loading = false
 		return m, nil
 
@@ -672,7 +672,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.selectedFile = 0
 		m.selectedFiles = make(map[int]bool)
 
-		// Cachear resultado
+		// Cache the result
 		if msg.folderID != "" {
 			m.folderCache[msg.folderID] = msg.files
 		}
@@ -701,7 +701,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.messages = nil
 		m.channelErr = nil
 		m.loading = false
-		// Poblar el mapa channelID → teamID
+		// Populate the channelID → teamID map
 		for _, ch := range msg.channels {
 			m.channelToTeam[ch.ID] = msg.teamID
 		}
@@ -712,13 +712,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case meErrMsg:
-		// No bloqueamos la app: sin selfID, los chats 1:1 simplemente
-		// van a mostrar todos los participantes en vez de excluirme a mí.
+		// Don't block the app: without selfID, 1:1 chats will simply
+		// show all participants instead of excluding me.
 		return m, nil
 
 	case chatsErrMsg:
 		if strings.Contains(msg.err.Error(), "Lifetime validation failed") {
-			m.err = fmt.Errorf("El token MS_GRAPH_TOKEN expiró.\n\nPor favor, ingresá a Graph Explorer, copiá un nuevo Access Token\ny actualizá la variable de entorno.")
+			m.err = fmt.Errorf("MS_GRAPH_TOKEN has expired.\n\nPlease go to Graph Explorer, copy a new Access Token\nand update the environment variable.")
 		} else {
 			m.err = msg.err
 		}
@@ -731,7 +731,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loading = false
 		m.selectedChat = 0
 
-		// Disparar presencia inmediatamente al cargar chats
+		// Trigger presence immediately when loading chats
 		seen := make(map[string]struct{})
 		var ids []string
 		if m.selfID != "" {
@@ -752,7 +752,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, pollPresenceCmd(m.client, ids))
 		}
 
-		// Encadenamos el autodescubrimiento asíncrono pasándole el caché si existe
+		// Chain async self-discovery, passing the cache if available
 		if m.selfID != "" {
 			cachedID := m.prefs.SelfChatIDs[m.selfID]
 			return m, discoverSelfChatCmd(m.client, m.selfID, cachedID)
@@ -760,21 +760,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmds...)
 
 	case selfChatDiscoveredMsg:
-		// Si lo descubrió recién ahora por fuerza bruta, lo guardamos en disco
+		// If it was just discovered via brute-force, save it to disk
 		if msg.newlyDiscovered {
 			m.prefs.SelfChatIDs[m.selfID] = msg.id
 			savePrefs(m.prefs)
 		}
 
-		// Buscar si ya existe el chat sintético en la lista
+		// Check if the synthetic chat already exists in the list
 		found := false
 		for i, ch := range m.chats {
-			if ch.Topic == "Notas personales (Vos)" {
+			if ch.Topic == "Personal notes (You)" {
 				oldID := ch.ID
-				m.chats[i].ID = msg.id // Actualización en caliente
+				m.chats[i].ID = msg.id // Hot update
 				found = true
 
-				// Si el usuario estaba intentando leer este chat y falló, auto-recuperamos
+				// If the user was trying to read this chat and it failed, auto-recover
 				if m.loadedConvID == oldID {
 					m.loadedConvID = msg.id
 					m.loading = true
@@ -784,16 +784,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-		// Si no existía (primera carga), lo insertamos al principio
+		// If it didn't exist (first load), insert it at the beginning
 		if !found {
 			selfChat := graph.Chat{
 				ID:       msg.id,
-				Topic:    "Notas personales (Vos)",
+				Topic:    "Personal notes (You)",
 				ChatType: "oneOnOne",
 			}
 			m.chats = append([]graph.Chat{selfChat}, m.chats...)
 			if m.selectedChat > 0 {
-				m.selectedChat++ // Mantener la selección visual donde estaba
+				m.selectedChat++ // Keep the visual selection where it was
 			}
 		}
 		return m, nil
@@ -820,18 +820,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tickMsg:
-		// Poll: refrescar chats si estamos en DMs y la conversación cargada sigue abierta
+		// Poll: refresh chats if we're in DMs and the loaded conversation is still open
 		cmds = append(cmds, pollChatsCmd(m.client))
-		// Refrescar mensajes si hay una conversación abierta y el usuario no está escribiendo
+		// Refresh messages if a conversation is open and the user isn't typing
 		if m.loadedConvID != "" && m.viewMode == ModeChat && !m.isTyping && !m.focusLeft {
 			cmds = append(cmds, loadMessagesCmd(m.client, "", m.loadedConvID, 200))
 		}
-		// Re-programar el próximo tick
+		// Re-schedule the next tick
 		cmds = append(cmds, refreshTickCmd())
 		return m, tea.Batch(cmds...)
 
 	case presenceTickMsg:
-		// Poll presencia: siempre incluir selfID, otros solo en DMs
+		// Presence poll: always include selfID, others only in DMs
 		seen := make(map[string]struct{})
 		var ids []string
 		if m.selfID != "" {
@@ -914,7 +914,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.presenceError = ""
 		}
-		// Refrescar presencia propia inmediatamente
+		// Refresh own presence immediately
 		if m.selfID != "" {
 			cmds = append(cmds, pollPresenceCmd(m.client, []string{m.selfID}))
 		}
@@ -940,12 +940,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case pollChatsMsg:
-		// Actualizar la lista de chats con los datos frescos
-		// (sin badge: lastModifiedDateTime no está disponible en este tenant)
+		// Update the chat list with fresh data
+		// (no badge: lastModifiedDateTime is not available on this tenant)
 		return m, nil
 
 	case tea.KeyMsg:
-		// Menú de presencia — intercepta teclas
+		// Presence menu — intercepts keys
 		if m.showPresenceMenu {
 			switch msg.String() {
 			case "esc", "q":
@@ -961,7 +961,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "enter":
 				m.showPresenceMenu = false
 				avail := m.presenceOptions[m.presenceCursor]
-				// m.selfID ya lo tenemos desde la carga inicial
+				// m.selfID is already available from initial load
 				if m.selfID != "" {
 					cmds = append(cmds, setPresenceCmd(m.client, m.selfID, avail))
 				}
@@ -969,7 +969,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(cmds...)
 		}
 
-		// Popup de confirmación de descarga — intercepta teclas antes que todo
+		// Download confirmation popup — intercepts keys before everything else
 		if m.confirmingDownload {
 			if m.editingDownloadDir {
 				switch msg.String() {
@@ -1014,7 +1014,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.downloadTargets = nil
 				return m, nil
 			}
-			return m, nil // interceptar todas las teclas mientras el popup está abierto
+			return m, nil // intercept all keys while the popup is open
 		}
 
 		switch msg.String() {
@@ -1126,7 +1126,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				} else if m.focusList == 1 && len(m.channels) > 0 {
 					if m.selectedChan > 0 {
 						m.selectedChan--
-						// Ajustar sliding window
+						// Adjust sliding window
 						if m.selectedChan < m.channelWindowStart {
 							m.channelWindowStart = m.selectedChan
 						}
@@ -1178,8 +1178,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				} else if m.focusList == 1 && len(m.channels) > 0 {
 					if m.selectedChan < len(m.channels)-1 {
 						m.selectedChan++
-						// Ajustar sliding window
-						// Para saber el maxChannels necesitamos calcularlo igual que en view.go
+						// Adjust sliding window
+						// To get maxChannels we need to calculate it the same way as in view.go
 						teamsLines := len(m.teams) + 3
 						viewportH := m.leftVp.Height
 						if viewportH <= 0 {
@@ -1223,7 +1223,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.selectedFiles = make(map[int]bool)
 					if len(m.folderStack) == 0 {
 						m.currentFilesDriveID = ""
-						// Checkear caché para la raíz
+						// Check cache for root
 						cacheKey := "root:" + m.channels[m.selectedChan].ID
 						if cached, ok := m.folderCache[cacheKey]; ok {
 							m.files = cached
@@ -1237,7 +1237,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					} else {
 						parent := m.folderStack[len(m.folderStack)-1]
 						m.currentFilesDriveID = parent.DriveID
-						// Checkear caché
+						// Check cache
 						if cached, ok := m.folderCache[parent.ID]; ok {
 							m.files = cached
 							m.selectedFile = 0
@@ -1272,12 +1272,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "f":
 			if !m.isTyping {
-				m.isTyping = false // reseteo por seguridad
+				m.isTyping = false // safety reset
 				if m.workspace == WorkspaceTeams && len(m.channels) > 0 {
 					if m.viewMode == ModeChat {
 						m.viewMode = ModeFiles
 						m.folderStack = nil
-						// Checkear caché para la raíz
+						// Check cache for root
 						cacheKey := "root:" + m.channels[m.selectedChan].ID
 						if cached, ok := m.folderCache[cacheKey]; ok {
 							m.files = cached
@@ -1297,14 +1297,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				} else if m.workspace == WorkspaceDMs && len(m.chats) > 0 {
 					activeID := m.activeConversationID()
 					if m.viewMode == ModeChat {
-						// Si cambiamos de chat sin apretar Enter, igual funciona
+						// If we switch chats without pressing Enter, it still works
 						if m.loadedConvID != activeID {
 							m.loading = true
 							m.loadedConvID = activeID
-							m.viewMode = ModeChat // Forzamos ModeChat porque estamos pidiendo los mensajes desde cero
+							m.viewMode = ModeChat // Must reset to ModeChat since we're requesting messages from scratch
 							cmds = append(cmds, loadMessagesCmd(m.client, "", activeID, 200))
 						} else {
-							// Agregación local: cero red, usa lo que ya está en m.messages.
+							// Local aggregation: zero network, uses what's already in m.messages.
 							m.viewMode = ModeFiles
 							m.folderStack = nil
 							m.files = teams.AggregateChatAttachments(m.messages)
@@ -1332,7 +1332,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case " ":
-			// Selección/deselección de archivo para descarga múltiple
+			// Select/deselect file for multi-download
 			if !m.focusLeft && m.viewMode == ModeFiles && len(m.files) > 0 {
 				if m.selectedFiles[m.selectedFile] {
 					delete(m.selectedFiles, m.selectedFile)
@@ -1343,14 +1343,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 	case "o":
-		// En WorkspaceActivity, panel derecho: navegar al canal de la notificación
+		// In WorkspaceActivity, right panel: navigate to notification's channel
 		if m.workspace == WorkspaceActivity && !m.focusLeft {
 			if m.selectedNotif < len(m.notifications) {
 				n := m.notifications[m.selectedNotif]
 				if n.SourceThread != "" {
 					teamID, known := m.channelToTeam[n.SourceThread]
 					if known {
-						// Hit en caché — navegación directa sin red
+						// Cache hit — direct navigation without network
 						for i, t := range m.teams {
 							if t.ID == teamID {
 								m.selectedTeam = i
@@ -1364,14 +1364,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.loading      = true
 						cmds = append(cmds, loadMessagesCmd(m.client, teamID, n.SourceThread, 200))
 					} else {
-						// Miss — buscar async en todos los equipos
+						// Cache miss — async search across all teams
 						cmds = append(cmds, navigateToThreadCmd(m.client, m.teams, n.SourceThread))
 					}
 				}
 			}
 			return m, tea.Batch(cmds...)
 		}
-		// Abrir popup de confirmación de descarga
+		// Open download confirmation popup
 			if !m.confirmingDownload && !m.focusLeft && m.viewMode == ModeFiles && len(m.files) > 0 {
 				var targets []graph.DriveItem
 				if len(m.selectedFiles) > 0 {
@@ -1390,10 +1390,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case "v":
-			// Preview de archivo: texto en TUI, resto en navegador
+			// File preview: text in TUI, rest in browser
 			if !m.focusLeft && m.viewMode == ModeFiles && len(m.files) > 0 && !m.previewing {
 				if len(m.selectedFiles) > 1 {
-					m.downloadStatus = "Solo se puede previsualizar un archivo a la vez"
+					m.downloadStatus = "Only one file can be previewed at a time"
 					m.downloadStatusID++
 					if m.viewMode == ModeFiles {
 						m.viewport.SetContent(renderFilesContent(&m))
@@ -1402,7 +1402,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				item := m.files[m.selectedFile]
 				if item.Folder != nil {
-					// Si es carpeta, no preview — ignorar
+					// If it's a folder, no preview — ignore
 				} else {
 					driveID := m.currentFilesDriveID
 					teamID := m.teams[m.selectedTeam].ID
@@ -1422,12 +1422,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if !m.isTyping && m.workspace == WorkspaceDMs && m.viewMode == ModeFiles {
 				m.loading = true
 				m.folderStack = nil
-				// Cargar historial completo (1000 mensajes es el límite práctico de un chunk sin colgar)
+				// Load full history (1000 messages is the practical limit per chunk without hanging)
 				cmds = append(cmds, loadMessagesCmd(m.client, "", m.activeConversationID(), 1000))
 			}
 
 		case "i":
-			// Blindaje total de la UI: Solo funciona en ModeChat
+			// Full UI protection: only works in ModeChat
 			if !m.focusLeft && m.viewMode == ModeChat && m.activeConversationID() != "" {
 				m.isTyping = true
 				m.input.Focus()
@@ -1442,18 +1442,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.loading = true
 				m.focusLeft = false
 				m.isTyping = false
-				m.viewMode = ModeChat // OBLIGATORIO RESETEAR
+				m.viewMode = ModeChat // MUST RESET
 				m.selectedFiles = make(map[int]bool)
 				m.folderStack = nil
 				chatID := m.chats[m.selectedChat].ID
 				m.loadedConvID = chatID
-				delete(m.chatUnread, chatID) // Limpiar badge al abrir
+				delete(m.chatUnread, chatID) // Clear badge on open
 				cmds = append(cmds, loadMessagesCmd(m.client, "", chatID, 200))
 			} else if m.focusLeft && m.focusList == 1 && len(m.channels) > 0 {
 				m.loading = true
 				m.focusLeft = false
 				m.isTyping = false
-				m.viewMode = ModeChat // OBLIGATORIO RESETEAR
+				m.viewMode = ModeChat // MUST RESET
 				m.selectedFiles = make(map[int]bool)
 				m.folderStack = nil
 				chanID := m.channels[m.selectedChan].ID
@@ -1469,7 +1469,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 					m.folderStack = append(m.folderStack, node)
 					m.currentFilesDriveID = node.DriveID
-					// Checkear caché
+					// Check cache
 					if cached, ok := m.folderCache[node.ID]; ok {
 						m.files = cached
 						m.selectedFile = 0
@@ -1488,7 +1488,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					node := FolderNode{ID: selected.ID, Name: selected.Name, DriveID: currentDriveID}
 					m.folderStack = append(m.folderStack, node)
 					m.currentFilesDriveID = currentDriveID
-					// Checkear caché
+					// Check cache
 					if cached, ok := m.folderCache[node.ID]; ok {
 						m.files = cached
 						m.selectedFile = 0
@@ -1500,7 +1500,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						cmds = append(cmds, loadFolderCmd(m.client, m.teams[m.selectedTeam].ID, node))
 					}
 				} else {
-					// Es un archivo, abrimos
+					// It's a file, open it
 					link := selected.DownloadUrl
 					if link == "" {
 						link = selected.WebUrl
@@ -1512,18 +1512,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-		// --- MOTOR DE CÁMARA PANEL IZQUIERDO ---
+		// --- LEFT PANEL CAMERA ENGINE ---
 		if m.focusLeft && m.ready {
 			var cursorLine int
 			if m.workspace == WorkspaceDMs {
-				cursorLine = 1 + m.selectedChat // 1 por el título "Chats"
+				cursorLine = 1 + m.selectedChat // 1 for the "Chats" title
 			} else if m.focusList == 1 {
-				cursorLine = len(m.teams) + 3 + m.selectedChan // Sumamos los equipos y los espacios
+				cursorLine = len(m.teams) + 3 + m.selectedChan // Add teams and spacing
 			} else {
-				cursorLine = 1 + m.selectedTeam // 1 por el título "Equipos"
+				cursorLine = 1 + m.selectedTeam // 1 for the "Teams" title
 			}
-			
-			// Centramos la cámara en el cursor
+
+			// Center the camera on the cursor
 			offset := cursorLine - (m.leftVp.Height / 2)
 			if offset < 0 {
 				offset = 0
@@ -1535,10 +1535,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
-// makeClickableLink envuelve un texto con la secuencia ANSI OSC 8
-// soportada por terminales modernas (como Kitty, Alacritty, GNOME Terminal)
+// makeClickableLink wraps text with the ANSI OSC 8 sequence
+// supported by modern terminals (Kitty, Alacritty, GNOME Terminal)
 func makeClickableLink(text, url string) string {
-	// \x1b]8;;URL\x1b\ TEXTO \x1b]8;;\x1b\
+	// \x1b]8;;URL\x1b\ TEXT \x1b]8;;\x1b\
 	return fmt.Sprintf("\x1b]8;;%s\x1b\\%s\x1b]8;;\x1b\\", url, text)
 }
 
@@ -1561,8 +1561,8 @@ type previewResultMsg struct {
 	content     string
 	fileName    string
 	err         error
-	openBrowser bool   // true si se abrió en el navegador
-	status      string // mensaje para mostrar en downloadStatus
+	openBrowser bool   // true if opened in browser
+	status      string // message to show in downloadStatus
 }
 
 func isTextFile(name string) bool {
@@ -1579,16 +1579,16 @@ func isTextFile(name string) bool {
 func previewFileCmd(client *graph.Client, item graph.DriveItem, driveID, teamID string) tea.Cmd {
 	return func() tea.Msg {
 		if !isTextFile(item.Name) {
-			// Siempre usar WebUrl para que el navegador muestre preview (SharePoint/OneDrive)
+			// Always use WebUrl so the browser shows preview (SharePoint/OneDrive)
 			url := item.WebUrl
 			openBrowser(url)
 			return previewResultMsg{
 				openBrowser: true,
-				status:      fmt.Sprintf("Abriendo %s en el navegador...", item.Name),
+				status:      fmt.Sprintf("Opening %s in browser...", item.Name),
 			}
 		}
 
-		// Descargar a temp y leer
+		// Download to temp and read
 		var body io.ReadCloser
 		var err error
 		if item.ID != "" {
@@ -1618,7 +1618,7 @@ func previewFileCmd(client *graph.Client, item graph.DriveItem, driveID, teamID 
 		}
 		defer body.Close()
 
-		// Limitar a 500KB
+		// Limit to 500KB
 		limitedReader := io.LimitReader(body, 500*1024)
 		data, err := io.ReadAll(limitedReader)
 		if err != nil {
@@ -1631,7 +1631,7 @@ func previewFileCmd(client *graph.Client, item graph.DriveItem, driveID, teamID 
 
 func renderFilesContent(m *Model) string {
 	if len(m.files) == 0 {
-		return "  Esta carpeta está vacía."
+		return "  This folder is empty."
 	}
 	var b strings.Builder
 	for i, f := range m.files {
@@ -1644,7 +1644,7 @@ func renderFilesContent(m *Model) string {
 
 		checkbox := "  "
 		if m.selectedFiles[i] {
-			checkbox = lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Render("✓ ") // verde
+			checkbox = lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Render("✓ ") // green
 		}
 
 		icon := teams.GetFileIcon(f)
@@ -1662,7 +1662,7 @@ func renderFilesContent(m *Model) string {
 	}
 
 	if m.workspace == WorkspaceDMs {
-		b.WriteString("\n\n  " + helpStyle.Render("(Mostrando adjuntos recientes. Presioná 'C' para cargar el historial completo)"))
+		b.WriteString("\n\n  " + helpStyle.Render("(Showing recent attachments. Press 'C' to load full history)"))
 	}
 
 	if m.downloadStatus != "" {

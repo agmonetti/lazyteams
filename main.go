@@ -11,23 +11,23 @@ import (
 )
 
 func main() {
-	// 1. Obtener los tokens del entorno
+	// 1. Get tokens from environment
 	graphToken, webToken, notifToken, eduToken, cookie, eduCookie, err := auth.GetTokens()
 	if err != nil {
-		fmt.Println("Error de Autenticación:\n", err)
+		fmt.Println("Authentication error:\n", err)
 		os.Exit(1)
 	}
 
-	// 2. Inicializar el cliente
+	// 2. Initialize the client
 	graphClient := graph.NewClient(graphToken, webToken, notifToken, eduToken, cookie, eduCookie)
 
-	// 3. Extraer nombre del usuario del token
+	// 3. Extract username from token
 	userName := auth.ParseUserNameFromToken(graphToken)
 
-	// 4. Levantar la TUI
+	// 4. Start the TUI
 	p := tea.NewProgram(ui.New(graphClient, userName), tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
-		fmt.Printf("Error fatal en la TUI: %v\n", err)
+		fmt.Printf("Fatal TUI error: %v\n", err)
 		os.Exit(1)
 	}
 }

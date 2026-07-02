@@ -8,105 +8,105 @@
   A fast, keyboard-driven Microsoft Teams client for the terminal.
 </p>
 
-Cliente TUI para Microsoft Teams. Corre en la terminal, sin Electron, sin navegador.
+TUI client for Microsoft Teams. Runs in the terminal — no Electron, no browser.
 
-**~3,500 líneas de Go.** Clean Architecture + Elm Architecture (Bubble Tea). Un solo binario estático.
+**~3,500 lines of Go.** Clean Architecture + Elm Architecture (Bubble Tea). Single static binary.
 
 ```
 ╔══════════════════════╦════════════════════════════════════════════════════════╗
 ║ Chats                ║            TEAMS-TUI                                   ║
 ║                      ║                                                        ║
-║ ► Notas personales   ║  Microsoft Teams Terminal UI                           ║
-║   CHAT PRIVADO 1     ║  v1.0.0-beta                                           ║
-║   CHAT PRIVADO 2     ║                                                        ║
-║   CHAT PRIVADO 3     ║  [↑/↓] Navegar equipos · [Enter]                       ║
+║ ► Personal notes     ║  Microsoft Teams Terminal UI                           ║
+║   PRIVATE CHAT 1     ║  v1.0.0-beta                                           ║
+║   PRIVATE CHAT 2     ║                                                        ║
+║   PRIVATE CHAT 3     ║  [↑/↓] Navigate teams · [Enter]                       ║
 ║   ...                ║                                                        ║
 ║                      ║                                                        ║
 ╠══════════════════════╩════════════════════════════════════════════════════════╣
-║ [1] Equipos  [2] DMs  [3] Actividad  [4] Tareas   [p] Estado  [q] Salir       ║
+║ [1] Teams  [2] DMs  [3] Activity  [4] Assignments  [p] Status  [q] Quit     ║
 ╚═══════════════════════════════════════════════════════════════════════════════╝
 ```
 
 ## Features
 
-- **4 Workspaces**: Equipos y canales, DMs, Actividad/Notificaciones, Tareas educacionales
-- **Mensajes**: Leer y enviar mensajes (RichText/Html), auto-refresh cada 15s, links clickeables (OSC 8)
-- **Archivos**: Navegador de Drive recursivo, multi-selección, descarga con directorio personalizable
-- **Presencia**: Leer y cambiar tu estado (Available, Busy, DoNotDisturb, etc.)
-- **Notificaciones**: Filtros por tipo, navegar al canal origen
-- **Auto-descubrimiento**: Chat personal ("Notas personales"), nombres inteligentes de grupos
+- **4 Workspaces**: Teams & channels, DMs, Activity/Notifications, Education Assignments
+- **Messages**: Read and send messages (RichText/Html), auto-refresh every 15s, clickable links (OSC 8)
+- **Files**: Recursive Drive browser, multi-selection, download with customizable directory
+- **Presence**: Read and change your status (Available, Busy, DoNotDisturb, etc.)
+- **Notifications**: Filter by type, navigate to source channel
+- **Auto-discovery**: Personal chat ("Personal notes"), smart group names
 
-## Requisitos
+## Requirements
 
 - Go 1.24+
-- Cuenta de Microsoft Teams (universitaria o empresarial)
-- Linux (testeado en Arch). Playwright necesita Firefox (para el auth helper).
+- Microsoft Teams account (university or enterprise)
+- Linux (tested on Arch). Playwright needs Firefox (for the auth helper).
 
 ## Quick Start
 
 ```bash
-# Compilar
+# Build
 go build -o msTTui .
 go build -o msTTui-auth ./cmd/auth-helper/
 
-# Capturar tokens (primera vez, ~90s)
+# Capture tokens (first time, ~90s)
 ./msTTui-auth
 
-# Ejecutar
+# Run
 ./msTTui
 ```
 
 ## Tokens
 
-msTTui necesita 5 tokens para conectarse a las APIs de Teams. El helper `msTTui-auth` los captura automáticamente via Playwright (Firefox) en ~90 segundos:
+msTTui needs 5 tokens to connect to the Teams APIs. The `msTTui-auth` helper captures them automatically via Playwright (Firefox) in ~90 seconds:
 
-| Token | Expiración | Uso |
+| Token | Expiration | Usage |
 |-------|-----------|-----|
-| `MS_GRAPH_TOKEN` | ~1h | Chats, equipos, canales, presencia, archivos |
-| `TEAMS_WEB_TOKEN` | ~24h | Leer/escribir mensajes (ChatSvc) |
-| `TEAMS_NOTIF_TOKEN` | ~24h | Notificaciones push |
-| `EDU_TOKEN` | ~1h | Tareas/Assignments educativos |
-| `TEAMS_COOKIE` | ~24h | Autenticación de sesión |
+| `MS_GRAPH_TOKEN` | ~1h | Chats, teams, channels, presence, files |
+| `TEAMS_WEB_TOKEN` | ~24h | Read/write messages (ChatSvc) |
+| `TEAMS_NOTIF_TOKEN` | ~24h | Push notifications |
+| `EDU_TOKEN` | ~1h | Education Assignments |
+| `TEAMS_COOKIE` | ~24h | Session authentication |
 
-Los tokens se guardan en `~/.config/teamstui/tokens.env`. No hay renovación automática — corré `./msTTui-auth` de nuevo cuando expiran.
+Tokens are saved to `~/.config/teamstui/tokens.env`. There is no automatic renewal — run `./msTTui-auth` again when they expire.
 
-## Arquitectura
+## Architecture
 
 ```
 msTTui/
 ├── main.go                          # Entry point
 ├── cmd/
-│   ├── auth-helper/                 # Playwright auth helper (captura 5 tokens)
-│   ├── debug-assignments/           # Debug tool para Education API
-│   └── debug-endpoints/             # Debug tool para endpoints
+│   ├── auth-helper/                 # Playwright auth helper (captures 5 tokens)
+│   ├── debug-assignments/           # Debug tool for Education API
+│   └── debug-endpoints/             # Debug tool for endpoints
 └── internal/
-    ├── auth/                        # Tokens (lectura + JWT parsing)
-    ├── graph/                       # HTTP client para Microsoft Graph API
+    ├── auth/                        # Tokens (reading + JWT parsing)
+    ├── graph/                       # HTTP client for Microsoft Graph API
     │   ├── client.go                # Client, doReq(), cleanHTML()
-    │   ├── teams_api.go             # Equipos y canales
-    │   ├── chats_api.go             # Chats, auto-descubrimiento self-chat
-    │   ├── messages_api.go          # Leer/escribir mensajes (ChatSvc)
-    │   ├── files_api.go             # Navegador de Drive, remote items
-    │   ├── presence_api.go          # Get/Set/Clear presencia
-    │   ├── assignments_api.go       # Education Assignments (bloqueado por WAF)
-    │   ├── activity_api.go          # Notificaciones via ChatSvc
-    │   └── download_api.go          # Descarga de archivos
-    ├── teams/teams.go               # Agregación de adjuntos, iconos de archivos
-    └── ui/                          # TUI (Elm Architecture con Bubble Tea)
+    │   ├── teams_api.go             # Teams and channels
+    │   ├── chats_api.go             # Chats, self-chat auto-discovery
+    │   ├── messages_api.go          # Read/write messages (ChatSvc)
+    │   ├── files_api.go             # Drive browser, remote items
+    │   ├── presence_api.go          # Get/Set/Clear presence
+    │   ├── assignments_api.go       # Education Assignments (blocked by WAF)
+    │   ├── activity_api.go          # Notifications via ChatSvc
+    │   └── download_api.go          # File downloads
+    ├── teams/teams.go               # Attachment aggregation, file icons
+    └── ui/                          # TUI (Elm Architecture with Bubble Tea)
 ```
 
-**Clean Architecture**: `ui` nunca hace llamadas HTTP. Toda red pasa por `graph` y `teams` vía comandos `tea.Cmd` (async).
+**Clean Architecture**: `ui` never makes HTTP calls. All networking goes through `graph` and `teams` via `tea.Cmd` (async).
 
-## Documentación
+## Documentation
 
-**[Documentación completa](https://ms-teams-tui.agmonetti.workers.dev/)** — Atajos de teclado, configuración, limitaciones, guía de desarrollo y más.
+**[Full documentation](https://ms-teams-tui.agmonetti.workers.dev/)** — Keyboard shortcuts, configuration, limitations, development guide, and more.
 
-## Seguridad
+## Security
 
-- Tokens almacenados en texto plano (`~/.config/teamstui/tokens.env`)
-- API ChatSvc es undocumented/private — Microsoft puede romperla en cualquier momento
-- Browser session de Playwright guarda cookies en disco
+- Tokens stored in plaintext (`~/.config/teamstui/tokens.env`)
+- ChatSvc API is undocumented/private — Microsoft could break it at any time
+- Playwright browser session stores cookies on disk
 
 ## Disclaimer
 
-Herramienta educacional. Opera sobre sesiones de Microsoft Teams ya autenticadas. No distribuye binarios propietarios de Microsoft. *No affiliated with Microsoft Corporation.*
+Educational tool. Operates on already-authenticated Microsoft Teams sessions. Does not distribute proprietary Microsoft binaries. *Not affiliated with Microsoft Corporation.*

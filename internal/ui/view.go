@@ -16,44 +16,43 @@ const asciiLogo = `
    ██    █████   ███████ ██ ████ ██ ███████ █████    ██    ██    ██ ██ 
    ██    ██      ██   ██ ██  ██  ██      ██          ██    ██    ██ ██ 
    ██    ███████ ██   ██ ██      ██ ███████          ██     ██████  ██ 
-                                                                       
-                                                                       `
+                                                                        `
 
 
 func (m Model) View() string {
 	if m.err != nil {
-		return fmt.Sprintf("\n[!] Error: %v\n\nPresiona 'q' para salir.\n", m.err)
+		return fmt.Sprintf("\n[!] Error: %v\n\nPress 'q' to quit.\n", m.err)
 	}
 
 	if m.teamsLoaded && len(m.teams) == 0 {
-		return "\nNo se encontraron equipos. Esta cuenta puede no tener Teams Enterprise o no pertenece a ningún equipo.\n\nPresiona 'q' para salir.\n"
+		return "\nNo teams found. This account may not have Teams Enterprise or may not belong to any team.\n\nPress 'q' to quit.\n"
 	}
 
-	// Altura total disponible para los paneles
-	// topBar(2) + footer(2) + borde panel superior+inferior(2) = 6
+	// Total height available for panels
+	// topBar(2) + footer(2) + top+bottom panel border(2) = 6
 	if m.width == 0 || m.height == 0 {
 		return ""
 	}
 	panelOuterHeight := m.height - 6
 
-	// Width(n) suma 2 cols de borde por panel; 1 col de margen para Kitty.
+	// Width(n) adds 2 cols of border per panel; 1 col of margin for Kitty.
 	available       := m.width - 5
 	leftOuterWidth  := available / 3
 	rightOuterWidth := available - leftOuterWidth
 
-	// Dimensiones INTERNAS
+	// INNER dimensions
 	leftInnerHeight := panelOuterHeight - 2
 
 	rightInnerWidth := rightOuterWidth - 2
 	rightInnerHeight := panelOuterHeight - 2
 
-	// === Panel Izquierdo ===
+	// === Left Panel ===
 	leftContent := ""
 
 	if m.workspace == WorkspaceDMs {
 		leftContent += titleStyle.Render("Chats") + "\n"
 		if len(m.chats) == 0 {
-			leftContent += "  (sin chats)\n"
+			leftContent += "  (no chats)\n"
 		} else {
 			for i, ch := range m.chats {
 				cursor := "  "
@@ -68,7 +67,7 @@ func (m Model) View() string {
 				}
 				name := ch.DisplayName(m.selfID)
 
-				// Presencia: buscar el miembro que no soy yo
+				// Presence: find the member that isn't me
 				presenceDot := ""
 				for _, u := range ch.Members {
 					if u.UserID != m.selfID {
@@ -81,13 +80,13 @@ func (m Model) View() string {
 
 				if m.chatUnread[ch.ID] && i != m.selectedChat {
 					name = "● " + name
-					style = style.Copy().Foreground(lipgloss.Color("11")) // amarillo para unread
+					style = style.Copy().Foreground(lipgloss.Color("11")) // yellow for unread
 				}
 				leftContent += fmt.Sprintf("%s%s%s\n", cursor, style.Render(name), presenceDot)
 			}
 		}
 	} else if m.workspace == WorkspaceTeams {
-		leftContent += titleStyle.Render("Equipos") + "\n"
+		leftContent += titleStyle.Render("Teams") + "\n"
 		for i, t := range m.teams {
 			cursor := "  "
 			style := normalItemStyle
@@ -104,21 +103,21 @@ func (m Model) View() string {
 
 		leftContent += "\n"
 
-		// Título Canales
-		leftContent += titleStyle.Render("Canales") + "\n"
-		
+		// Channels title
+		leftContent += titleStyle.Render("Channels") + "\n"
+
 		if m.channelErr != nil {
-			leftContent += lipgloss.NewStyle().Foreground(lipgloss.Color("203")).Render(fmt.Sprintf("  [Bloqueado: %v]\n", m.channelErr))
+			leftContent += lipgloss.NewStyle().Foreground(lipgloss.Color("203")).Render(fmt.Sprintf("  [Blocked: %v]\n", m.channelErr))
 		} else if len(m.channels) == 0 {
-			leftContent += "  (sin canales)\n"
+			leftContent += "  (no channels)\n"
 		} else {
-			// Calcular cuántos canales caben en el viewport
+			// Calculate how many channels fit in the viewport
 			teamsLines := len(m.teams) + 3
 			viewportH := leftInnerHeight
 			if viewportH <= 0 {
 				viewportH = 10
 			}
-			// Reservar 2 líneas para indicadores
+			// Reserve 2 lines for indicators
 			maxChannels := viewportH - teamsLines - 2
 			if maxChannels < 5 {
 				maxChannels = 5
@@ -134,7 +133,7 @@ func (m Model) View() string {
 			windowEnd := windowStart + maxChannels
 			if windowEnd > totalChans {
 				windowEnd = totalChans
-				// Ajustar windowStart si estamos al final y sobran espacios
+				// Adjust windowStart if we're at the end and there's extra space
 				if totalChans >= maxChannels {
 					windowStart = totalChans - maxChannels
 				} else {
@@ -142,9 +141,9 @@ func (m Model) View() string {
 				}
 			}
 
-			// Indicador de canales ocultos arriba
+			// Hidden channels indicator above
 			if windowStart > 0 {
-				leftContent += metaStyle.Render(fmt.Sprintf("  ... (%d arriba)\n", windowStart))
+				leftContent += metaStyle.Render(fmt.Sprintf("  ... (%d above)\n", windowStart))
 			}
 
 			for i := windowStart; i < windowEnd; i++ {
@@ -162,10 +161,10 @@ func (m Model) View() string {
 				leftContent += fmt.Sprintf("%s%s\n", cursor, style.Render(truncateText(c.DisplayName, leftOuterWidth-4)))
 			}
 
-			// Indicador de más canales abajo
+			// More channels indicator below
 			if windowEnd < totalChans {
 				hidden := totalChans - windowEnd
-				leftContent += metaStyle.Render(fmt.Sprintf("  ... (%d más)\n", hidden))
+				leftContent += metaStyle.Render(fmt.Sprintf("  ... (%d more)\n", hidden))
 			}
 		}
 	} else if m.workspace == WorkspaceActivity {
@@ -174,23 +173,23 @@ func (m Model) View() string {
 		leftContent = renderAssignList(m)
 	}
 
-	// Le pasamos todo ese texto al viewport izquierdo
+	// Pass all that text to the left viewport
 	if m.ready {
 		m.leftVp.SetContent(leftContent)
 		leftContent = m.leftVp.View()
 	}
 
-	// Aplicar estilos al panel izquierdo
+	// Apply styles to the left panel
 	lStyle := paneStyle.Width(leftOuterWidth).Height(panelOuterHeight - 2)
 	if m.focusLeft {
 		lStyle = focusedPaneStyle.Width(leftOuterWidth).Height(panelOuterHeight - 2)
 	}
 	leftPanel := lStyle.Render(leftContent)
 
-	// === Panel Derecho ===
+	// === Right Panel ===
 	rightContent := ""
 
-	// Estado de carga: solo mostrar "Cargando..." en el splash
+	// Loading state: only show "Loading..." on the splash
 	if m.loading && m.focusLeft && m.workspace != WorkspaceActivity && m.workspace != WorkspaceAssignments {
 		splashContent := lipgloss.JoinVertical(lipgloss.Center,
 			splashLogoStyle.Render(asciiLogo),
@@ -198,14 +197,14 @@ func (m Model) View() string {
 			splashTitleStyle.Render("Microsoft Teams Terminal UI"),
 			splashSubStyle.Render("v1.0.0-beta"),
 			"",
-			splashHintStyle.Render("[↑/↓] Navegar equipos  ·  [Enter] Abrir canal"),
+			splashHintStyle.Render("[↑/↓] Navigate teams  ·  [Enter] Open channel"),
 			"",
-			splashHintStyle.Render("Cargando..."),
+			splashHintStyle.Render("Loading..."),
 		)
 		if m.ready {
 			rightContent = lipgloss.Place(rightInnerWidth, rightInnerHeight, lipgloss.Center, lipgloss.Center, splashContent)
 		} else {
-			rightContent = "Cargando..."
+			rightContent = "Loading..."
 		}
 	} else if m.focusLeft && m.loadedConvID == "" && m.workspace != WorkspaceActivity && m.workspace != WorkspaceAssignments {
 		// === SPLASH SCREEN ===
@@ -215,7 +214,7 @@ func (m Model) View() string {
 			splashTitleStyle.Render("Microsoft Teams Terminal UI"),
 			splashSubStyle.Render("v1.0.0-beta"),
 			"",
-			splashHintStyle.Render("[↑/↓] Navegar equipos  ·  [Enter] Abrir canal"),
+			splashHintStyle.Render("[↑/↓] Navigate teams  ·  [Enter] Open channel"),
 		)
 		if m.ready {
 			rightContent = lipgloss.Place(rightInnerWidth, rightInnerHeight, lipgloss.Center, lipgloss.Center, splashContent)
@@ -223,9 +222,9 @@ func (m Model) View() string {
 			rightContent = splashContent
 		}
 	} else if m.workspace == WorkspaceDMs {
-		// Cabecera: solo si hay datos cargados
+		// Header: only if data is loaded
 		if m.loadedConvID != "" && m.loadedConvID == m.activeConversationID() && len(m.chats) > 0 && m.selectedChat < len(m.chats) {
-			tabChat, tabFiles := renderTabs(m.viewMode, ModeChat, "Mensajes", "Archivos")
+			tabChat, tabFiles := renderTabs(m.viewMode, ModeChat, "Messages", "Files")
 			title := fmt.Sprintf("@ %s", m.chats[m.selectedChat].DisplayName(m.selfID))
 			header := titleStyle.Render(title)
 			rightContent += fmt.Sprintf("%s\n%s %s %s\n\n", header, tabChat, tabDividerStyle.Render("·"), tabFiles)
@@ -234,8 +233,8 @@ func (m Model) View() string {
 		if m.loadedConvID != "" && m.loadedConvID == m.activeConversationID() {
 			rightContent += m.viewport.View() + "\n"
 		} else if !m.focusLeft {
-			//Centrar texto de ayuda cuando no hay conversación cargada
-			emptyState := helpStyle.Render("Presioná Enter para abrir este chat.")
+			// Center help text when no conversation is loaded
+			emptyState := helpStyle.Render("Press Enter to open this chat.")
 			rightContent = lipgloss.Place(rightInnerWidth, rightInnerHeight, lipgloss.Center, lipgloss.Center, emptyState)
 		}
 
@@ -253,9 +252,9 @@ func (m Model) View() string {
 			rightContent += inputView
 		}
 	} else if m.workspace == WorkspaceTeams {
-		// Cabecera: solo si hay datos cargados
+		// Header: only if data is loaded
 		if m.loadedConvID != "" && m.loadedConvID == m.activeConversationID() && len(m.channels) > 0 && m.selectedChan < len(m.channels) {
-			tabChat, tabFiles := renderTabs(m.viewMode, ModeChat, "Publicaciones", "Archivos")
+			tabChat, tabFiles := renderTabs(m.viewMode, ModeChat, "Posts", "Files")
 			title := fmt.Sprintf("# %s", m.channels[m.selectedChan].DisplayName)
 			if m.viewMode == ModeFiles && len(m.folderStack) > 0 {
 				for _, node := range m.folderStack {
@@ -270,7 +269,7 @@ func (m Model) View() string {
 			if m.loadedConvID != "" && m.loadedConvID == m.activeConversationID() {
 				rightContent += m.viewport.View() + "\n"
 			} else if !m.focusLeft {
-				emptyState := helpStyle.Render("Presioná Enter para abrir este canal.")
+				emptyState := helpStyle.Render("Press Enter to open this channel.")
 				rightContent = lipgloss.Place(rightInnerWidth, rightInnerHeight, lipgloss.Center, lipgloss.Center, emptyState)
 			}
 		} else {
@@ -296,15 +295,15 @@ func (m Model) View() string {
 		rightContent = renderAssignDetail(m)
 	}
 
-	// Aplicar estilos al panel derecho — sin Height fijo, el contenido define la altura
+	// Apply styles to the right panel — no fixed Height, content defines the height
 	rStyle := paneStyle.Width(rightOuterWidth)
 	if !m.focusLeft {
 		rStyle = focusedPaneStyle.Width(rightOuterWidth)
 	}
 	rightPanel := rStyle.Render(rightContent)
 
-	// Popups: se centran usando las dimensiones REALES ya renderizadas del panel,
-	// no vpWidth/vpHeight "crudos" — así nunca chocan con el border/padding de paneStyle.
+	// Popups: centered using the REAL rendered dimensions of the panel,
+	// not "raw" vpWidth/vpHeight — so they never collide with paneStyle's border/padding.
 	if m.confirmingDownload {
 		names := make([]string, len(m.downloadTargets))
 		for i, t := range m.downloadTargets {
@@ -313,20 +312,20 @@ func (m Model) View() string {
 
 		var dirLine string
 		if m.editingDownloadDir {
-			dirLine = fmt.Sprintf("Destino: %s", m.downloadDirInput.View())
+			dirLine = fmt.Sprintf("Destination: %s", m.downloadDirInput.View())
 		} else {
-			dirLine = fmt.Sprintf("Destino: %s", m.prefs.DownloadDir)
+			dirLine = fmt.Sprintf("Destination: %s", m.prefs.DownloadDir)
 		}
 
 		var actions string
 		if m.editingDownloadDir {
-			actions = "[Enter] Confirmar ruta   [Esc] Cancelar"
+			actions = "[Enter] Confirm path   [Esc] Cancel"
 		} else {
-			actions = "[Enter/y] Descargar   [e] Editar ruta   [Esc/n] Cancelar"
+			actions = "[Enter/y] Download   [e] Edit path   [Esc/n] Cancel"
 		}
 
 		question := fmt.Sprintf(
-			"¿Descargar %d archivo(s)?\n\n%s\n\n%s\n\n%s",
+			"Download %d file(s)?\n\n%s\n\n%s\n\n%s",
 			len(names),
 			strings.Join(names, "\n  "),
 			dirLine,
@@ -336,7 +335,7 @@ func (m Model) View() string {
 		rightPanel = lipgloss.Place(lipgloss.Width(rightPanel), lipgloss.Height(rightPanel), lipgloss.Center, lipgloss.Center, popup)
 	} else if m.showPresenceMenu {
 		var menu string
-		menu += titleStyle.Render("Establecer Estado") + "\n\n"
+		menu += titleStyle.Render("Set Status") + "\n\n"
 		for i, opt := range m.presenceOptions {
 			cursor := "  "
 			style := normalItemStyle
@@ -350,14 +349,14 @@ func (m Model) View() string {
 		rightPanel = lipgloss.Place(lipgloss.Width(rightPanel), lipgloss.Height(rightPanel), lipgloss.Center, lipgloss.Center, popup)
 	}
 
-	// Juntar paneles
+	// Combine panels
 	ui := lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, rightPanel)
 
-	// Status bar superior: nombre + presencia propia, siempre visible y alineado a la derecha
+	// Top status bar: name + own presence, always visible and right-aligned
 	if m.ready {
 		name := m.userName
 		if name == "" {
-			name = "Yo"
+			name = "Me"
 		}
 		myStatus := "Offline"
 		if s, ok := m.presence[m.selfID]; ok && s != "" {
@@ -370,10 +369,10 @@ func (m Model) View() string {
 		ui = lipgloss.JoinVertical(lipgloss.Left, topBar, ui)
 	}
 
-	// Footer contextual
+	// Contextual footer
 	footerLine := footerStyle.Render(m.footerText())
 	if m.presenceError != "" {
-		footerLine += "\n" + lipgloss.NewStyle().Foreground(lipgloss.Color("203")).Render("Error de presencia: " + m.presenceError)
+		footerLine += "\n" + lipgloss.NewStyle().Foreground(lipgloss.Color("203")).Render("Presence error: " + m.presenceError)
 	}
 	ui = lipgloss.JoinVertical(lipgloss.Left, ui, footerLine)
 
@@ -383,19 +382,19 @@ func (m Model) View() string {
 func presenceSymbol(avail string) string {
 	switch avail {
 	case "Available":
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Render("●") // verde
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Render("●") // green
 	case "Busy", "InACall", "InAMeeting":
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Render("●") // rojo
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Render("●") // red
 	case "Away", "BeRightBack":
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Render("●") // amarillo
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Render("●") // yellow
 	case "DoNotDisturb":
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Render("●") // rojo
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Render("●") // red
 	case "Offline", "PresenceUnknown":
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render("●") // gris
-	case "Reset (Automático)":
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("252")).Render("○") // círculo hueco
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render("●") // gray
+	case "Reset (Automatic)":
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("252")).Render("○") // hollow circle
 	default:
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render("●") // gris por defecto
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render("●") // default gray
 	}
 }
 
@@ -422,50 +421,50 @@ func (m Model) unreadCount() int {
 }
 
 func (m Model) footerText() string {
-	activityTab := "[3] Actividad"
+	activityTab := "[3] Activity"
 	if m.notifLoaded && m.unreadCount() > 0 {
-		activityTab = fmt.Sprintf("[3] Actividad %s", selectedItemStyle.Render("●"))
+		activityTab = fmt.Sprintf("[3] Activity %s", selectedItemStyle.Render("●"))
 	}
 	switch {
 	case m.showPresenceMenu:
-		return " [↑/↓] Navegar   [Enter] Confirmar   [Esc/q] Cancelar"
+		return " [↑/↓] Navigate   [Enter] Confirm   [Esc/q] Cancel"
 	case m.confirmingDownload && m.editingDownloadDir:
-		return " [Enter] Confirmar ruta   [Esc] Cancelar edición"
+		return " [Enter] Confirm path   [Esc] Cancel editing"
 	case m.confirmingDownload:
-		return " [Enter/y] Descargar   [e] Editar ruta   [Esc/n] Cancelar"
+		return " [Enter/y] Download   [e] Edit path   [Esc/n] Cancel"
 	case m.workspace == WorkspaceAssignments:
-		return fmt.Sprintf(" [1] Equipos  [2] DMs  %s  [4] Tareas  [←/→] Filtrar  [↑/↓] Navegar  [Enter] Ver  [q] Salir", activityTab)
+		return fmt.Sprintf(" [1] Teams  [2] DMs  %s  [4] Assignments  [←/→] Filter  [↑/↓] Navigate  [Enter] View  [q] Quit", activityTab)
 	case m.workspace == WorkspaceActivity:
 		if !m.focusLeft {
-			return " [o] Ir al canal  [Esc] Volver  [q] Salir"
+			return " [o] Go to channel  [Esc] Back  [q] Quit"
 		}
-		return fmt.Sprintf(" [1-4] Workspace  [←/→] Filtrar  [↑/↓] Navegar  [Enter] Ver detalle  [q] Salir")
+		return fmt.Sprintf(" [1-4] Workspace  [←/→] Filter  [↑/↓] Navigate  [Enter] View details  [q] Quit")
 	case m.focusLeft && m.loadedConvID == "":
-		return fmt.Sprintf(" [1] Equipos  [2] DMs  %s  [4] Tareas  [↑/↓] Navegar  [Enter] Abrir  [p] Estado  [q] Salir", activityTab)
+		return fmt.Sprintf(" [1] Teams  [2] DMs  %s  [4] Assignments  [↑/↓] Navigate  [Enter] Open  [p] Status  [q] Quit", activityTab)
 	case m.previewing:
-		return " [Esc] Volver a archivos  [↑/↓] Scroll"
+		return " [Esc] Back to files  [↑/↓] Scroll"
 	case !m.focusLeft && m.viewMode == ModeFiles:
-		return " [↑/↓] Navegar  [Enter] Abrir  [Space] Seleccionar  [v] Preview  [o] Descargar  [p] Estado  [Esc/h] Volver"
+		return " [↑/↓] Navigate  [Enter] Open  [Space] Select  [v] Preview  [o] Download  [p] Status  [Esc/h] Back"
 	case !m.focusLeft && m.viewMode == ModeChat:
-		return " [↑/↓] Scroll  [i] Escribir  [f] Archivos  [p] Estado  [Esc/h] Volver"
+		return " [↑/↓] Scroll  [i] Type  [f] Files  [p] Status  [Esc/h] Back"
 	default:
-		return fmt.Sprintf(" [1] Equipos  [2] DMs  %s  [4] Tareas  [↑/↓] Navegar  [Enter] Abrir  [p] Estado  [q] Salir", activityTab)
+		return fmt.Sprintf(" [1] Teams  [2] DMs  %s  [4] Assignments  [↑/↓] Navigate  [Enter] Open  [p] Status  [q] Quit", activityTab)
 	}
 }
 
 func renderNotifList(m Model) string {
 	if m.notifErr != nil {
 		errText := errorStyle.Render("⚠ " + m.notifErr.Error())
-		hint := helpStyle.Render("  Actualizá el token en DevTools → Cookies → TEAMS_NOTIF_TOKEN")
-		retry := helpStyle.Render("  [r] Reintentar")
+		hint := helpStyle.Render("  Update the token in DevTools → Cookies → TEAMS_NOTIF_TOKEN")
+		retry := helpStyle.Render("  [r] Retry")
 		return errText + "\n\n" + hint + "\n" + retry
 	}
 	if !m.notifLoaded {
-		return helpStyle.Render("Cargando actividad...")
+		return helpStyle.Render("Loading activity...")
 	}
 
 	// Filter tabs
-	filterNames := []string{"Todas", "Próximas", "Vencidas"}
+	filterNames := []string{"All", "Upcoming", "Overdue"}
 	var tabs []string
 	for i, name := range filterNames {
 		if ActivityFilter(i) == m.activityFilter {
@@ -480,7 +479,7 @@ func renderNotifList(m Model) string {
 	filtered := m.filteredNotifications()
 	if len(filtered) == 0 {
 		return header + "\n" + lipgloss.Place(0, 0, lipgloss.Center, lipgloss.Center,
-			helpStyle.Render("Sin notificaciones en esta categoría."))
+			helpStyle.Render("No notifications in this category."))
 	}
 
 	// Map filtered index back to original index for selection
@@ -522,7 +521,7 @@ func renderNotifList(m Model) string {
 
 func renderNotifDetail(m Model) string {
 	if len(m.notifications) == 0 || m.selectedNotif >= len(m.notifications) {
-		return helpStyle.Render("Seleccioná una notificación para ver detalles.")
+		return helpStyle.Render("Select a notification to view details.")
 	}
 
 	n := m.notifications[m.selectedNotif]
@@ -538,9 +537,9 @@ func renderNotifDetail(m Model) string {
 	b.WriteString(metaStyle.Render("─────────────────────────────────"))
 	b.WriteString("\n")
 	if n.SourceThread != "" {
-		b.WriteString(helpStyle.Render("[o] Ir al canal"))
+		b.WriteString(helpStyle.Render("[o] Go to channel"))
 	} else {
-		b.WriteString(helpStyle.Render("[Esc] Volver"))
+		b.WriteString(helpStyle.Render("[Esc] Back"))
 	}
 
 	return b.String()
@@ -550,25 +549,25 @@ func formatAge(t time.Time) string {
 	d := time.Since(t)
 	switch {
 	case d < time.Minute:
-		return "ahora"
+		return "now"
 	case d < time.Hour:
 		mins := int(d.Minutes())
 		if mins == 1 {
-			return "hace 1 min"
+			return "1 min ago"
 		}
-		return fmt.Sprintf("hace %d min", mins)
+		return fmt.Sprintf("%d min ago", mins)
 	case d < 24*time.Hour:
 		hours := int(d.Hours())
 		if hours == 1 {
-			return "hace 1 h"
+			return "1 h ago"
 		}
-		return fmt.Sprintf("hace %d h", hours)
+		return fmt.Sprintf("%d h ago", hours)
 	default:
 		days := int(d.Hours() / 24)
 		if days == 1 {
-			return "hace 1 día"
+			return "1 day ago"
 		}
-		return fmt.Sprintf("hace %d días", days)
+		return fmt.Sprintf("%d days ago", days)
 	}
 }
 
@@ -609,6 +608,11 @@ func (m Model) filteredNotifications() []graph.NotificationItem {
 func containsPastDate(preview string, now time.Time) bool {
 	lower := strings.ToLower(preview)
 	months := map[string]time.Month{
+		"january": time.January, "february": time.February, "march": time.March,
+		"april": time.April, "may": time.May, "june": time.June,
+		"july": time.July, "august": time.August, "september": time.September,
+		"october": time.October, "november": time.November, "december": time.December,
+		// Spanish month names for backwards compatibility with existing data
 		"enero": time.January, "febrero": time.February, "marzo": time.March,
 		"abril": time.April, "mayo": time.May, "junio": time.June,
 		"julio": time.July, "agosto": time.August, "septiembre": time.September,
@@ -667,17 +671,17 @@ func filteredAssignments(m Model) []graph.Assignment {
 func renderAssignList(m Model) string {
 	if m.assignErr != nil {
 		var b strings.Builder
-		b.WriteString(titleStyle.Render("Tareas") + "\n\n")
-		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Render("API de Education Assignments bloqueada") + "\n\n")
-		b.WriteString(helpStyle.Render("El WAF de Microsoft bloquea el acceso\ndesde clientes nativos sin sesión de browser.\n\nUsá la pestaña Assignments en teams.microsoft.com\npara ver tus tareas."))
+		b.WriteString(titleStyle.Render("Assignments") + "\n\n")
+		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Render("Education Assignments API blocked") + "\n\n")
+		b.WriteString(helpStyle.Render("Microsoft WAF blocks access\nfrom native clients without a browser session.\n\nUse the Assignments tab in teams.microsoft.com\nto view your assignments."))
 		return b.String()
 	}
 
 	if !m.assignLoaded {
-		return helpStyle.Render("Cargando tareas...")
+		return helpStyle.Render("Loading assignments...")
 	}
 
-	filterNames := []string{"Todas", "Próximas", "Vencidas", "Completadas"}
+	filterNames := []string{"All", "Upcoming", "Overdue", "Completed"}
 	var tabs []string
 	for i, name := range filterNames {
 		if ActivityFilter(i) == m.assignFilter {
@@ -690,7 +694,7 @@ func renderAssignList(m Model) string {
 
 	filtered := filteredAssignments(m)
 	if len(filtered) == 0 {
-		return header + "\n" + helpStyle.Render("Sin tareas en esta categoría.")
+		return header + "\n" + helpStyle.Render("No assignments in this category.")
 	}
 
 	var lines []string
@@ -707,7 +711,7 @@ func renderAssignList(m Model) string {
 		}
 
 		label := graph.AssignmentStatusLabel(a.Status)
-		due := "Sin fecha"
+		due := "No due date"
 		if !a.DueDateTime.IsZero() {
 			due = a.DueDateTime.Local().Format("02/01 15:04")
 		}
@@ -725,29 +729,29 @@ func renderAssignList(m Model) string {
 func renderAssignDetail(m Model) string {
 	filtered := filteredAssignments(m)
 	if len(filtered) == 0 || m.selectedAssign >= len(filtered) {
-		return helpStyle.Render("Seleccioná una tarea para ver detalles.")
+		return helpStyle.Render("Select an assignment to view details.")
 	}
 
 	a := filtered[m.selectedAssign]
 
-	due := "Sin fecha"
+	due := "No due date"
 	if !a.DueDateTime.IsZero() {
 		due = a.DueDateTime.Local().Format("02/01/2006 15:04")
 	}
 
 	var b strings.Builder
-	b.WriteString(titleStyle.Render(graph.AssignmentStatusLabel(a.Status) + " Tarea"))
+	b.WriteString(titleStyle.Render(graph.AssignmentStatusLabel(a.Status) + " Assignment"))
 	b.WriteString("\n\n")
-	b.WriteString(selectedItemStyle.Render("Nombre:   ") + a.DisplayName + "\n")
-	b.WriteString(selectedItemStyle.Render("Clase:    ") + a.ClassID + "\n")
-	b.WriteString(selectedItemStyle.Render("Vence:    ") + due + "\n")
-	b.WriteString(selectedItemStyle.Render("Estado:   ") + a.Status + "\n")
+	b.WriteString(selectedItemStyle.Render("Name:     ") + a.DisplayName + "\n")
+	b.WriteString(selectedItemStyle.Render("Class:    ") + a.ClassID + "\n")
+	b.WriteString(selectedItemStyle.Render("Due:      ") + due + "\n")
+	b.WriteString(selectedItemStyle.Render("Status:   ") + a.Status + "\n")
 
 	if !m.focusLeft {
 		b.WriteString("\n")
 		b.WriteString(metaStyle.Render("─────────────────────────────────"))
 		b.WriteString("\n")
-		b.WriteString(helpStyle.Render("[Esc] Volver a la lista"))
+		b.WriteString(helpStyle.Render("[Esc] Back to list"))
 	}
 
 	return b.String()

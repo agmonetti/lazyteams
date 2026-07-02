@@ -9,13 +9,13 @@ import (
 	"strings"
 )
 
-// loadTokensFile carga el archivo de tokens en el entorno si existe.
-// Las variables de entorno existentes tienen prioridad sobre el archivo.
+// loadTokensFile loads the tokens file into the environment if it exists.
+// Existing environment variables take precedence over the file.
 func loadTokensFile() {
 	path := filepath.Join(os.Getenv("HOME"), ".config", "teamstui", "tokens.env")
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return // archivo no existe, continuar con env vars
+		return // file doesn't exist, continue with env vars
 	}
 
 	for _, line := range strings.Split(string(data), "\n") {
@@ -48,12 +48,12 @@ func GetTokens() (string, string, string, string, string, string, error) {
 
 	if graphToken == "" || webToken == "" {
 		return "", "", "", "", "", "", errors.New(
-			"Tokens no encontrados.\n\n" +
-			"Corré primero: ./msTTui-auth\n" +
-			"para capturar los tokens automáticamente.")
+			"Tokens not found.\n\n" +
+			"Run ./msTTui-auth first\n" +
+			"to capture tokens automatically.")
 	}
 	if cookie == "" {
-		return "", "", "", "", "", "", errors.New("Falta TEAMS_COOKIE en el entorno.")
+		return "", "", "", "", "", "", errors.New("Missing TEAMS_COOKIE in environment.")
 	}
 
 	graphToken = strings.TrimSpace(strings.TrimPrefix(graphToken, "Bearer "))

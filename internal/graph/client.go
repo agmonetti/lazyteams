@@ -24,12 +24,12 @@ func (e *ChatSvcError) Error() string {
 }
 
 func cleanHTML(content string) string {
-	// 1. Quitar saltos de línea y tabulaciones literales del código HTML
+	// 1. Remove literal newlines and tabs from HTML code
 	content = strings.ReplaceAll(content, "\n", " ")
 	content = strings.ReplaceAll(content, "\r", " ")
 	content = strings.ReplaceAll(content, "\t", " ")
 
-	// 2. Definir puntos de quiebre (bloques visuales)
+	// 2. Define breakpoints (visual blocks)
 	content = strings.ReplaceAll(content, "</tr>", "\n")
 	content = strings.ReplaceAll(content, "</td>", " ")
 	content = strings.ReplaceAll(content, "</li>", "\n")
@@ -40,16 +40,16 @@ func cleanHTML(content string) string {
 	content = strings.ReplaceAll(content, "</p>", "\n")
 	content = strings.ReplaceAll(content, "</div>", "\n")
 
-	// 3. Borrar tags restantes
+	// 3. Strip remaining tags
 	content = stripTags.ReplaceAllString(content, "")
 
-	// 4. Decodificar entidades HTML (convierte &quot; en ")
+	// 4. Decode HTML entities (converts &quot; to ")
 	content = html.UnescapeString(content)
 
-	// 5. Apretar espacios vacíos horizontales
+	// 5. Collapse horizontal whitespace
 	content = multipleSpaces.ReplaceAllString(content, " ")
 
-	// 6. Limpiar renglones vacíos y espacios al inicio/fin de cada línea
+	// 6. Trim empty lines and leading/trailing whitespace from each line
 	lines := strings.Split(content, "\n")
 	var out []string
 	for _, l := range lines {
@@ -91,7 +91,7 @@ func NewClient(graphToken, webToken, notifToken, eduToken, cookie, eduCookie str
 func (c *Client) doReq(endpoint string) ([]byte, error) {
 	req, err := http.NewRequest("GET", baseURL+endpoint, nil)
 	if err != nil {
-		return nil, fmt.Errorf("error creando request: %w", err)
+		return nil, fmt.Errorf("error creating request: %w", err)
 	}
 
 	req.Header.Set("Authorization", "Bearer "+c.GraphToken)
@@ -99,13 +99,13 @@ func (c *Client) doReq(endpoint string) ([]byte, error) {
 
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("error de red: %w", err)
+		return nil, fmt.Errorf("network error: %w", err)
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("error leyendo respuesta: %w", err)
+		return nil, fmt.Errorf("error reading response: %w", err)
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {

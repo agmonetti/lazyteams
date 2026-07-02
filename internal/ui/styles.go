@@ -3,23 +3,23 @@ package ui
 import "github.com/charmbracelet/lipgloss"
 
 var (
-	// Paleta Microsoft Teams — azul corporativo clásico (#0078D4 / #6264A7)
-	colorTeams    = lipgloss.Color("#0078D4") // Azul Teams
-	colorTeamsAlt = lipgloss.Color("#6264A7") // Púrpura Teams alternativo
+	// Microsoft Teams palette — classic corporate blue (#0078D4 / #6264A7)
+	colorTeams    = lipgloss.Color("#0078D4") // Teams blue
+	colorTeamsAlt = lipgloss.Color("#6264A7") // Alternative Teams purple
 	colorAccent   = colorTeams
-	colorFocus    = lipgloss.Color("#2899F5") // Azul brillante para foco
-	colorBorder   = lipgloss.Color("240")     // Gris para bordes sin foco
-	colorBorderF  = lipgloss.Color("245")     // Gris claro para borde enfocado
-	colorText     = lipgloss.Color("252")     // Texto principal
-	colorMuted    = lipgloss.Color("240")     // Texto secundario/meta
-	colorDim      = lipgloss.Color("238")     // Texto muy tenue
+	colorFocus    = lipgloss.Color("#2899F5") // Bright blue for focus
+	colorBorder   = lipgloss.Color("240")     // Gray for unfocused borders
+	colorBorderF  = lipgloss.Color("245")     // Light gray for focused border
+	colorText     = lipgloss.Color("252")     // Primary text
+	colorMuted    = lipgloss.Color("240")     // Secondary/meta text
+	colorDim      = lipgloss.Color("238")     // Very dim text
 	colorRed      = lipgloss.Color("9")
 	colorYellow   = lipgloss.Color("11")
 	colorGreen    = lipgloss.Color("10")
-	colorSelBg    = lipgloss.Color("235")     // Fondo oscuro para item seleccionado
-	colorSelBgF   = lipgloss.Color("236")     // Fondo para item seleccionado con foco
+	colorSelBg    = lipgloss.Color("235")     // Dark background for selected item
+	colorSelBgF   = lipgloss.Color("236")     // Background for focused selected item
 
-	// === Paneles ===
+	// === Panels ===
 	paneStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(colorBorder).
@@ -28,12 +28,12 @@ var (
 	focusedPaneStyle = paneStyle.
 				BorderForeground(colorFocus)
 
-	// === Títulos de sección ===
+	// === Section titles ===
 	sectionTitleStyle = lipgloss.NewStyle().
 				Foreground(colorAccent).
 				Bold(true)
 
-	// === Items de lista ===
+	// === List items ===
 	selectedItemStyle = lipgloss.NewStyle().
 				Foreground(colorAccent).
 				Bold(true)
@@ -49,7 +49,7 @@ var (
 	dimItemStyle = lipgloss.NewStyle().
 			Foreground(colorMuted)
 
-	// === Texto general ===
+	// === General text ===
 	titleStyle = lipgloss.NewStyle().
 			Bold(true).
 			Foreground(colorText).
@@ -76,16 +76,16 @@ var (
 	tabDividerStyle = lipgloss.NewStyle().
 				Foreground(colorMuted)
 
-	// === Meta (horas, fechas) ===
+	// === Meta (timestamps, dates) ===
 	metaStyle = lipgloss.NewStyle().
 			Foreground(colorMuted)
 
-	// === Eventos del sistema ===
+	// === System events ===
 	systemEventStyle = lipgloss.NewStyle().
 				Foreground(colorMuted).
 				Italic(true)
 
-	// === Popups con doble borde ===
+	// === Double-border popups ===
 	popupStyle = lipgloss.NewStyle().
 			Border(lipgloss.DoubleBorder()).
 			BorderForeground(colorAccent).
@@ -114,7 +114,7 @@ var (
 	splashHintStyle = lipgloss.NewStyle().
 			Foreground(colorDim)
 
-	// === Footer con línea separadora ===
+	// === Footer with separator line ===
 	footerStyle = lipgloss.NewStyle().
 			Foreground(colorMuted).
 			BorderForeground(colorBorder).
@@ -122,7 +122,7 @@ var (
 			PaddingTop(0).
 			PaddingLeft(1)
 
-	// === Top bar con línea separadora ===
+	// === Top bar with separator line ===
 	topBarStyle = lipgloss.NewStyle().
 			Foreground(colorMuted).
 			BorderForeground(colorBorder).

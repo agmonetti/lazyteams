@@ -29,19 +29,19 @@ type ChatMember struct {
 	UserID      string `json:"userId"`
 }
 
-// DisplayName resuelve el nombre a mostrar de un chat. Los chats grupales
-// suelen tener "topic"; los 1:1 no, así que ahí usamos el nombre del otro
-// participante (excluyendo al usuario logueado, identificado por selfID).
+// DisplayName resolves the display name of a chat. Group chats
+// typically have a "topic"; 1:1 chats don't, so we use the other
+// participant's name (excluding the logged-in user, identified by selfID).
 func (ch Chat) DisplayName(selfID string) string {
 	if strings.TrimSpace(ch.Topic) != "" {
 		return ch.Topic
 	}
 
-	// Detección exacta e infalible del chat "Notas personales (Vos)".
-	// En Teams, este chat siempre tiene un ID formado por el ID del usuario repetido.
+	// Exact and reliable detection of the "Personal notes (You)" chat.
+	// In Teams, this chat always has an ID formed by the user's ID repeated.
 	expectedSelfChatID := fmt.Sprintf("19:%s_%s@unq.gbl.spaces", selfID, selfID)
 	if ch.ID == expectedSelfChatID {
-		return "Notas personales (Vos)"
+		return "Personal notes (You)"
 	}
 
 	var names []string
@@ -54,27 +54,27 @@ func (ch Chat) DisplayName(selfID string) string {
 		return strings.Join(names, ", ")
 	}
 
-	// Fallback para chats históricos o huerfanos donde Graph API omite
-	// al otro miembro en la respuesta. Intentamos extraer el nombre
-	// de la persona que envió el último mensaje (si no fuimos nosotros).
+	// Fallback for legacy or orphaned chats where Graph API omits
+	// the other member from the response. We try to extract the name
+	// of the person who sent the last message (if not us).
 	if ch.LastMessagePreview != nil && ch.LastMessagePreview.From != nil && ch.LastMessagePreview.From.User != nil {
 		u := ch.LastMessagePreview.From.User
 		if u.ID != selfID && strings.TrimSpace(u.DisplayName) != "" {
-			return strings.TrimSpace(u.DisplayName) + " (Histórico)"
+			return strings.TrimSpace(u.DisplayName) + " (Legacy)"
 		}
 	}
 
 	if ch.ChatType == "oneOnOne" {
-		return "Chat 1:1 (Histórico)"
+		return "1:1 Chat (Legacy)"
 	}
 	if ch.ChatType != "" {
-		return fmt.Sprintf("Chat sin nombre (%s)", ch.ChatType)
+		return fmt.Sprintf("Unnamed chat (%s)", ch.ChatType)
 	}
-	return "Chat sin nombre"
+	return "Unnamed chat"
 }
 
-// GetMe obtiene el ID del usuario logueado, necesario para resolver
-// el nombre del interlocutor en chats 1:1.
+// GetMe fetches the logged-in user's ID, needed to resolve
+// the other participant's name in 1:1 chats.
 func (c *Client) GetMe() (string, error) {
 	body, err := c.doReq("/me")
 	if err != nil {
@@ -84,12 +84,12 @@ func (c *Client) GetMe() (string, error) {
 		ID string `json:"id"`
 	}
 	if err := json.Unmarshal(body, &me); err != nil {
-		return "", fmt.Errorf("error parseando /me: %w", err)
+		return "", fmt.Errorf("error parsing /me: %w", err)
 	}
 	return me.ID, nil
 }
 
-// GetChats lista los chats personales (1:1 y grupales) del usuario.
+// GetChats lists the user's personal chats (1:1 and group).
 func (c *Client) GetChats() ([]Chat, error) {
 	body, err := c.doReq("/me/chats?$expand=members&$top=50")
 	if err != nil {
@@ -99,13 +99,13 @@ func (c *Client) GetChats() ([]Chat, error) {
 		Value []Chat `json:"value"`
 	}
 	if err := json.Unmarshal(body, &res); err != nil {
-		return nil, fmt.Errorf("error parseando chats: %w", err)
+		return nil, fmt.Errorf("error parsing chats: %w", err)
 	}
 	return res.Value, nil
 }
 
-// DiscoverSelfChatID realiza fuerza bruta contra ChatSvc para encontrar
-// el identificador real (MRI) del chat "Notas personales" del usuario.
+// DiscoverSelfChatID brute-forces ChatSvc to find the real
+// identifier (MRI) of the user's "Personal notes" chat.
 func (c *Client) DiscoverSelfChatID(selfID string) string {
 	candidates := []string{
 		fmt.Sprintf("8:orgid:%s", selfID),
@@ -127,7 +127,7 @@ func (c *Client) DiscoverSelfChatID(selfID string) string {
 		resp, err := c.HTTPClient.Do(req)
 		if err == nil {
 			resp.Body.Close()
-			// Si el servidor responde 200 OK, encontramos el ID correcto.
+			// If the server responds 200 OK, we found the correct ID.
 			if resp.StatusCode == http.StatusOK {
 				return id
 			}

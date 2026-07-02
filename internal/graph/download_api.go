@@ -19,8 +19,8 @@ func (c *Client) DownloadRemoteItem(driveID, itemID string) (io.ReadCloser, erro
 	return c.downloadContent(endpoint)
 }
 
-// encodeShareURL codifica una URL en el formato "shareId" que Graph espera
-// para el endpoint /shares/{id}/driveItem.
+// encodeShareURL encodes a URL into the "shareId" format that Graph expects
+// for the /shares/{id}/driveItem endpoint.
 func encodeShareURL(rawURL string) string {
 	lower := strings.ToLower(rawURL)
 	encoded := base64.URLEncoding.EncodeToString([]byte(lower))
@@ -28,9 +28,9 @@ func encodeShareURL(rawURL string) string {
 	return "u!" + encoded
 }
 
-// ResolveSharedItem resuelve un link de compartido (WebUrl de un archivo de DM)
-// en el DriveItem real con ID y driveId. Si el link no apunta a un archivo
-// de SharePoint/OneDrive, devuelve error.
+// ResolveSharedItem resolves a shared link (WebUrl from a DM file)
+// into the real DriveItem with ID and driveId. If the link doesn't point
+// to a SharePoint/OneDrive file, it returns an error.
 func (c *Client) ResolveSharedItem(shareURL string) (*DriveItem, error) {
 	shareId := encodeShareURL(shareURL)
 	endpoint := fmt.Sprintf("https://graph.microsoft.com/v1.0/shares/%s/driveItem", shareId)
@@ -53,7 +53,7 @@ func (c *Client) ResolveSharedItem(shareURL string) (*DriveItem, error) {
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("no se pudo resolver el link (status %d)", resp.StatusCode)
+		return nil, fmt.Errorf("could not resolve link (status %d)", resp.StatusCode)
 	}
 
 	var item DriveItem
@@ -72,12 +72,12 @@ func (c *Client) downloadContent(endpoint string) (io.ReadCloser, error) {
 
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("error de red al descargar: %w", err)
+		return nil, fmt.Errorf("network error during download: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
 		defer resp.Body.Close()
 		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("error descargando archivo (status %d): %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("error downloading file (status %d): %s", resp.StatusCode, string(body))
 	}
 	return resp.Body, nil
 }

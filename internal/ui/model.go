@@ -16,7 +16,7 @@ type channelsErrMsg struct {
 type messagesErrMsg struct {
 	err            error
 	conversationID string
-	partialMsgs    []graph.Message // mensajes traídos antes del fallo
+	partialMsgs    []graph.Message // messages loaded before the failure
 }
 
 type teamsMsg struct {
@@ -57,9 +57,9 @@ type ActivityFilter int
 
 const (
 	FilterAll      ActivityFilter = iota
-	FilterUpcoming                 // Próximamente (vence en ≤7 días)
-	FilterOverdue                  // Vencida
-	FilterCompleted                // Completada/Entregada
+	FilterUpcoming                 // Upcoming (due in ≤7 days)
+	FilterOverdue                  // Overdue
+	FilterCompleted                // Completed/Submitted
 )
 
 type Workspace int
@@ -74,8 +74,8 @@ const (
 type FolderNode struct {
 	ID      string
 	Name    string
-	// DriveID, si no está vacío, indica que este nodo vive en un Drive
-	// distinto al del Team (caso shortcut/remoteItem, ej: Materiales de clase).
+	// DriveID, if not empty, indicates this node lives in a different
+	// Drive than the Team's (shortcut/remoteItem case, e.g. Class Materials).
 	DriveID string
 }
 
@@ -97,52 +97,52 @@ type Model struct {
 	prefs        Preferences
 	selectedChan int
 	selectedFile int
-	focusLeft    bool // true = foco en panel izquierdo (equipos/canales)
-	focusList    int  // 0 = teams, 1 = channels (dentro del panel izquierdo)
+	focusLeft    bool // true = focus on left panel (teams/channels)
+	focusList    int  // 0 = teams, 1 = channels (within left panel)
 	loading      bool
 	err          error
 	width        int
 	height       int
 
-	// Viewports y estado
+	// Viewports and state
 	leftVp      viewport.Model
 	viewport    viewport.Model
 	ready       bool
 	channelErr  error
-	folderStack []FolderNode // Pila de nodos para volver atrás en subcarpetas y armar la ruta
+	folderStack []FolderNode // Stack of nodes for navigating back in subfolders and building the path
 
-	// Descarga de archivos
-	currentFilesDriveID string          // "" = drive por defecto del equipo; sino, ID de drive explícito
-	selectedFiles       map[int]bool    // índices marcados para descarga múltiple
-	confirmingDownload  bool            // true mientras se muestra el popup de confirmación
+	// File downloads
+	currentFilesDriveID string          // "" = default team drive; otherwise explicit drive ID
+	selectedFiles       map[int]bool    // indices marked for multi-download
+	confirmingDownload  bool            // true while the confirmation popup is showing
 	downloadTargets     []graph.DriveItem
-	downloadStatus      string          // mensaje de resultado
-	downloadStatusID    int             // incrementa con cada descarga, evita que un clear viejo borre un status nuevo
-	downloading         bool            // true mientras se descarga
-	folderCache         map[string][]graph.DriveItem // cache de carpetas: folderID → contenido
-	editingDownloadDir  bool            // true mientras se edita la carpeta destino
-	downloadDirInput    textinput.Model // input para editar la ruta de descarga
+	downloadStatus      string          // result message
+	downloadStatusID    int             // increments with each download, prevents an old clear from erasing a new status
+	downloading         bool            // true while downloading
+	folderCache         map[string][]graph.DriveItem // folder cache: folderID → contents
+	editingDownloadDir  bool            // true while editing the destination folder
+	downloadDirInput    textinput.Model // input for editing the download path
 
-	// Mapa channelID → teamID para navegación desde notificaciones
+	// channelID → teamID map for navigation from notifications
 	channelToTeam map[string]string
 
-	// Input para enviar mensajes
+	// Input for sending messages
 	input    textinput.Model
 	isTyping bool
 
-	// Usuario
+	// User
 	userName string
 
-	// Presencia (selección)
+	// Presence (selection)
 	showPresenceMenu bool
 	presenceCursor   int
 	presenceOptions  []string
 	presenceError    string
 
-	// Ventana deslizante para canales
+	// Sliding window for channels
 	channelWindowStart int
 
-	// Activity / Notificaciones
+	// Activity / Notifications
 	notifications      []graph.NotificationItem
 	notifLoaded        bool
 	selectedNotif      int
@@ -150,26 +150,26 @@ type Model struct {
 	activityFilter     ActivityFilter
 
 
-	// Assignments / Tareas
+	// Assignments / Tasks
 	assignments      []graph.Assignment
 	assignLoaded     bool
 	selectedAssign   int
 	assignErr        error
 	assignFilter     ActivityFilter
 
-	// Polling de DMs
-	chatUnread map[string]bool  // chatID → tiene mensajes nuevos
+	// DM polling
+	chatUnread map[string]bool  // chatID → has unread messages
 	presence   map[string]string // userID → Availability (Available, Busy, Away, Offline, etc.)
 
-	// Preview de archivos
-	previewing     bool   // true mientras se muestra preview de archivo
-	previewContent string // contenido del archivo para mostrar
-	previewFileName string // nombre del archivo en preview
+	// File preview
+	previewing     bool   // true while showing file preview
+	previewContent string // file content to display
+	previewFileName string // name of the file being previewed
 }
 
 func New(client *graph.Client, userName string) Model {
 	ti := textinput.New()
-	ti.Placeholder = "Presiona 'i' para escribir un mensaje..."
+	ti.Placeholder = "Press 'i' to type a message..."
 	ti.CharLimit = 1000
 	ti.Width = 50
 
@@ -191,7 +191,7 @@ func New(client *graph.Client, userName string) Model {
 		folderCache:  make(map[string][]graph.DriveItem),
 		channelToTeam: make(map[string]string),
 		userName:     userName,
-		presenceOptions: []string{"Available", "Busy", "DoNotDisturb", "BeRightBack", "Away", "Reset (Automático)"},
+		presenceOptions: []string{"Available", "Busy", "DoNotDisturb", "BeRightBack", "Away", "Reset (Automatic)"},
 	}
 }
 
