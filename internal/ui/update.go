@@ -11,6 +11,7 @@ import (
 	"strings"
 	"teamsTUI/internal/graph"
 	"teamsTUI/internal/teams"
+	"teamsTUI/internal/ui/components/directorypicker"
 	"time"
 
 	"github.com/charmbracelet/bubbles/viewport"
@@ -56,6 +57,14 @@ type searchUsersMsg struct{ results []graph.UserSearchResult }
 type searchUsersErrMsg struct{ err error }
 type createDMMsg struct{ chat graph.Chat }
 type createDMErrMsg struct{ err error }
+type uploadDoneMsg struct {
+	item graph.DriveItem
+	err  error
+}
+
+type dirPickerResultMsg struct {
+	path string
+}
 
 func launchAuthHelperCmd(expiredToken string) tea.Cmd {
 	return func() tea.Msg {
@@ -98,6 +107,23 @@ func createDMCmd(client *graph.Client, selfID, targetID string) tea.Cmd {
 			return createDMErrMsg{err}
 		}
 		return createDMMsg{chat}
+	}
+}
+
+func uploadFileCmd(client *graph.Client, teamID, channelName, filePath string, isDM bool) tea.Cmd {
+	return func() tea.Msg {
+		if strings.HasPrefix(filePath, "~/") {
+			home, _ := os.UserHomeDir()
+			filePath = filepath.Join(home, filePath[2:])
+		}
+		var item graph.DriveItem
+		var err error
+		if isDM {
+			item, err = client.UploadFileToOneDrive(filePath)
+		} else {
+			item, err = client.UploadFileToChannel(teamID, channelName, filePath)
+		}
+		return uploadDoneMsg{item: item, err: err}
 	}
 }
 
@@ -1087,8 +1113,77 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case createDMErrMsg:
 		m.newDMErr = msg.err.Error()
 		return m, nil
+
+	case uploadDoneMsg:
+		m.uploading = false
+		if msg.err != nil {
+			m.downloadStatus = fmt.Sprintf("✗ Upload failed: %v", msg.err)
+		} else {
+			m.downloadStatus = fmt.Sprintf("✓ Uploaded: %s", msg.item.Name)
+			if m.workspace == WorkspaceDMs && msg.item.WebUrl != "" {
+				m.downloadStatusID++
+				return m, tea.Batch(
+					sendMessageCmd(m.client, m.activeConversationID(), fmt.Sprintf("📎 [%s](%s)", msg.item.Name, msg.item.WebUrl)),
+					clearStatusAfter(m.downloadStatusID),
+				)
+			}
+			if m.workspace == WorkspaceTeams && m.viewMode == ModeFiles {
+				m.loading = true
+				m.downloadStatusID++
+				return m, tea.Batch(
+					loadFilesCmd(m.client, m.teams[m.selectedTeam].ID, m.channels[m.selectedChan].DisplayName, m.channels[m.selectedChan].ID),
+					clearStatusAfter(m.downloadStatusID),
+				)
+			}
+		}
+		m.downloadStatusID++
+		return m, clearStatusAfter(m.downloadStatusID)
+
+	case dirPickerResultMsg:
+		m.showDirPicker = false
+		if msg.path != "" {
+			m.prefs.DownloadDir = msg.path
+			savePrefs(m.prefs)
+		}
+		return m, nil
+
+	case directorypicker.SelectedMsg:
+		m.showDirPicker = false
+		if msg.Path != "" {
+			if m.pickerPurpose == "download" {
+				m.prefs.DownloadDir = msg.Path
+				savePrefs(m.prefs)
+			} else if m.pickerPurpose == "upload" {
+				// Upload the selected file
+				m.uploading = true
+				isDM := m.workspace == WorkspaceDMs
+				channelName := ""
+				teamID := ""
+				if !isDM && len(m.channels) > 0 {
+					channelName = m.channels[m.selectedChan].DisplayName
+					teamID = m.teams[m.selectedTeam].ID
+				}
+				return m, uploadFileCmd(m.client, teamID, channelName, msg.Path, isDM)
+			}
+		}
+		return m, nil
+
+	case directorypicker.CancelledMsg:
+		m.showDirPicker = false
+		return m, nil
 	    
 	case tea.KeyMsg:
+		// Directory picker — intercepts all keys
+		if m.showDirPicker {
+			var cmd tea.Cmd
+			m.dirPicker, cmd = m.dirPicker.Update(msg)
+			if cmd != nil {
+				return m, cmd
+			}
+			// Check if picker sent a result
+			return m, nil
+		}
+
 		// New DM popup — intercepts keys
 		if m.showNewDMPopup {
 			switch msg.String() {
@@ -1155,29 +1250,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Download confirmation popup — intercepts keys before everything else
 		if m.confirmingDownload {
-			if m.editingDownloadDir {
-				switch msg.String() {
-				case "enter":
-					newDir := strings.TrimSpace(m.downloadDirInput.Value())
-					if newDir != "" {
-						if strings.HasPrefix(newDir, "~/") {
-							home, _ := os.UserHomeDir()
-							newDir = filepath.Join(home, newDir[2:])
-						}
-						m.prefs.DownloadDir = newDir
-						savePrefs(m.prefs)
-					}
-					m.editingDownloadDir = false
-					m.downloadDirInput.Blur()
-				case "esc":
-					m.editingDownloadDir = false
-					m.downloadDirInput.Blur()
-				default:
-					m.downloadDirInput, cmd = m.downloadDirInput.Update(msg)
-					return m, cmd
-				}
-				return m, nil
-			}
 			switch msg.String() {
 			case "y", "enter":
 				m.confirmingDownload = false
@@ -1189,9 +1261,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.selectedFiles = make(map[int]bool)
 				return m, tea.Batch(cmds...)
 			case "e":
-				m.editingDownloadDir = true
-				m.downloadDirInput.SetValue(m.prefs.DownloadDir)
-				m.downloadDirInput.Focus()
+				m.showDirPicker = true
+				m.pickerPurpose = "download"
+				m.dirPicker = directorypicker.New(directorypicker.Options{
+					Title:       "Select download folder",
+					InitialPath: m.prefs.DownloadDir,
+					Width:       m.width,
+					Height:      m.height,
+				})
 				return m, nil
 			case "n", "esc":
 				m.confirmingDownload = false
@@ -1217,6 +1294,31 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.newDMErr = ""
 				m.newDMCursor = 0
 				m.newDMQuery.Focus()
+			}
+
+		case "u":
+			if m.workspace == WorkspaceTeams && m.viewMode == ModeFiles && !m.focusLeft {
+				m.showDirPicker = true
+				m.pickerPurpose = "upload"
+				m.dirPicker = directorypicker.New(directorypicker.Options{
+					Title:       "Select file to upload",
+					InitialPath: m.prefs.DownloadDir,
+					Mode:        "file",
+					Width:       m.width,
+					Height:      m.height,
+				})
+				return m, nil
+			} else if m.workspace == WorkspaceDMs && !m.focusLeft {
+				m.showDirPicker = true
+				m.pickerPurpose = "upload"
+				m.dirPicker = directorypicker.New(directorypicker.Options{
+					Title:       "Select file to upload",
+					InitialPath: m.prefs.DownloadDir,
+					Mode:        "file",
+					Width:       m.width,
+					Height:      m.height,
+				})
+				return m, nil
 			}
 
 		case "tab":

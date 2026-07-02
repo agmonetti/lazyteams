@@ -2,6 +2,7 @@ package ui
 
 import (
 	"teamsTUI/internal/graph"
+	"teamsTUI/internal/ui/components/directorypicker"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -121,8 +122,6 @@ type Model struct {
 	downloadStatusID    int             // increments with each download, prevents an old clear from erasing a new status
 	downloading         bool            // true while downloading
 	folderCache         map[string][]graph.DriveItem // folder cache: folderID → contents
-	editingDownloadDir  bool            // true while editing the destination folder
-	downloadDirInput    textinput.Model // input for editing the download path
 
 	// channelID → teamID map for navigation from notifications
 	channelToTeam map[string]string
@@ -177,6 +176,14 @@ type Model struct {
 	newDMResults      []graph.UserSearchResult
 	newDMCursor       int
 	newDMErr          string
+
+	// File upload
+	uploading        bool
+
+	// Directory picker
+	showDirPicker   bool
+	dirPicker       directorypicker.Model
+	pickerPurpose   string // "download" or "upload"
 }
 
 func New(client *graph.Client, userName string) Model {
@@ -184,10 +191,6 @@ func New(client *graph.Client, userName string) Model {
 	ti.Placeholder = "Press 'i' to type a message..."
 	ti.CharLimit = 1000
 	ti.Width = 50
-
-	dirInput := textinput.New()
-	dirInput.Placeholder = "~/Downloads"
-	dirInput.CharLimit = 256
 
 	newDMInput := textinput.New()
 	newDMInput.Placeholder = "Search by name..."
@@ -200,7 +203,6 @@ func New(client *graph.Client, userName string) Model {
 		focusList:    0,
 		loading:      true,
 		input:        ti,
-		downloadDirInput: dirInput,
 		newDMQuery:   newDMInput,
 		prefs:        loadPrefs(),
 		chatUnread:   make(map[string]bool),

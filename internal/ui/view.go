@@ -310,19 +310,8 @@ func (m Model) View() string {
 			names[i] = t.Name
 		}
 
-		var dirLine string
-		if m.editingDownloadDir {
-			dirLine = fmt.Sprintf("Destination: %s", m.downloadDirInput.View())
-		} else {
-			dirLine = fmt.Sprintf("Destination: %s", m.prefs.DownloadDir)
-		}
-
-		var actions string
-		if m.editingDownloadDir {
-			actions = "[Enter] Confirm path   [Esc] Cancel"
-		} else {
-			actions = "[Enter/y] Download   [e] Edit path   [Esc/n] Cancel"
-		}
+		dirLine := fmt.Sprintf("Destination: %s", m.prefs.DownloadDir)
+		actions := "[Enter/y] Download   [e] Change folder   [Esc/n] Cancel"
 
 		question := fmt.Sprintf(
 			"Download %d file(s)?\n\n%s\n\n%s\n\n%s",
@@ -373,6 +362,8 @@ func (m Model) View() string {
 
 		popup := popupStyle.Render(popupContent)
 		rightPanel = lipgloss.Place(lipgloss.Width(rightPanel), lipgloss.Height(rightPanel), lipgloss.Center, lipgloss.Center, popup)
+	} else if m.showDirPicker {
+		return m.dirPicker.View()
 	}
 
 	// Combine panels
@@ -479,10 +470,8 @@ func (m Model) footerText() string {
 		return dim.Render(" [↑/↓] Navigate results  [Enter] Open DM  [Esc] Cancel")
 	case m.showPresenceMenu:
 		return dim.Render(" [↑/↓] Navigate   [Enter] Confirm   [Esc/q] Cancel")
-	case m.confirmingDownload && m.editingDownloadDir:
-		return dim.Render(" [Enter] Confirm path   [Esc] Cancel editing")
 	case m.confirmingDownload:
-		return dim.Render(" [Enter/y] Download   [e] Edit path   [Esc/n] Cancel")
+		return dim.Render(" [Enter/y] Download   [e] Change folder   [Esc/n] Cancel")
 	case m.workspace == WorkspaceAssignments:
 		return dim.Render(" [1] Teams  [2] DMs  ") + activityTab + dim.Render("  [4] Assignments  [←/→] Filter  [↑/↓] Navigate  [Enter] View  [q] Quit")
 	case m.workspace == WorkspaceActivity:
@@ -490,14 +479,16 @@ func (m Model) footerText() string {
 			return dim.Render(" [o] Go to channel  [Esc] Back  [q] Quit")
 		}
 		return dim.Render(" [1-4] Workspace  [←/→] Filter  [↑/↓] Navigate  [Enter] View details  [q] Quit")
-	case m.focusLeft && m.loadedConvID == "":
+	case m.focusLeft && m.loadedConvID == "" && m.workspace == WorkspaceDMs:
 		return dim.Render(" [1] Teams  [2] DMs  ") + activityTab + dim.Render("  [4] Assignments  [↑/↓] Navigate  [Enter] Open  [n] New DM  [p] Status  [q] Quit")
+	case m.focusLeft && m.loadedConvID == "":
+		return dim.Render(" [1] Teams  [2] DMs  ") + activityTab + dim.Render("  [4] Assignments  [↑/↓] Navigate  [Enter] Open  [p] Status  [q] Quit")
 	case m.previewing:
 		return dim.Render(" [Esc] Back to files  [↑/↓] Scroll")
 	case !m.focusLeft && m.viewMode == ModeFiles:
-		return dim.Render(" [↑/↓] Navigate  [Enter] Open  [Space] Select  [v] Preview  [o] Download  [p] Status  [Esc/h] Back")
+		return dim.Render(" [↑/↓] Navigate  [Enter] Open  [Space] Select  [v] Preview  [o] Download  [u] Upload  [p] Status  [Esc/h] Back")
 	case !m.focusLeft && m.viewMode == ModeChat:
-		return dim.Render(" [↑/↓] Scroll  [i] Type  [f] Files  [p] Status  [Esc/h] Back")
+		return dim.Render(" [↑/↓] Scroll  [i] Type  [u] Upload  [f] Files  [p] Status  [Esc/h] Back")
 	default:
 		return dim.Render(" [1] Teams  [2] DMs  ") + activityTab + dim.Render("  [4] Assignments  [↑/↓] Navigate  [Enter] Open  [p] Status  [q] Quit")
 	}
