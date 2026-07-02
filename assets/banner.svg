@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg
+    xmlns="http://www.w3.org/2000/svg"
+    viewBox="0 0 753 192"
+    role="img"
+    aria-labelledby="title">
+
+    <title id="title">ms-teams-TUI</title>
+
+    <style>
+        text {
+            font-family:
+                "JetBrains Mono",
+                "Cascadia Mono",
+                "SFMono-Regular",
+                Menlo,
+                Consolas,
+                monospace;
+            font-size: 16px;
+            fill: currentColor;
+            white-space: pre;
+        }
+    </style>
+
+    <text xml:space="preserve" x="24" y="41"> ████████ ███████  █████  ███    ███ ███████        ████████ ██    ██ ██ </text>
+    <text xml:space="preserve" x="24" y="65">    ██    ██      ██   ██ ████  ████ ██                ██    ██    ██ ██ </text>
+    <text xml:space="preserve" x="24" y="89">    ██    █████   ███████ ██ ████ ██ ███████  █████    ██    ██    ██ ██ </text>
+    <text xml:space="preserve" x="24" y="113">   ██    ██      ██   ██ ██  ██  ██      ██           ██    ██    ██ ██ </text>
+    <text xml:space="preserve" x="24" y="137">   ██    ███████ ██   ██ ██      ██ ███████           ██     ██████  ██ </text>
+
+</svg>

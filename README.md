@@ -1,22 +1,30 @@
-# msTTui
+# ms-teams-TUI
+
+<p align="center">
+  <img src="assets/banner.svg" alt="ms-teams-TUI" width="900">
+</p>
+
+<p align="center">
+  A fast, keyboard-driven Microsoft Teams client for the terminal.
+</p>
 
 Cliente TUI para Microsoft Teams. Corre en la terminal, sin Electron, sin navegador.
 
 **~3,500 líneas de Go.** Clean Architecture + Elm Architecture (Bubble Tea). Un solo binario estático.
 
 ```
-╔══════════════════════╦══════════════════════════════════════╗
-║ Chats                ║            TEAMS-TUI                 ║
-║                      ║                                      ║
-║ ► Notas personales   ║  Microsoft Teams Terminal UI         ║
-║   MONETTI FRANCISCO  ║  v1.0.0-beta                        ║
-║   CACERES GARCIA...  ║                                      ║
-║   WEHBE RICARDO...   ║  [↑/↓] Navegar equipos · [Enter]   ║
-║   ...                ║                                      ║
-║                      ║                                      ║
-╠══════════════════════╩══════════════════════════════════════╣
-║ [1] Equipos  [2] DMs  [3] Actividad  [4] Tareas            ║
-╚═════════════════════════════════════════════════════════════╝
+╔══════════════════════╦════════════════════════════════════════════════════════╗
+║ Chats                ║            TEAMS-TUI                                   ║
+║                      ║                                                        ║
+║ ► Notas personales   ║  Microsoft Teams Terminal UI                           ║
+║   CHAT PRIVADO 1     ║  v1.0.0-beta                                           ║
+║   CHAT PRIVADO 2     ║                                                        ║
+║   CHAT PRIVADO 3     ║  [↑/↓] Navegar equipos · [Enter]                       ║
+║   ...                ║                                                        ║
+║                      ║                                                        ║
+╠══════════════════════╩════════════════════════════════════════════════════════╣
+║ [1] Equipos  [2] DMs  [3] Actividad  [4] Tareas   [p] Estado  [q] Salir       ║
+╚═══════════════════════════════════════════════════════════════════════════════╝
 ```
 
 ## Features

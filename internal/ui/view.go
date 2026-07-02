@@ -247,7 +247,10 @@ func (m Model) View() string {
 				m.input.PromptStyle = normalItemStyle
 				m.input.TextStyle = normalItemStyle
 			}
-			rightContent += m.input.View()
+			inputView := m.input.View()
+			inputLines := strings.Count(inputView, "\n") +1
+			m.viewport.Height = rightInnerHeight - 4 - inputLines -1
+			rightContent += inputView
 		}
 	} else if m.workspace == WorkspaceTeams {
 		// Cabecera: solo si hay datos cargados
@@ -282,7 +285,10 @@ func (m Model) View() string {
 				m.input.PromptStyle = normalItemStyle
 				m.input.TextStyle = normalItemStyle
 			}
-			rightContent += m.input.View()
+			inputView := m.input.View()
+			inputLines := strings.Count(inputView, "\n") +1
+			m.viewport.Height = rightInnerHeight - 4 - inputLines -1
+			rightContent += inputView
 		}
 	} else if m.workspace == WorkspaceActivity {
 		rightContent = renderNotifDetail(m)
@@ -290,10 +296,10 @@ func (m Model) View() string {
 		rightContent = renderAssignDetail(m)
 	}
 
-	// Aplicar estilos al panel derecho — PRIMERO con el contenido normal
-	rStyle := paneStyle.Width(rightOuterWidth).Height(panelOuterHeight - 2)
+	// Aplicar estilos al panel derecho — sin Height fijo, el contenido define la altura
+	rStyle := paneStyle.Width(rightOuterWidth)
 	if !m.focusLeft {
-		rStyle = focusedPaneStyle.Width(rightOuterWidth).Height(panelOuterHeight - 2)
+		rStyle = focusedPaneStyle.Width(rightOuterWidth)
 	}
 	rightPanel := rStyle.Render(rightContent)
 
@@ -367,7 +373,7 @@ func (m Model) View() string {
 	// Footer contextual
 	footerLine := footerStyle.Render(m.footerText())
 	if m.presenceError != "" {
-		footerLine += "\n" + lipgloss.NewStyle().Foreground(lipgloss.Color("203")).Render("Error de presencia: "+m.presenceError)
+		footerLine += "\n" + lipgloss.NewStyle().Foreground(lipgloss.Color("203")).Render("Error de presencia: " + m.presenceError)
 	}
 	ui = lipgloss.JoinVertical(lipgloss.Left, ui, footerLine)
 
