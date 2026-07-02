@@ -22,9 +22,9 @@
         }
     </style>
 
-    <text xml:space="preserve" x="24" y="41"> ████████ ███████  █████  ███    ███ ███████        ████████ ██    ██ ██ </text>
-    <text xml:space="preserve" x="24" y="65">    ██    ██      ██   ██ ████  ████ ██                ██    ██    ██ ██ </text>
-    <text xml:space="preserve" x="24" y="89">    ██    █████   ███████ ██ ████ ██ ███████  █████    ██    ██    ██ ██ </text>
+    <text xml:space="preserve" x="24" y="41">████████ ███████  █████  ███    ███ ███████        ████████ ██    ██ ██ </text>
+    <text xml:space="preserve" x="24" y="65">   ██    ██      ██   ██ ████  ████ ██                ██    ██    ██ ██ </text>
+    <text xml:space="preserve" x="24" y="89">   ██    █████   ███████ ██ ████ ██ ███████  █████    ██    ██    ██ ██ </text>
     <text xml:space="preserve" x="24" y="113">   ██    ██      ██   ██ ██  ██  ██      ██           ██    ██    ██ ██ </text>
     <text xml:space="preserve" x="24" y="137">   ██    ███████ ██   ██ ██      ██ ███████           ██     ██████  ██ </text>
 
