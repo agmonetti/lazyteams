@@ -210,6 +210,28 @@ type Model struct {
 	showChannelInfo bool
 	teamInfo        *graph.Team
 	channelInfo     *graph.Channel
+
+	// Team members
+	showMembersPopup  bool
+	teamMembers       []graph.TeamMember
+	membersLoading    bool
+	membersCursor     int
+	showRemoveMemberPopup bool
+
+	// Add member (team)
+	showAddMemberPopup bool
+	addMemberInput     textinput.Model
+	addMemberErr       string
+
+	// Add member to channel
+	showAddChannelMemberPopup bool
+	addChannelMemberInput     textinput.Model
+	addChannelMemberResults   []graph.TeamMember
+	addChannelMemberCursor    int
+	addChannelMemberErr       string
+
+	// Channel members (separate from team members)
+	channelMembers []graph.TeamMember
 }
 
 func New(client *graph.Client, userName string) Model {
@@ -233,6 +255,16 @@ func New(client *graph.Client, userName string) Model {
 	createChannelInput.CharLimit = 64
 	createChannelInput.Width = 40
 
+	addMemberInput := textinput.New()
+	addMemberInput.Placeholder = "Search by name..."
+	addMemberInput.CharLimit = 64
+	addMemberInput.Width = 40
+
+	addChannelMemberInput := textinput.New()
+	addChannelMemberInput.Placeholder = "Filter team members..."
+	addChannelMemberInput.CharLimit = 64
+	addChannelMemberInput.Width = 40
+
 	return Model{
 		client:       client,
 		focusLeft:    true,
@@ -243,6 +275,8 @@ func New(client *graph.Client, userName string) Model {
 		createTeamInput: createTeamInput,
 		createChannelInput: createChannelInput,
 		createChannelType: "Standard",
+		addMemberInput: addMemberInput,
+		addChannelMemberInput: addChannelMemberInput,
 		prefs:        loadPrefs(),
 		chatUnread:   make(map[string]bool),
 		presence:     make(map[string]string),

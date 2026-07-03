@@ -158,7 +158,11 @@ func (m Model) View() string {
 						style = style.Copy().Foreground(lipgloss.Color("245"))
 					}
 				}
-				leftContent += fmt.Sprintf("%s%s\n", cursor, style.Render(truncateText(c.DisplayName, leftOuterWidth-4)))
+				lock := ""
+				if strings.ToLower(c.MembershipType) == "private" {
+					lock = lipgloss.NewStyle().Foreground(colorMuted).Render(" ")
+				}
+				leftContent += fmt.Sprintf("%s%s\n", cursor, style.Render(truncateText(c.DisplayName, leftOuterWidth-6))+lock)
 			}
 
 			// More channels indicator below
@@ -480,10 +484,163 @@ func (m Model) View() string {
 				"Name:    %s\n"+
 				"Type:    %s\n"+
 				"Email:   %s\n"+
-				"Created: %s\n\n"+
-				"[Esc] Close",
+				"Created: %s\n",
 			ch.DisplayName, ch.MembershipType, email, created,
 		)
+
+		if len(m.channelMembers) > 0 {
+			content += "\nMembers:\n"
+			for _, member := range m.channelMembers {
+				roleIcon := normalItemStyle.Render("Member   ")
+				if member.Role == "Owner" {
+				    roleIcon = lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Render("Owner ★  ")
+				}
+				content += fmt.Sprintf("%s%s  %s\n",
+					roleIcon,
+					member.DisplayName,
+					metaStyle.Render(member.Mail),
+				)
+			}
+		}
+
+		if strings.ToLower(ch.MembershipType) == "private" {
+			content += "\n" + helpStyle.Render("[a] Add member   [Esc] Close")
+		} else {
+			content += "\n" + helpStyle.Render("[Esc] Close")
+		}
+		popup := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("#0078D4")).
+			Padding(1, 3).
+			Width(55).
+			Render(content)
+		combined := lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, rightPanel)
+		return lipgloss.Place(lipgloss.Width(combined), lipgloss.Height(combined), lipgloss.Center, lipgloss.Center, popup)
+	}
+
+	if m.showRemoveMemberPopup && m.membersCursor < len(m.teamMembers) {
+		member := m.teamMembers[m.membersCursor]
+		content := fmt.Sprintf("Remove \"%s\" from team?\n\n[Enter/y] Confirm   [Esc/n] Cancel", member.DisplayName)
+		popup := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("#E74C3C")).
+			Padding(1, 3).
+			Render(content)
+		combined := lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, rightPanel)
+		return lipgloss.Place(lipgloss.Width(combined), lipgloss.Height(combined), lipgloss.Center, lipgloss.Center, popup)
+	}
+
+	if m.showMembersPopup {
+		var content string
+		content += titleStyle.Render("Team Members") + "\n\n"
+		if m.membersLoading {
+			content += helpStyle.Render("Loading...")
+		} else if len(m.teamMembers) == 0 {
+			content += helpStyle.Render("No members found.")
+		} else {
+			maxVisible := 10
+			total := len(m.teamMembers)
+			windowStart := m.membersCursor - maxVisible/2
+			if windowStart < 0 {
+				windowStart = 0
+			}
+			windowEnd := windowStart + maxVisible
+			if windowEnd > total {
+				windowEnd = total
+				windowStart = total - maxVisible
+				if windowStart < 0 {
+					windowStart = 0
+				}
+			}
+			if windowStart > 0 {
+				content += metaStyle.Render(fmt.Sprintf("  ↑ %d more above\n", windowStart))
+			}
+			for i := windowStart; i < windowEnd; i++ {
+				member := m.teamMembers[i]
+				cursor := "  "
+				nameStyle := normalItemStyle
+				if i == m.membersCursor {
+					cursor = "▶ "
+					nameStyle = selectedItemStyle
+				}
+				roleIcon := normalItemStyle.Render("Member   ")
+				if member.Role == "Owner" {
+				    roleIcon = lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Render("Owner ★  ")
+				}
+				line := fmt.Sprintf("%s%s%s\n   %s",
+					cursor,
+					roleIcon,
+					nameStyle.Render(member.DisplayName),
+					metaStyle.Render(member.Mail),
+				)
+				content += line + "\n"
+			}
+			if windowEnd < total {
+				content += metaStyle.Render(fmt.Sprintf("  ↓ %d more below\n", total-windowEnd))
+			}
+		}
+		content += "\n" + helpStyle.Render("[↑/↓] Navigate  [a] Add  [x] Remove  [Esc] Close")
+		popup := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("#0078D4")).
+			Padding(1, 3).
+			Width(55).
+			Render(content)
+		combined := lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, rightPanel)
+		return lipgloss.Place(lipgloss.Width(combined), lipgloss.Height(combined), lipgloss.Center, lipgloss.Center, popup)
+	}
+
+	if m.showAddChannelMemberPopup {
+		var content string
+		content += titleStyle.Render("Add to Channel") + "\n\n"
+		query := m.addChannelMemberInput.Value()
+		content += helpStyle.Render("> ") + query + "█\n\n"
+		if m.addChannelMemberErr != "" {
+			content += errorStyle.Render(m.addChannelMemberErr) + "\n"
+		} else if len(m.addChannelMemberResults) == 0 {
+			content += helpStyle.Render("No team members available to add.") + "\n"
+		} else {
+			for i, u := range m.addChannelMemberResults {
+				cursor := "  "
+				style := normalItemStyle
+				if i == m.addChannelMemberCursor {
+					cursor = "▶ "
+					style = selectedItemStyle
+				}
+				content += fmt.Sprintf("%s%s\n   %s\n", cursor, style.Render(u.DisplayName), metaStyle.Render(u.Mail))
+			}
+		}
+		content += "\n" + helpStyle.Render("[↑/↓] Navigate  [Enter] Add  [Esc] Cancel")
+		popup := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("#0078D4")).
+			Padding(1, 3).
+			Width(50).
+			Render(content)
+		combined := lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, rightPanel)
+		return lipgloss.Place(lipgloss.Width(combined), lipgloss.Height(combined), lipgloss.Center, lipgloss.Center, popup)
+	}
+
+	if m.showAddMemberPopup {
+		var content string
+		content += titleStyle.Render("Add Member") + "\n\n"
+		content += m.addMemberInput.View() + "\n\n"
+		if m.addMemberErr != "" {
+			content += errorStyle.Render(m.addMemberErr) + "\n"
+		} else if len(m.newDMResults) == 0 && len(m.addMemberInput.Value()) >= 2 {
+			content += helpStyle.Render("No results found.") + "\n"
+		} else {
+			for i, u := range m.newDMResults {
+				cursor := "  "
+				style := normalItemStyle
+				if i == m.newDMCursor {
+					cursor = "▶ "
+					style = selectedItemStyle
+				}
+				content += fmt.Sprintf("%s%s\n   %s\n", cursor, style.Render(u.DisplayName), metaStyle.Render(u.Mail))
+			}
+		}
+		content += "\n" + helpStyle.Render("[↑/↓] Navigate  [Enter] Add  [Esc] Cancel")
 		popup := lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(lipgloss.Color("#0078D4")).
@@ -610,6 +767,13 @@ func (m Model) footerText() string {
 		return dim.Render(" [↑/↓] Navigate results  [Enter] Open DM  [Esc] Cancel")
 	case m.showPresenceMenu:
 		return dim.Render(" [↑/↓] Navigate   [Enter] Confirm   [Esc/q] Cancel")
+	case m.showAddChannelMemberPopup:
+		return dim.Render(" [↑/↓] Navigate  [Enter] Add  [Esc] Cancel")
+	case m.showChannelInfo:
+		if m.channelInfo != nil && strings.ToLower(m.channelInfo.MembershipType) == "private" {
+			return dim.Render(" [a] Add member to channel   [Esc] Close")
+		}
+		return dim.Render(" [Esc] Close")
 	case m.confirmingDownload:
 		return dim.Render(" [Enter/y] Download   [e] Change folder   [Esc/n] Cancel")
 	case m.workspace == WorkspaceAssignments:
@@ -622,9 +786,9 @@ func (m Model) footerText() string {
 	case m.focusLeft && m.loadedConvID == "" && m.workspace == WorkspaceDMs:
 		return dim.Render(" [1] Teams  [2] DMs  ") + activityTab + dim.Render("  [4] Assignments  [↑/↓] Navigate  [Enter] Open  [n] New DM  [p] Status  [q] Quit")
 	case m.focusLeft && m.focusList == 1:
-		return dim.Render(" [↑/↓] Navigate  [Enter] Open  [I] Info  [C] New channel  [X] Delete channel  [←] Back to teams  [q] Quit")
+		return dim.Render(" [↑/↓] Navigate  [Enter] Open  [I] Info+Members  [C] New channel  [X] Delete channel  [←] Back to teams  [q] Quit")
 	case m.focusLeft && m.loadedConvID == "":
-		return dim.Render(" [1] Teams  [2] DMs  ") + activityTab + dim.Render("  [4] Assignments  [↑/↓] Nav  [Enter] Open  [I] Info  [L] Link  [N] New  [D] Delete  [p] Status  [q] Quit")
+		return dim.Render(" [1-4] Workspace  [↑/↓] Nav  [Enter] Open  [I] Info  [M] Members  [L] Link  [N] New  [D] Delete  [p] Status  [q] Quit")
 	case m.previewing:
 		return dim.Render(" [Esc] Back to files  [↑/↓] Scroll")
 	case !m.focusLeft && m.viewMode == ModeFiles:

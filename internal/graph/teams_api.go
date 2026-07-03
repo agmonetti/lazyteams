@@ -35,6 +35,13 @@ type Channel struct {
 	CreatedDateTime string `json:"createdDateTime"`
 }
 
+type TeamMember struct {
+	ID          string
+	DisplayName string
+	Mail        string
+	Role        string // "Owner" o "Member"
+}
+
 // GetJoinedTeams fetches the teams the user is a member of.
 func (c *Client) GetJoinedTeams() ([]Team, error) {
 	body, err := c.doReq("/me/joinedTeams")
@@ -50,11 +57,6 @@ func (c *Client) GetJoinedTeams() ([]Team, error) {
 	}
 
 	return res.Value, nil
-}
-
-// GetJoinedTeamsRaw fetches the raw JSON (useful for quick debugging).
-func (c *Client) GetJoinedTeamsRaw() ([]byte, error) {
-	return c.doReq("/me/joinedTeams")
 }
 
 // GetChannels fetches the channels of a specific team.
@@ -224,4 +226,183 @@ func (c *Client) GetChannelInfo(teamID, channelID string) (*Channel, error) {
 		return nil, fmt.Errorf("error parsing channel info: %w", err)
 	}
 	return &ch, nil
+}
+
+func (c *Client) GetTeamMembers(teamGUID string) ([]TeamMember, error) {
+	// Fetch members
+	body, err := c.doReq(fmt.Sprintf("/groups/%s/members?$select=id,displayName,mail", teamGUID))
+	if err != nil {
+		return nil, err
+	}
+	var membersRes struct {
+		Value []struct {
+			ID          string `json:"id"`
+			DisplayName string `json:"displayName"`
+			Mail        string `json:"mail"`
+		} `json:"value"`
+	}
+	if err := json.Unmarshal(body, &membersRes); err != nil {
+		return nil, fmt.Errorf("error parsing members: %w", err)
+	}
+
+	// Fetch owners
+	body, err = c.doReq(fmt.Sprintf("/groups/%s/owners?$select=id", teamGUID))
+	if err != nil {
+		return nil, err
+	}
+	var ownersRes struct {
+		Value []struct {
+			ID string `json:"id"`
+		} `json:"value"`
+	}
+	if err := json.Unmarshal(body, &ownersRes); err != nil {
+		return nil, fmt.Errorf("error parsing owners: %w", err)
+	}
+
+	ownerSet := make(map[string]bool)
+	for _, o := range ownersRes.Value {
+		ownerSet[o.ID] = true
+	}
+
+	var result []TeamMember
+	for _, m := range membersRes.Value {
+		role := "Member"
+		if ownerSet[m.ID] {
+			role = "Owner"
+		}
+		result = append(result, TeamMember{
+			ID:          m.ID,
+			DisplayName: m.DisplayName,
+			Mail:        m.Mail,
+			Role:        role,
+		})
+	}
+	return result, nil
+}
+
+func (c *Client) GetChannelMembers(channelThreadID string) ([]TeamMember, error) {
+	url := fmt.Sprintf("https://teams.microsoft.com/api/chatsvc/amer/v1/threads/%s/members?view=msnp24Equivalent&pageSize=100&selectMemberRoles=Admin", channelThreadID)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.WebToken)
+	req.Header.Set("Accept", "application/json")
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("get channel members error %d: %s", resp.StatusCode, string(body))
+	}
+
+	var res struct {
+		Members []struct {
+			ID   string `json:"id"`
+			Role string `json:"role"`
+		} `json:"members"`
+	}
+	if err := json.Unmarshal(body, &res); err != nil {
+		return nil, fmt.Errorf("error parsing channel members: %w", err)
+	}
+
+	// Resolve names via Graph
+	var result []TeamMember
+	for _, m := range res.Members {
+		// Extract GUID from "8:orgid:GUID"
+		userID := m.ID
+		if idx := strings.LastIndex(m.ID, ":"); idx != -1 {
+			userID = m.ID[idx+1:]
+		}
+		userBody, err := c.doReq(fmt.Sprintf("/users/%s?$select=displayName,mail,id", userID))
+		if err != nil {
+			result = append(result, TeamMember{ID: userID, DisplayName: userID, Role: m.Role})
+			continue
+		}
+		var user struct {
+			ID          string `json:"id"`
+			DisplayName string `json:"displayName"`
+			Mail        string `json:"mail"`
+		}
+		if err := json.Unmarshal(userBody, &user); err != nil {
+			result = append(result, TeamMember{ID: userID, DisplayName: userID, Role: m.Role})
+			continue
+		}
+		role := "Member"
+		if m.Role == "Admin" {
+			role = "Owner"
+		}
+		result = append(result, TeamMember{
+			ID:          user.ID,
+			DisplayName: user.DisplayName,
+			Mail:        user.Mail,
+			Role:        role,
+		})
+	}
+	return result, nil
+}
+
+func (c *Client) AddTeamMember(teamThreadID, teamGUID, userMRI string) error {
+	payload := fmt.Sprintf(`{"users":[{"mri":"%s","role":0}],"groupId":"%s"}`, userMRI, teamGUID)
+	url := fmt.Sprintf("https://teams.microsoft.com/api/mt/part/amer-02/beta/teams/%s/bulkUpdateRoledMembers?allowAsyncAddition=true", teamThreadID)
+	req, err := http.NewRequest("PUT", url, strings.NewReader(payload))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.SpacesToken)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == 200 || resp.StatusCode == 201 || resp.StatusCode == 202 {
+		return nil
+	}
+	body, _ := io.ReadAll(resp.Body)
+	return fmt.Errorf("add member error %d: %s", resp.StatusCode, string(body))
+}
+
+func (c *Client) AddChannelMember(teamThreadID, channelThreadID, userID string) error {
+	payload := fmt.Sprintf(`{"value":[{"mri":"8:orgid:%s","role":0}]}`, userID)
+	url := fmt.Sprintf("https://teams.microsoft.com/api/mt/part/amer-02/beta/teams/%s/channels/%s/members", teamThreadID, channelThreadID)
+	req, err := http.NewRequest("PUT", url, strings.NewReader(payload))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.SpacesToken)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == 200 || resp.StatusCode == 201 || resp.StatusCode == 202 {
+		return nil
+	}
+	body, _ := io.ReadAll(resp.Body)
+	return fmt.Errorf("add channel member error %d: %s", resp.StatusCode, string(body))
+}
+
+func (c *Client) RemoveTeamMember(teamThreadID, teamGUID, userID string) error {
+	payload := fmt.Sprintf(`{"userMri":"8:orgid:%s","updateType":"Left","groupId":"%s"}`, userID, teamGUID)
+	url := fmt.Sprintf("https://teams.microsoft.com/api/mt/part/amer-02/beta/teams/%s/members", teamThreadID)
+	req, err := http.NewRequest("PUT", url, strings.NewReader(payload))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.SpacesToken)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == 200 || resp.StatusCode == 204 {
+		return nil
+	}
+	body, _ := io.ReadAll(resp.Body)
+	return fmt.Errorf("remove member error %d: %s", resp.StatusCode, string(body))
 }

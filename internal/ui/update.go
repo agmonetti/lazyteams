@@ -79,6 +79,15 @@ type teamInfoErrMsg struct{ err error }
 type channelInfoMsg struct{ channel *graph.Channel }
 type channelInfoErrMsg struct{ err error }
 
+type channelMembersMsg struct{ members []graph.TeamMember }
+type channelMembersErrMsg struct{ err error }
+
+type teamMembersMsg struct{ members []graph.TeamMember }
+type teamMembersErrMsg struct{ err error }
+type addMemberMsg struct{ err error }
+type removeMemberMsg struct{ err error }
+type addChannelMemberMsg struct{ err error }
+
 type delayedReloadChannelsMsg struct{}
 type delayedReloadTeamsMsg struct{}
 
@@ -111,6 +120,47 @@ func loadChannelInfoCmd(client *graph.Client, teamID, channelID string) tea.Cmd 
 			return channelInfoErrMsg{err}
 		}
 		return channelInfoMsg{ch}
+	}
+}
+
+func loadChannelMembersCmd(client *graph.Client, channelThreadID string) tea.Cmd {
+	return func() tea.Msg {
+		members, err := client.GetChannelMembers(channelThreadID)
+		if err != nil {
+			return channelMembersErrMsg{err}
+		}
+		return channelMembersMsg{members}
+	}
+}
+
+func loadTeamMembersCmd(client *graph.Client, teamGUID string) tea.Cmd {
+	return func() tea.Msg {
+		members, err := client.GetTeamMembers(teamGUID)
+		if err != nil {
+			return teamMembersErrMsg{err}
+		}
+		return teamMembersMsg{members}
+	}
+}
+
+func addMemberCmd(client *graph.Client, teamThreadID, teamGUID, userMRI string) tea.Cmd {
+	return func() tea.Msg {
+		err := client.AddTeamMember(teamThreadID, teamGUID, userMRI)
+		return addMemberMsg{err}
+	}
+}
+
+func removeMemberCmd(client *graph.Client, teamThreadID, teamGUID, userID string) tea.Cmd {
+	return func() tea.Msg {
+		err := client.RemoveTeamMember(teamThreadID, teamGUID, userID)
+		return removeMemberMsg{err}
+	}
+}
+
+func addChannelMemberCmd(client *graph.Client, teamThreadID, channelThreadID, userID string) tea.Cmd {
+	return func() tea.Msg {
+		err := client.AddChannelMember(teamThreadID, channelThreadID, userID)
+		return addChannelMemberMsg{err}
 	}
 }
 
@@ -1306,6 +1356,90 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.downloadStatusID++
 		return m, clearStatusAfter(m.downloadStatusID)
 
+	case channelMembersMsg:
+		m.channelMembers = msg.members
+		return m, nil
+
+	case channelMembersErrMsg:
+		// silencioso
+		return m, nil
+
+	case teamMembersMsg:
+		m.teamMembers = msg.members
+		m.membersLoading = false
+		if m.showAddChannelMemberPopup {
+			excluded := make(map[string]bool)
+			for _, cm := range m.channelMembers {
+				excluded[cm.ID] = true
+			}
+			var available []graph.TeamMember
+			for _, tm := range msg.members {
+				if !excluded[tm.ID] {
+					available = append(available, tm)
+				}
+			}
+			m.addChannelMemberResults = available
+			return m, nil
+		}
+		m.showMembersPopup = true
+		return m, nil
+
+	case teamMembersErrMsg:
+		m.membersLoading = false
+		m.downloadStatus = fmt.Sprintf("✗ %v", msg.err)
+		m.downloadStatusID++
+		return m, clearStatusAfter(m.downloadStatusID)
+
+	case addMemberMsg:
+		if msg.err != nil {
+			m.addMemberErr = msg.err.Error()
+		} else {
+			m.showAddMemberPopup = false
+			m.addMemberInput.Reset()
+			m.newDMResults = nil
+			m.addMemberErr = ""
+			m.downloadStatus = "✓ Member added"
+			m.downloadStatusID++
+			m.membersLoading = true
+			return m, tea.Batch(
+				loadTeamMembersCmd(m.client, m.teams[m.selectedTeam].ID),
+				clearStatusAfter(m.downloadStatusID),
+			)
+		}
+		return m, nil
+
+	case removeMemberMsg:
+		m.showRemoveMemberPopup = false
+		if msg.err != nil {
+			m.downloadStatus = fmt.Sprintf("✗ %v", msg.err)
+		} else {
+			m.downloadStatus = "✓ Member removed"
+			m.showMembersPopup = false
+			return m, tea.Batch(
+				loadTeamMembersCmd(m.client, m.teams[m.selectedTeam].ID),
+				clearStatusAfter(m.downloadStatusID),
+			)
+		}
+		m.downloadStatusID++
+		return m, clearStatusAfter(m.downloadStatusID)
+
+	case addChannelMemberMsg:
+		m.showAddChannelMemberPopup = false
+		m.addChannelMemberInput.Reset()
+		m.addChannelMemberResults = nil
+		if msg.err != nil {
+			m.downloadStatus = fmt.Sprintf("✗ %v", msg.err)
+		} else {
+			m.downloadStatus = "✓ Member added to channel"
+			m.downloadStatusID++
+			return m, tea.Batch(
+				loadChannelMembersCmd(m.client, m.channels[m.selectedChan].ID),
+				clearStatusAfter(m.downloadStatusID),
+			)
+		}
+		m.downloadStatusID++
+		return m, clearStatusAfter(m.downloadStatusID)
+
 	case delayedReloadChannelsMsg:
 		return m, loadChannelsCmd(m.client, m.teams[m.selectedTeam].ID)
 
@@ -1388,10 +1522,179 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
+		if m.showAddChannelMemberPopup {
+			switch msg.String() {
+			case "esc":
+				m.showAddChannelMemberPopup = false
+				m.addChannelMemberInput.Reset()
+				m.addChannelMemberResults = nil
+				m.addChannelMemberErr = ""
+			case "up", "k":
+				if m.addChannelMemberCursor > 0 {
+					m.addChannelMemberCursor--
+				}
+			case "down", "j":
+				if m.addChannelMemberCursor < len(m.addChannelMemberResults)-1 {
+					m.addChannelMemberCursor++
+				}
+			case "enter":
+				if len(m.addChannelMemberResults) > 0 {
+					target := m.addChannelMemberResults[m.addChannelMemberCursor]
+					m.showAddChannelMemberPopup = false
+					m.addChannelMemberInput.Reset()
+					m.addChannelMemberResults = nil
+					channelID := m.channels[m.selectedChan].ID
+					return m, addChannelMemberCmd(m.client, m.teamThreadID, channelID, target.ID)
+				}
+			default:
+				// Handle text input manually (no Focus())
+				s := msg.String()
+				if s == "backspace" || s == "ctrl+h" {
+					v := m.addChannelMemberInput.Value()
+					if len(v) > 0 {
+						m.addChannelMemberInput.SetValue(v[:len(v)-1])
+					}
+				} else if len(s) == 1 && s[0] >= 32 && s[0] < 127 {
+					m.addChannelMemberInput.SetValue(m.addChannelMemberInput.Value() + s)
+				}
+				// Filter team members by query
+				q := strings.ToLower(strings.TrimSpace(m.addChannelMemberInput.Value()))
+				excluded := make(map[string]bool)
+				for _, cm := range m.channelMembers {
+					excluded[cm.ID] = true
+				}
+				var filtered []graph.TeamMember
+				for _, tm := range m.teamMembers {
+					if excluded[tm.ID] {
+						continue
+					}
+					if q == "" || strings.Contains(strings.ToLower(tm.DisplayName), q) || strings.Contains(strings.ToLower(tm.Mail), q) {
+						filtered = append(filtered, tm)
+					}
+				}
+				m.addChannelMemberResults = filtered
+				m.addChannelMemberCursor = 0
+			}
+			return m, nil
+		}
+
 		if m.showChannelInfo {
-			if msg.String() == "esc" || msg.String() == "enter" {
+			switch msg.String() {
+			case "esc", "enter":
 				m.showChannelInfo = false
 				m.channelInfo = nil
+				m.channelMembers = nil
+			case "a":
+				if m.channelInfo != nil && strings.ToLower(m.channelInfo.MembershipType) == "private" {
+					m.showChannelInfo = false
+					m.showAddChannelMemberPopup = true
+					m.addChannelMemberInput.Reset()
+					m.addChannelMemberCursor = 0
+					m.addChannelMemberErr = ""
+					m.addChannelMemberResults = nil
+					// Pre-cargar miembros del equipo si no están
+					if len(m.teamMembers) == 0 {
+						return m, loadTeamMembersCmd(m.client, m.teams[m.selectedTeam].ID)
+					}
+					// Pre-poblar con todos los no-miembros del canal
+					excluded := make(map[string]bool)
+					for _, cm := range m.channelMembers {
+						excluded[cm.ID] = true
+					}
+					var available []graph.TeamMember
+					for _, tm := range m.teamMembers {
+						if !excluded[tm.ID] {
+							available = append(available, tm)
+						}
+					}
+					m.addChannelMemberResults = available
+				}
+			}
+			return m, nil
+		}
+
+		if m.showAddMemberPopup {
+			switch msg.String() {
+			case "esc":
+				m.showAddMemberPopup = false
+				m.addMemberInput.Reset()
+				m.newDMResults = nil
+				m.addMemberErr = ""
+			case "up", "k":
+				if m.newDMCursor > 0 {
+					m.newDMCursor--
+				}
+			case "down", "j":
+				if m.newDMCursor < len(m.newDMResults)-1 {
+					m.newDMCursor++
+				}
+			case "enter":
+				if len(m.newDMResults) > 0 {
+					target := m.newDMResults[m.newDMCursor]
+					m.showAddMemberPopup = false
+					m.addMemberInput.Reset()
+					m.newDMResults = nil
+					m.addMemberErr = ""
+					teamGUID := m.teams[m.selectedTeam].ID
+					mri := "8:orgid:" + target.ID
+					return m, addMemberCmd(m.client, m.teamThreadID, teamGUID, mri)
+				}
+			default:
+				var cmd tea.Cmd
+				m.addMemberInput, cmd = m.addMemberInput.Update(msg)
+				cmds = append(cmds, cmd)
+				q := strings.TrimSpace(m.addMemberInput.Value())
+				if len(q) >= 2 {
+					cmds = append(cmds, searchUsersCmd(m.client, q))
+				} else {
+					m.newDMResults = nil
+				}
+				return m, tea.Batch(cmds...)
+			}
+			return m, nil
+		}
+
+		if m.showRemoveMemberPopup {
+			switch msg.String() {
+			case "y", "enter":
+				member := m.teamMembers[m.membersCursor]
+				teamGUID := m.teams[m.selectedTeam].ID
+				return m, removeMemberCmd(m.client, m.teamThreadID, teamGUID, member.ID)
+			case "n", "esc":
+				m.showRemoveMemberPopup = false
+			}
+			return m, nil
+		}
+
+		if m.showMembersPopup {
+			switch msg.String() {
+			case "esc":
+				m.showMembersPopup = false
+				m.teamMembers = nil
+				m.membersCursor = 0
+			case "up", "k":
+				if m.membersCursor > 0 {
+					m.membersCursor--
+				}
+			case "down", "j":
+				if m.membersCursor < len(m.teamMembers)-1 {
+					m.membersCursor++
+				}
+			case "a":
+				m.showMembersPopup = false
+				m.showAddMemberPopup = true
+				m.addMemberInput.Reset()
+				m.newDMResults = nil
+				m.addMemberErr = ""
+				m.newDMCursor = 0
+				m.addMemberInput.Focus()
+			case "x", "X":
+				if len(m.teamMembers) > 0 {
+					member := m.teamMembers[m.membersCursor]
+					if member.ID != m.selfID {
+						m.showRemoveMemberPopup = true
+					}
+				}
 			}
 			return m, nil
 		}
@@ -2060,7 +2363,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.workspace == WorkspaceTeams && m.focusList == 0 && len(m.teams) > 0 {
 				return m, loadTeamInfoCmd(m.client, m.teams[m.selectedTeam].ID)
 			} else if m.workspace == WorkspaceTeams && m.focusList == 1 && len(m.channels) > 0 {
-				return m, loadChannelInfoCmd(m.client, m.teams[m.selectedTeam].ID, m.channels[m.selectedChan].ID)
+				return m, tea.Batch(
+					loadChannelInfoCmd(m.client, m.teams[m.selectedTeam].ID, m.channels[m.selectedChan].ID),
+					loadChannelMembersCmd(m.client, m.channels[m.selectedChan].ID),
+				)
 			}
 
 		case "L":
@@ -2081,6 +2387,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				m.downloadStatusID++
 				return m, clearStatusAfter(m.downloadStatusID)
+			}
+
+		case "M":
+			if m.workspace == WorkspaceTeams && m.focusList == 0 && len(m.teams) > 0 {
+				m.membersLoading = true
+				return m, loadTeamMembersCmd(m.client, m.teams[m.selectedTeam].ID)
 			}
 
 		case "enter":
