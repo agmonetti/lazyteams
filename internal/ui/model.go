@@ -198,8 +198,12 @@ type Model struct {
 	showCreateChannelPopup bool
 	createChannelInput     textinput.Model
 	createChannelType      string // "Standard", "Private", "Shared"
-	createChannelStep      int    // 0=nombre, 1=tipo
+	createChannelStep      int    // 0=name, 1=type
 	createChannelErr       string
+
+	// Delete confirmations
+	showDeleteChannelPopup bool
+	showDeleteTeamPopup    bool
 }
 
 func New(client *graph.Client, userName string) Model {

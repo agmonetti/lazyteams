@@ -406,6 +406,24 @@ func (m Model) View() string {
 
 		popup := popupStyle.Render(content)
 		rightPanel = lipgloss.Place(lipgloss.Width(rightPanel), lipgloss.Height(rightPanel), lipgloss.Center, lipgloss.Center, popup)
+	} else if m.showDeleteChannelPopup && m.selectedChan < len(m.channels) {
+		ch := m.channels[m.selectedChan].DisplayName
+		popupContent := fmt.Sprintf("Delete channel \"%s\"?\n\n[Enter/y] Confirm   [Esc/n] Cancel", ch)
+		popup := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("#E74C3C")).
+			Padding(1, 3).
+			Render(popupContent)
+		rightPanel = lipgloss.Place(lipgloss.Width(rightPanel), lipgloss.Height(rightPanel), lipgloss.Center, lipgloss.Center, popup)
+	} else if m.showDeleteTeamPopup && m.selectedTeam < len(m.teams) {
+		team := m.teams[m.selectedTeam].DisplayName
+		popupContent := fmt.Sprintf("Delete team \"%s\"?\n\n[Enter/y] Confirm   [Esc/n] Cancel", team)
+		popup := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("#E74C3C")).
+			Padding(1, 3).
+			Render(popupContent)
+		rightPanel = lipgloss.Place(lipgloss.Width(rightPanel), lipgloss.Height(rightPanel), lipgloss.Center, lipgloss.Center, popup)
 	}
 
 	// Combine panels
@@ -535,10 +553,10 @@ func (m Model) footerText() string {
 		return dim.Render(" [1-4] Workspace  [←/→] Filter  [↑/↓] Navigate  [Enter] View details  [q] Quit")
 	case m.focusLeft && m.loadedConvID == "" && m.workspace == WorkspaceDMs:
 		return dim.Render(" [1] Teams  [2] DMs  ") + activityTab + dim.Render("  [4] Assignments  [↑/↓] Navigate  [Enter] Open  [n] New DM  [p] Status  [q] Quit")
-	case m.focusLeft && m.loadedConvID == "":
-		return dim.Render(" [1] Teams  [2] DMs  ") + activityTab + dim.Render("  [4] Assignments  [↑/↓] Navigate  [Enter] Open  [N] New team  [p] Status  [q] Quit")
 	case m.focusLeft && m.focusList == 1:
-		return dim.Render(" [↑/↓] Navigate  [Enter] Open  [C] New channel  [←] Back to teams  [q] Quit")
+		return dim.Render(" [↑/↓] Navigate  [Enter] Open  [C] New channel  [X] Delete channel  [←] Back to teams  [q] Quit")
+	case m.focusLeft && m.loadedConvID == "":
+		return dim.Render(" [1] Teams  [2] DMs  ") + activityTab + dim.Render("  [4] Assignments  [↑/↓] Navigate  [Enter] Open  [N] New team  [D] Delete team  [p] Status  [q] Quit")
 	case m.previewing:
 		return dim.Render(" [Esc] Back to files  [↑/↓] Scroll")
 	case !m.focusLeft && m.viewMode == ModeFiles:

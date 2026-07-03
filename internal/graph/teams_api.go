@@ -121,29 +121,66 @@ func sanitizeMailNickname(name string) string {
 	return s
 }
 
-func (c *Client) CreateChannel(teamThreadID, teamGUID, name, channelType string) error {
+func (c *Client) CreateChannel(teamGUID, teamThreadID, name, channelType string) error {
 	payload := fmt.Sprintf(`{
 		"displayName": "%s",
-		"membershipType": "%s"
-	}`, name, channelType)
-
-	endpoint := fmt.Sprintf("/teams/%s/channels", teamThreadID)
-	req, err := http.NewRequest("POST", baseURL+endpoint, strings.NewReader(payload))
+		"description": "",
+		"groupId": "%s",
+		"channelType": "%s"
+	}`, name, teamGUID, channelType)
+	url := fmt.Sprintf("https://teams.microsoft.com/api/mt/part/amer-02/beta/teams/%s/channels", teamThreadID)
+	req, err := http.NewRequest("POST", url, strings.NewReader(payload))
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+c.GraphToken)
+	req.Header.Set("Authorization", "Bearer "+c.SpacesToken)
 	req.Header.Set("Content-Type", "application/json")
-
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode == 200 || resp.StatusCode == 201 || resp.StatusCode == 202 {
+		return nil
+	}
+	return fmt.Errorf("create channel error %d: %s", resp.StatusCode, string(body))
+}
 
-	if resp.StatusCode == 201 || resp.StatusCode == 202 {
+func (c *Client) DeleteChannel(teamThreadID, channelThreadID string) error {
+	url := fmt.Sprintf("https://teams.microsoft.com/api/mt/part/amer-02/beta/teams/%s/channels/%s", teamThreadID, channelThreadID)
+	req, err := http.NewRequest("DELETE", url, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.SpacesToken)
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == 200 || resp.StatusCode == 204 {
 		return nil
 	}
 	body, _ := io.ReadAll(resp.Body)
-	return fmt.Errorf("create channel error %d: %s", resp.StatusCode, string(body))
+	return fmt.Errorf("delete channel error %d: %s", resp.StatusCode, string(body))
+}
+
+func (c *Client) DeleteTeam(teamThreadID string) error {
+	url := fmt.Sprintf("https://teams.microsoft.com/api/mt/part/amer-02/beta/teams/%s/delete", teamThreadID)
+	req, err := http.NewRequest("DELETE", url, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.SpacesToken)
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == 200 || resp.StatusCode == 204 {
+		return nil
+	}
+	body, _ := io.ReadAll(resp.Body)
+	return fmt.Errorf("delete team error %d: %s", resp.StatusCode, string(body))
 }

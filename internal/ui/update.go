@@ -71,6 +71,24 @@ type reloadTeamsAfterCreateMsg struct{}
 
 type createChannelMsg struct{ err error }
 
+type deleteChannelMsg struct{ err error }
+type deleteTeamMsg struct{ err error }
+
+type delayedReloadChannelsMsg struct{}
+type delayedReloadTeamsMsg struct{}
+
+func reloadChannelsAfterDelayCmd() tea.Cmd {
+	return tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
+		return delayedReloadChannelsMsg{}
+	})
+}
+
+func reloadTeamsAfterShortDelayCmd() tea.Cmd {
+	return tea.Tick(3*time.Second, func(t time.Time) tea.Msg {
+		return delayedReloadTeamsMsg{}
+	})
+}
+
 func createTeamCmd(client *graph.Client, name string) tea.Cmd {
 	return func() tea.Msg {
 		err := client.CreateTeam(name)
@@ -78,10 +96,24 @@ func createTeamCmd(client *graph.Client, name string) tea.Cmd {
 	}
 }
 
-func createChannelCmd(client *graph.Client, teamThreadID, teamGUID, name, channelType string) tea.Cmd {
+func createChannelCmd(client *graph.Client, teamGUID, teamThreadID, name, channelType string) tea.Cmd {
 	return func() tea.Msg {
-		err := client.CreateChannel(teamThreadID, teamGUID, name, channelType)
+		err := client.CreateChannel(teamGUID, teamThreadID, name, channelType)
 		return createChannelMsg{err}
+	}
+}
+
+func deleteChannelCmd(client *graph.Client, teamThreadID, channelThreadID string) tea.Cmd {
+	return func() tea.Msg {
+		err := client.DeleteChannel(teamThreadID, channelThreadID)
+		return deleteChannelMsg{err}
+	}
+}
+
+func deleteTeamCmd(client *graph.Client, teamThreadID string) tea.Cmd {
+	return func() tea.Msg {
+		err := client.DeleteTeam(teamThreadID)
+		return deleteTeamMsg{err}
 	}
 }
 
@@ -831,13 +863,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.teamsLoaded = true
 		m.loading = false
 		if len(m.teams) > 0 {
+			if m.selectedTeam >= len(m.teams) {
+				m.selectedTeam = len(m.teams) - 1
+			}
 			m.loading = true
-			return m, loadChannelsCmd(m.client, m.teams[0].ID)
+			return m, loadChannelsCmd(m.client, m.teams[m.selectedTeam].ID)
+		} else {
+			m.selectedTeam = 0
+			m.channels = nil
 		}
 		return m, nil
 
 	case channelsMsg:
-		if msg.teamID != m.teams[m.selectedTeam].ID {
+		if len(m.teams) == 0 || m.selectedTeam >= len(m.teams) || msg.teamID != m.teams[m.selectedTeam].ID {
 			return m, nil // stale response, discard
 		}
 		m.channels = msg.channels
@@ -1192,9 +1230,42 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.showCreateChannelPopup = false
 			m.downloadStatus = fmt.Sprintf("✗ %v", msg.err)
 			m.downloadStatusID++
+			m.viewport.SetContent(fmt.Sprintf("Error creating channel: %v", msg.err))
 			return m, clearStatusAfter(m.downloadStatusID)
 		}
 		return m, loadChannelsCmd(m.client, m.teams[m.selectedTeam].ID)
+
+	case deleteChannelMsg:
+		if msg.err != nil {
+			m.downloadStatus = fmt.Sprintf("✗ %v", msg.err)
+			m.downloadStatusID++
+			return m, clearStatusAfter(m.downloadStatusID)
+		}
+		m.downloadStatus = "✓ Channel deleted"
+		m.downloadStatusID++
+		return m, tea.Batch(
+			reloadChannelsAfterDelayCmd(),
+			clearStatusAfter(m.downloadStatusID),
+		)
+
+	case deleteTeamMsg:
+		if msg.err != nil {
+			m.downloadStatus = fmt.Sprintf("✗ %v", msg.err)
+			m.downloadStatusID++
+			return m, clearStatusAfter(m.downloadStatusID)
+		}
+		m.downloadStatus = "✓ Team deleted"
+		m.downloadStatusID++
+		return m, tea.Batch(
+			reloadTeamsAfterShortDelayCmd(),
+			clearStatusAfter(m.downloadStatusID),
+		)
+
+	case delayedReloadChannelsMsg:
+		return m, loadChannelsCmd(m.client, m.teams[m.selectedTeam].ID)
+
+	case delayedReloadTeamsMsg:
+		return m, loadTeamsCmd(m.client)
 
 	case directorypicker.SelectedMsg:
 		m.showDirPicker = false
@@ -1264,6 +1335,31 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
+		// Delete channel popup
+		if m.showDeleteChannelPopup {
+			switch msg.String() {
+			case "y", "enter":
+				m.showDeleteChannelPopup = false
+				channelID := m.channels[m.selectedChan].ID
+				return m, deleteChannelCmd(m.client, m.teamThreadID, channelID)
+			case "n", "esc":
+				m.showDeleteChannelPopup = false
+			}
+			return m, nil
+		}
+
+		// Delete team popup
+		if m.showDeleteTeamPopup {
+			switch msg.String() {
+			case "y", "enter":
+				m.showDeleteTeamPopup = false
+				return m, deleteTeamCmd(m.client, m.teamThreadID)
+			case "n", "esc":
+				m.showDeleteTeamPopup = false
+			}
+			return m, nil
+		}
+
 		// Create channel popup — intercepts keys
 		if m.showCreateChannelPopup {
 			switch msg.String() {
@@ -1280,6 +1376,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						return m, nil
 					}
 					m.createChannelStep = 1
+					m.createChannelInput.Blur()
 					return m, nil
 				}
 				// Step 1: type already selected, confirm
@@ -1288,7 +1385,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.createChannelInput.Reset()
 				m.createChannelStep = 0
 				teamGUID := m.teams[m.selectedTeam].ID
-				return m, createChannelCmd(m.client, m.teamThreadID, teamGUID, name, m.createChannelType)
+				return m, createChannelCmd(m.client, teamGUID, m.teamThreadID, name, m.createChannelType)
 			case "1":
 				if m.createChannelStep == 1 {
 					m.createChannelType = "Standard"
@@ -1870,6 +1967,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				cmds = append(cmds, loadMessagesCmd(m.client, "", m.activeConversationID(), 1000))
 			}
 
+		case "X", "x":
+			// Delete channel — solo en focusList==1 y si hay canales
+			if m.workspace == WorkspaceTeams && m.focusList == 1 && len(m.channels) > 0 {
+				ch := m.channels[m.selectedChan]
+				if !strings.EqualFold(ch.DisplayName, "General") {
+					m.showDeleteChannelPopup = true
+				}
+			}
+
+		case "D", "d":
+			// Delete team — solo en focusList==0
+			if m.workspace == WorkspaceTeams && m.focusList == 0 && len(m.teams) > 0 {
+				m.showDeleteTeamPopup = true
+			}
+
 		case "i":
 			// Full UI protection: only works in ModeChat
 			if !m.focusLeft && m.viewMode == ModeChat && m.activeConversationID() != "" {
@@ -1898,6 +2010,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.loadedConvID = chatID
 				delete(m.chatUnread, chatID) // Clear badge on open
 				cmds = append(cmds, loadMessagesCmd(m.client, "", chatID, 200))
+			} else if m.focusLeft && m.workspace == WorkspaceTeams && m.focusList == 0 {
+				if len(m.teams) > 0 {
+					m.focusList = 1
+				}
 			} else if m.focusLeft && m.focusList == 1 && len(m.channels) > 0 {
 				m.loading = true
 				m.focusLeft = false
