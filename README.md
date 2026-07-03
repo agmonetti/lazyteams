@@ -96,6 +96,8 @@ msTTui/
     │   └── download_api.go          # File downloads
     ├── teams/teams.go               # Attachment aggregation, file icons
     └── ui/                          # TUI (Elm Architecture with Bubble Tea)
+        └── components/
+            └── directorypicker/     # Reusable filesystem browser component
 ```
 
 **Clean Architecture**: `ui` never makes HTTP calls. All networking goes through `graph` and `teams` via `tea.Cmd` (async).
