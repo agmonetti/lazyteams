@@ -67,23 +67,25 @@ func cleanHTML(content string) string {
 const baseURL = "https://graph.microsoft.com/v1.0"
 
 type Client struct {
-	GraphToken string
-	WebToken   string
-	NotifToken string
-	EduToken   string
-	Cookie     string
-	EduCookie  string
-	HTTPClient *http.Client
+	GraphToken  string
+	WebToken    string
+	NotifToken  string
+	EduToken    string
+	Cookie      string
+	EduCookie   string
+	SpacesToken string
+	HTTPClient  *http.Client
 }
 
-func NewClient(graphToken, webToken, notifToken, eduToken, cookie, eduCookie string) *Client {
+func NewClient(graphToken, webToken, notifToken, eduToken, cookie, eduCookie, spacesToken string) *Client {
 	return &Client{
-		GraphToken: graphToken,
-		WebToken:   webToken,
-		NotifToken: notifToken,
-		EduToken:   eduToken,
-		Cookie:     cookie,
-		EduCookie:  eduCookie,
+		GraphToken:  graphToken,
+		WebToken:    webToken,
+		NotifToken:  notifToken,
+		EduToken:    eduToken,
+		Cookie:      cookie,
+		EduCookie:   eduCookie,
+		SpacesToken: spacesToken,
 		HTTPClient: &http.Client{
 			Timeout: 10 * time.Second,
 		},

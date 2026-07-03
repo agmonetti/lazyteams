@@ -12,14 +12,14 @@ import (
 
 func main() {
 	// 1. Get tokens from environment
-	graphToken, webToken, notifToken, eduToken, cookie, eduCookie, err := auth.GetTokens()
+	graphToken, webToken, notifToken, eduToken, cookie, eduCookie, spacesToken, err := auth.GetTokens()
 	if err != nil {
 		fmt.Println("Authentication error:\n", err)
 		os.Exit(1)
 	}
 
 	// 2. Initialize the client
-	graphClient := graph.NewClient(graphToken, webToken, notifToken, eduToken, cookie, eduCookie)
+	graphClient := graph.NewClient(graphToken, webToken, notifToken, eduToken, cookie, eduCookie, spacesToken)
 
 	// 3. Extract username from token
 	userName := auth.ParseUserNameFromToken(graphToken)

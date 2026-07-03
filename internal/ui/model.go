@@ -126,6 +126,9 @@ type Model struct {
 	// channelID → teamID map for navigation from notifications
 	channelToTeam map[string]string
 
+	// teamThreadID is the threadId of the current team's General channel
+	teamThreadID string
+
 	// Input for sending messages
 	input    textinput.Model
 	isTyping bool
@@ -184,6 +187,19 @@ type Model struct {
 	showDirPicker   bool
 	dirPicker       directorypicker.Model
 	pickerPurpose   string // "download" or "upload"
+
+	// Create team
+	showCreateTeamPopup bool
+	createTeamInput     textinput.Model
+	createTeamErr       string
+	teamCreating        bool
+
+	// Create channel
+	showCreateChannelPopup bool
+	createChannelInput     textinput.Model
+	createChannelType      string // "Standard", "Private", "Shared"
+	createChannelStep      int    // 0=nombre, 1=tipo
+	createChannelErr       string
 }
 
 func New(client *graph.Client, userName string) Model {
@@ -197,6 +213,16 @@ func New(client *graph.Client, userName string) Model {
 	newDMInput.CharLimit = 64
 	newDMInput.Width = 40
 
+	createTeamInput := textinput.New()
+	createTeamInput.Placeholder = "Team name..."
+	createTeamInput.CharLimit = 64
+	createTeamInput.Width = 40
+
+	createChannelInput := textinput.New()
+	createChannelInput.Placeholder = "Channel name..."
+	createChannelInput.CharLimit = 64
+	createChannelInput.Width = 40
+
 	return Model{
 		client:       client,
 		focusLeft:    true,
@@ -204,6 +230,9 @@ func New(client *graph.Client, userName string) Model {
 		loading:      true,
 		input:        ti,
 		newDMQuery:   newDMInput,
+		createTeamInput: createTeamInput,
+		createChannelInput: createChannelInput,
+		createChannelType: "Standard",
 		prefs:        loadPrefs(),
 		chatUnread:   make(map[string]bool),
 		presence:     make(map[string]string),

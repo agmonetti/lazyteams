@@ -364,6 +364,48 @@ func (m Model) View() string {
 
 		popup := popupStyle.Render(popupContent)
 		rightPanel = lipgloss.Place(lipgloss.Width(rightPanel), lipgloss.Height(rightPanel), lipgloss.Center, lipgloss.Center, popup)
+	} else if m.showCreateTeamPopup {
+		var content string
+		content += titleStyle.Render("New Team") + "\n\n"
+		content += m.createTeamInput.View() + "\n\n"
+		if m.createTeamErr != "" {
+			content += errorStyle.Render(m.createTeamErr) + "\n\n"
+		}
+		content += helpStyle.Render("[Enter] Create   [Esc] Cancel")
+		popup := popupStyle.Render(content)
+		rightPanel = lipgloss.Place(lipgloss.Width(rightPanel), lipgloss.Height(rightPanel), lipgloss.Center, lipgloss.Center, popup)
+	} else if m.showCreateChannelPopup {
+		var content string
+		content += titleStyle.Render("New Channel") + "\n\n"
+
+		if m.createChannelStep == 0 {
+			content += helpStyle.Render("Channel name:") + "\n"
+			content += m.createChannelInput.View() + "\n\n"
+			content += helpStyle.Render("[Enter] Next   [Esc] Cancel")
+		} else {
+			content += helpStyle.Render("Name: ") + normalItemStyle.Render(m.createChannelInput.Value()) + "\n\n"
+			content += helpStyle.Render("Channel type:") + "\n\n"
+
+			types := []string{"Standard", "Private", "Shared"}
+			for i, t := range types {
+				cursor := "  "
+				style := normalItemStyle
+				if t == m.createChannelType {
+					cursor = "▶ "
+					style = selectedItemStyle
+				}
+				desc := map[string]string{
+					"Standard": "Everyone in the team has access",
+					"Private":  "Specific people on the team",
+					"Shared":   "People inside or outside the org",
+				}[t]
+				content += fmt.Sprintf("%s[%d] %s\n    %s\n\n", cursor, i+1, style.Render(t), helpStyle.Render(desc))
+			}
+			content += helpStyle.Render("[1-3] Select type   [Enter] Create   [Esc] Cancel")
+		}
+
+		popup := popupStyle.Render(content)
+		rightPanel = lipgloss.Place(lipgloss.Width(rightPanel), lipgloss.Height(rightPanel), lipgloss.Center, lipgloss.Center, popup)
 	}
 
 	// Combine panels
@@ -393,6 +435,12 @@ func (m Model) View() string {
 				Foreground(colorRed).Bold(true).
 				Render("⚠ Token renewal failed — run ./msTTui-auth")
 			topBar = errBanner + "  " + topBar
+		}
+		if m.teamCreating {
+			creatingBanner := lipgloss.NewStyle().
+				Foreground(colorMuted).
+				Render("⟳ Creating team...")
+			topBar = creatingBanner + "  " + topBar
 		}
 		ui = lipgloss.JoinVertical(lipgloss.Left, topBar, ui)
 	}
@@ -466,6 +514,12 @@ func (m Model) footerText() string {
 		}
 	}
 	switch {
+	case m.showCreateChannelPopup && m.createChannelStep == 0:
+		return dim.Render(" [Enter] Next   [Esc] Cancel")
+	case m.showCreateChannelPopup && m.createChannelStep == 1:
+		return dim.Render(" [1] Standard  [2] Private  [3] Shared  [Enter] Create  [Esc] Cancel")
+	case m.showCreateTeamPopup:
+		return dim.Render(" [Enter] Create team   [Esc] Cancel")
 	case m.showNewDMPopup:
 		return dim.Render(" [↑/↓] Navigate results  [Enter] Open DM  [Esc] Cancel")
 	case m.showPresenceMenu:
@@ -482,7 +536,9 @@ func (m Model) footerText() string {
 	case m.focusLeft && m.loadedConvID == "" && m.workspace == WorkspaceDMs:
 		return dim.Render(" [1] Teams  [2] DMs  ") + activityTab + dim.Render("  [4] Assignments  [↑/↓] Navigate  [Enter] Open  [n] New DM  [p] Status  [q] Quit")
 	case m.focusLeft && m.loadedConvID == "":
-		return dim.Render(" [1] Teams  [2] DMs  ") + activityTab + dim.Render("  [4] Assignments  [↑/↓] Navigate  [Enter] Open  [p] Status  [q] Quit")
+		return dim.Render(" [1] Teams  [2] DMs  ") + activityTab + dim.Render("  [4] Assignments  [↑/↓] Navigate  [Enter] Open  [N] New team  [p] Status  [q] Quit")
+	case m.focusLeft && m.focusList == 1:
+		return dim.Render(" [↑/↓] Navigate  [Enter] Open  [C] New channel  [←] Back to teams  [q] Quit")
 	case m.previewing:
 		return dim.Render(" [Esc] Back to files  [↑/↓] Scroll")
 	case !m.focusLeft && m.viewMode == ModeFiles:

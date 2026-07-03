@@ -66,6 +66,31 @@ type dirPickerResultMsg struct {
 	path string
 }
 
+type createTeamMsg struct{ err error }
+type reloadTeamsAfterCreateMsg struct{}
+
+type createChannelMsg struct{ err error }
+
+func createTeamCmd(client *graph.Client, name string) tea.Cmd {
+	return func() tea.Msg {
+		err := client.CreateTeam(name)
+		return createTeamMsg{err}
+	}
+}
+
+func createChannelCmd(client *graph.Client, teamThreadID, teamGUID, name, channelType string) tea.Cmd {
+	return func() tea.Msg {
+		err := client.CreateChannel(teamThreadID, teamGUID, name, channelType)
+		return createChannelMsg{err}
+	}
+}
+
+func reloadTeamsAfterDelayCmd() tea.Cmd {
+	return tea.Tick(35*time.Second, func(t time.Time) tea.Msg {
+		return reloadTeamsAfterCreateMsg{}
+	})
+}
+
 func launchAuthHelperCmd(expiredToken string) tea.Cmd {
 	return func() tea.Msg {
 		exe, err := os.Executable()
@@ -821,9 +846,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.messages = nil
 		m.channelErr = nil
 		m.loading = false
-		// Populate the channelID → teamID map
+		// Populate the channelID → teamID map and find General threadId
 		for _, ch := range msg.channels {
 			m.channelToTeam[ch.ID] = msg.teamID
+			if strings.EqualFold(ch.DisplayName, "General") {
+				m.teamThreadID = ch.ID
+			}
 		}
 		return m, nil
 
@@ -1147,6 +1175,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case createTeamMsg:
+		if msg.err != nil {
+			m.teamCreating = false
+			m.createTeamErr = msg.err.Error()
+		}
+		return m, reloadTeamsAfterDelayCmd()
+
+	case reloadTeamsAfterCreateMsg:
+		m.teamCreating = false
+		return m, loadTeamsCmd(m.client)
+
+	case createChannelMsg:
+		if msg.err != nil {
+			m.createChannelErr = msg.err.Error()
+			m.showCreateChannelPopup = false
+			m.downloadStatus = fmt.Sprintf("✗ %v", msg.err)
+			m.downloadStatusID++
+			return m, clearStatusAfter(m.downloadStatusID)
+		}
+		return m, loadChannelsCmd(m.client, m.teams[m.selectedTeam].ID)
+
 	case directorypicker.SelectedMsg:
 		m.showDirPicker = false
 		if msg.Path == "" {
@@ -1188,6 +1237,77 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, cmd
 			}
 			// Check if picker sent a result
+			return m, nil
+		}
+
+		// Create team popup — intercepts keys
+		if m.showCreateTeamPopup {
+			switch msg.String() {
+			case "esc":
+				m.showCreateTeamPopup = false
+				m.createTeamInput.Reset()
+				m.createTeamErr = ""
+				return m, nil
+			case "enter":
+				name := strings.TrimSpace(m.createTeamInput.Value())
+				if name == "" {
+					return m, nil
+				}
+				m.showCreateTeamPopup = false
+				m.createTeamInput.Reset()
+				m.teamCreating = true
+				return m, createTeamCmd(m.client, name)
+			default:
+				var cmd tea.Cmd
+				m.createTeamInput, cmd = m.createTeamInput.Update(msg)
+				return m, cmd
+			}
+		}
+
+		// Create channel popup — intercepts keys
+		if m.showCreateChannelPopup {
+			switch msg.String() {
+			case "esc":
+				m.showCreateChannelPopup = false
+				m.createChannelInput.Reset()
+				m.createChannelErr = ""
+				m.createChannelStep = 0
+				return m, nil
+			case "enter":
+				if m.createChannelStep == 0 {
+					name := strings.TrimSpace(m.createChannelInput.Value())
+					if name == "" {
+						return m, nil
+					}
+					m.createChannelStep = 1
+					return m, nil
+				}
+				// Step 1: type already selected, confirm
+				name := strings.TrimSpace(m.createChannelInput.Value())
+				m.showCreateChannelPopup = false
+				m.createChannelInput.Reset()
+				m.createChannelStep = 0
+				teamGUID := m.teams[m.selectedTeam].ID
+				return m, createChannelCmd(m.client, m.teamThreadID, teamGUID, name, m.createChannelType)
+			case "1":
+				if m.createChannelStep == 1 {
+					m.createChannelType = "Standard"
+				}
+			case "2":
+				if m.createChannelStep == 1 {
+					m.createChannelType = "Private"
+				}
+			case "3":
+				if m.createChannelStep == 1 {
+					m.createChannelType = "Shared"
+				}
+			default:
+				if m.createChannelStep == 0 {
+					var cmd tea.Cmd
+					m.createChannelInput, cmd = m.createChannelInput.Update(msg)
+					return m, cmd
+				}
+			}
 			return m, nil
 		}
 
@@ -1303,6 +1423,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.newDMErr = ""
 				m.newDMCursor = 0
 				m.newDMQuery.Focus()
+			}
+
+		case "N":
+			if m.workspace == WorkspaceTeams {
+				m.showCreateTeamPopup = true
+				m.createTeamInput.Reset()
+				m.createTeamErr = ""
+				m.createTeamInput.Focus()
 			}
 
 		case "u":
@@ -1728,7 +1856,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case "c", "C":
-			if !m.isTyping && m.workspace == WorkspaceDMs && m.viewMode == ModeFiles {
+			if m.workspace == WorkspaceTeams && m.focusList == 1 && m.teamThreadID != "" {
+				m.showCreateChannelPopup = true
+				m.createChannelInput.Reset()
+				m.createChannelErr = ""
+				m.createChannelStep = 0
+				m.createChannelType = "Standard"
+				m.createChannelInput.Focus()
+			} else if !m.isTyping && m.workspace == WorkspaceDMs && m.viewMode == ModeFiles {
 				m.loading = true
 				m.folderStack = nil
 				// Load full history (1000 messages is the practical limit per chunk without hanging)
