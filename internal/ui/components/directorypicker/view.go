@@ -14,125 +14,94 @@ func (m Model) View() string {
 		return ""
 	}
 
-	// Calculate popup dimensions (80% of screen, max 80x24)
-	popupW := m.width * 80 / 100
-	if popupW > 80 {
-		popupW = 80
+	popupW := m.width * 75 / 100
+	if popupW > 90 {
+		popupW = 90
 	}
-	if popupW < 60 {
-		popupW = 60
-	}
-	popupH := m.height * 70 / 100
-	if popupH > 24 {
-		popupH = 24
-	}
-	if popupH < 16 {
-		popupH = 16
+	if popupW < 50 {
+		popupW = 50
 	}
 
-	// Left panel: quick access (30% of popup width)
-	leftW := popupW * 30 / 100
-	rightW := popupW - leftW - 4 // account for borders and gap
-
-	// Build quick access panel
-	qaLines := make([]string, 0, len(m.quickAccess))
-	for i, item := range m.quickAccess {
-		cursor := "  "
-		style := normalStyle
-		if i == m.quickCursor && m.onQuickPanel {
-			cursor = "▶ "
-			style = selectedStyle
-		}
-		icon := "📁"
-		if item.Name == "Home" {
-			icon = "🏠"
-		} else if item.Name == "Downloads" {
-			icon = "📄"
-		} else if item.Name == "Documents" {
-			icon = "📝"
-		} else if item.Name == "Desktop" {
-			icon = "🖥"
-		}
-		qaLines = append(qaLines, fmt.Sprintf("%s%s %s", cursor, icon, style.Render(item.Name)))
+	listH := m.height * 50 / 100
+	if listH > 20 {
+		listH = 20
 	}
-	qaContent := strings.Join(qaLines, "\n")
-	qaPanel := quickAccessStyle.Width(leftW).Render(titleStyle.Render("Quick Access") + "\n" + qaContent)
+	if listH < 8 {
+		listH = 8
+	}
 
-	// Build directory/file list
-	dirLines := make([]string, 0, len(m.entries)+1)
-	// Add parent directory entry
-	dirLines = append(dirLines, fmt.Sprintf("  📁 %s", dimStyle.Render("..")))
+	innerW := popupW - 6 // popup padding + border
 
+	// Build entry list
+	var lines []string
 	for i, entry := range m.entries {
 		cursor := "  "
 		style := normalStyle
-		if i == m.cursor && !m.onQuickPanel {
+		if i == m.cursor {
 			cursor = "▶ "
 			style = selectedStyle
 		}
-		icon := "📁"
+		icon := "▸" // dir
 		if !entry.IsDir {
-			icon = "📄"
+			icon = "·" // file
 		}
-		dirLines = append(dirLines, fmt.Sprintf("%s%s %s", cursor, icon, style.Render(entry.Name)))
+		lines = append(lines, fmt.Sprintf("%s%s %s", cursor, icon, style.Render(entry.Name)))
 	}
 
-	var dirContent string
-	if m.err != nil {
-		dirContent = errorStyle.Render("Error: " + m.err.Error())
-	} else if len(m.entries) == 0 {
-		if m.mode == "file" {
-			dirContent = dimStyle.Render("  (no files)")
-		} else {
-			dirContent = dimStyle.Render("  (empty directory)")
+	// Sliding window
+	start := 0
+	if len(lines) > listH {
+		start = m.cursor - listH/2
+		if start < 0 {
+			start = 0
 		}
-	} else {
-		// Limit visible lines
-		maxLines := popupH - 6
-		if maxLines < 5 {
-			maxLines = 5
-		}
-		start := 0
-		if len(dirLines) > maxLines {
-			start = m.cursor - maxLines/2
+		end := start + listH
+		if end > len(lines) {
+			end = len(lines)
+			start = end - listH
 			if start < 0 {
 				start = 0
 			}
-			end := start + maxLines
-			if end > len(dirLines) {
-				end = len(dirLines)
-			}
-			dirLines = dirLines[start:end]
 		}
-		dirContent = strings.Join(dirLines, "\n")
+		lines = lines[start:end]
 	}
-	dirPanel := dirListStyle.Width(rightW).Render(titleStyle.Render("Folders") + "\n" + dirContent)
+
+	var listContent string
+	if m.err != nil {
+		listContent = errorStyle.Render("Error: " + m.err.Error())
+	} else if len(m.entries) == 0 {
+		listContent = dimStyle.Render("  (empty)")
+	} else {
+		listContent = strings.Join(lines, "\n")
+	}
+
+	listPanel := dirListStyle.Width(innerW).Render(listContent)
 
 	// Breadcrumb
-	breadcrumb := m.buildBreadcrumb()
+	breadcrumb := breadcrumbStyle.Render(m.buildBreadcrumb())
 
 	// Current path
 	currentPath := pathStyle.Render("Current: " + m.currentPath)
 
 	// Help
-	var help string
+	var helpText string
 	if m.mode == "file" {
-		help = helpStyle.Render("[↑/↓] Move  [→] Open dir  [←] Parent  [Tab] Switch panel  [Enter] Select file  [Esc] Cancel")
+		helpText = "[↑/↓] Navigate  [→/←] Open/Parent  [Enter] Select file  [Esc] Cancel"
 	} else {
-		help = helpStyle.Render("[↑/↓] Move  [→] Open  [←] Parent  [Tab] Switch panel  [Enter] Select folder  [Esc] Cancel")
+		helpText = "[↑/↓] Navigate  [→/←] Open/Parent  [Enter] Select here  [Esc] Cancel"
 	}
+	help := helpStyle.Render(helpText)
 
-	// Combine content
 	content := lipgloss.JoinVertical(lipgloss.Left,
 		titleStyle.Render(m.Title),
-		lipgloss.JoinHorizontal(lipgloss.Top, qaPanel, dirPanel),
-		breadcrumbStyle.Render(breadcrumb),
+		listPanel,
+		"",
+		breadcrumb,
 		currentPath,
 		"",
 		help,
 	)
 
-	// Center the popup
 	popup := popupStyle.Width(popupW).Render(content)
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, popup)
 }
@@ -148,12 +117,10 @@ func (m Model) buildBreadcrumb() string {
 		return "/"
 	}
 
-	// Build breadcrumb from path
 	rel, err := filepath.Rel(home, path)
-	if err != nil {
+	if err != nil || strings.HasPrefix(rel, "..") {
 		return path
 	}
-
 	if rel == "." {
 		return "Home"
 	}
@@ -162,6 +129,11 @@ func (m Model) buildBreadcrumb() string {
 	result := "Home"
 	for _, part := range parts {
 		result += " > " + part
+	}
+
+	// Truncate if too long
+	if len(result) > 60 {
+		result = "Home > ... > " + parts[len(parts)-1]
 	}
 	return result
 }

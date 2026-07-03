@@ -304,7 +304,9 @@ func (m Model) View() string {
 
 	// Popups: centered using the REAL rendered dimensions of the panel,
 	// not "raw" vpWidth/vpHeight — so they never collide with paneStyle's border/padding.
-	if m.confirmingDownload {
+	if m.showDirPicker {
+		return m.dirPicker.View()
+	} else if m.confirmingDownload {
 		names := make([]string, len(m.downloadTargets))
 		for i, t := range m.downloadTargets {
 			names[i] = t.Name
@@ -362,8 +364,6 @@ func (m Model) View() string {
 
 		popup := popupStyle.Render(popupContent)
 		rightPanel = lipgloss.Place(lipgloss.Width(rightPanel), lipgloss.Height(rightPanel), lipgloss.Center, lipgloss.Center, popup)
-	} else if m.showDirPicker {
-		return m.dirPicker.View()
 	}
 
 	// Combine panels

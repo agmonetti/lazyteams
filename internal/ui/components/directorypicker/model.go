@@ -1,29 +1,18 @@
 package directorypicker
 
 import (
-	"path/filepath"
-
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-type QuickAccessItem struct {
-	Name string
-	Path string
-}
-
 type Model struct {
-	Title        string
-	currentPath  string
-	entries      []DirEntry
-	cursor       int
-	quickAccess  []QuickAccessItem
-	quickCursor  int
-	onQuickPanel bool // true = focus on quick access, false = focus on dir list
-	err          error
-	width        int
-	height       int
-	lastUsedPath string // persistent last used folder
-	mode         string // "dir" or "file"
+	Title       string
+	currentPath string
+	entries     []DirEntry
+	cursor      int
+	err         error
+	width       int
+	height      int
+	mode        string // "dir" or "file"
 }
 
 func New(opts Options) Model {
@@ -48,19 +37,10 @@ func New(opts Options) Model {
 	m := Model{
 		Title:       title,
 		currentPath: initial,
-		quickAccess: []QuickAccessItem{
-			{Name: "Home", Path: home},
-			{Name: "Downloads", Path: filepath.Join(home, "Downloads")},
-			{Name: "Documents", Path: filepath.Join(home, "Documents")},
-			{Name: "Desktop", Path: filepath.Join(home, "Desktop")},
-		},
-		onQuickPanel: true,
-		lastUsedPath: opts.LastUsedPath,
-		mode:         mode,
-		width:        opts.Width,
-		height:       opts.Height,
+		mode:        mode,
+		width:       opts.Width,
+		height:      opts.Height,
 	}
-
 	m.loadDir()
 	return m
 }

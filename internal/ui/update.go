@@ -1149,22 +1149,29 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case directorypicker.SelectedMsg:
 		m.showDirPicker = false
-		if msg.Path != "" {
-			if m.pickerPurpose == "download" {
-				m.prefs.DownloadDir = msg.Path
-				savePrefs(m.prefs)
-			} else if m.pickerPurpose == "upload" {
-				// Upload the selected file
-				m.uploading = true
-				isDM := m.workspace == WorkspaceDMs
-				channelName := ""
-				teamID := ""
-				if !isDM && len(m.channels) > 0 {
-					channelName = m.channels[m.selectedChan].DisplayName
-					teamID = m.teams[m.selectedTeam].ID
-				}
-				return m, uploadFileCmd(m.client, teamID, channelName, msg.Path, isDM)
+		if msg.Path == "" {
+			return m, nil
+		}
+		if m.pickerPurpose == "download" {
+			m.prefs.DownloadDir = msg.Path
+			savePrefs(m.prefs)
+			m.confirmingDownload = true
+		} else if m.pickerPurpose == "upload" {
+			info, err := os.Stat(msg.Path)
+			if err != nil || info.IsDir() {
+				m.downloadStatus = "✗ Please select a file, not a folder"
+				m.downloadStatusID++
+				return m, clearStatusAfter(m.downloadStatusID)
 			}
+			m.uploading = true
+			isDM := m.workspace == WorkspaceDMs
+			channelName := ""
+			teamID := ""
+			if !isDM && len(m.channels) > 0 {
+				channelName = m.channels[m.selectedChan].DisplayName
+				teamID = m.teams[m.selectedTeam].ID
+			}
+			return m, uploadFileCmd(m.client, teamID, channelName, msg.Path, isDM)
 		}
 		return m, nil
 
@@ -1266,9 +1273,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.dirPicker = directorypicker.New(directorypicker.Options{
 					Title:       "Select download folder",
 					InitialPath: m.prefs.DownloadDir,
+					Mode:        "dir",
 					Width:       m.width,
 					Height:      m.height,
 				})
+				m.dirPicker, _ = m.dirPicker.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
 				return m, nil
 			case "n", "esc":
 				m.confirmingDownload = false
@@ -1307,6 +1316,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					Width:       m.width,
 					Height:      m.height,
 				})
+				m.dirPicker, _ = m.dirPicker.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
 				return m, nil
 			} else if m.workspace == WorkspaceDMs && !m.focusLeft {
 				m.showDirPicker = true
@@ -1318,6 +1328,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					Width:       m.width,
 					Height:      m.height,
 				})
+				m.dirPicker, _ = m.dirPicker.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
 				return m, nil
 			}
 
