@@ -11,11 +11,28 @@ import (
 type Team struct {
 	ID          string `json:"id"`
 	DisplayName string `json:"displayName"`
+	Description string `json:"description"`
+	Visibility  string `json:"visibility"`
+	IsArchived  bool   `json:"isArchived"`
+	WebUrl      string `json:"webUrl"`
+	Summary     struct {
+		OwnersCount  int `json:"ownersCount"`
+		MembersCount int `json:"membersCount"`
+		GuestsCount  int `json:"guestsCount"`
+	} `json:"summary"`
+	MemberSettings struct {
+		AllowCreateUpdateChannels bool `json:"allowCreateUpdateChannels"`
+		AllowDeleteChannels       bool `json:"allowDeleteChannels"`
+		AllowAddRemoveApps        bool `json:"allowAddRemoveApps"`
+	} `json:"memberSettings"`
 }
 
 type Channel struct {
-	ID          string `json:"id"`
-	DisplayName string `json:"displayName"`
+	ID              string `json:"id"`
+	DisplayName     string `json:"displayName"`
+	MembershipType  string `json:"membershipType"`
+	Email           string `json:"email"`
+	CreatedDateTime string `json:"createdDateTime"`
 }
 
 // GetJoinedTeams fetches the teams the user is a member of.
@@ -183,4 +200,28 @@ func (c *Client) DeleteTeam(teamThreadID string) error {
 	}
 	body, _ := io.ReadAll(resp.Body)
 	return fmt.Errorf("delete team error %d: %s", resp.StatusCode, string(body))
+}
+
+func (c *Client) GetTeamInfo(teamID string) (*Team, error) {
+	body, err := c.doReq(fmt.Sprintf("/teams/%s?$select=displayName,description,visibility,isArchived,webUrl,summary,memberSettings,createdDateTime", teamID))
+	if err != nil {
+		return nil, err
+	}
+	var team Team
+	if err := json.Unmarshal(body, &team); err != nil {
+		return nil, fmt.Errorf("error parsing team info: %w", err)
+	}
+	return &team, nil
+}
+
+func (c *Client) GetChannelInfo(teamID, channelID string) (*Channel, error) {
+	body, err := c.doReq(fmt.Sprintf("/teams/%s/channels/%s?$select=displayName,description,membershipType,email,createdDateTime", teamID, channelID))
+	if err != nil {
+		return nil, fmt.Errorf("error parsing channel info: %w", err)
+	}
+	var ch Channel
+	if err := json.Unmarshal(body, &ch); err != nil {
+		return nil, fmt.Errorf("error parsing channel info: %w", err)
+	}
+	return &ch, nil
 }

@@ -74,6 +74,11 @@ type createChannelMsg struct{ err error }
 type deleteChannelMsg struct{ err error }
 type deleteTeamMsg struct{ err error }
 
+type teamInfoMsg struct{ team *graph.Team }
+type teamInfoErrMsg struct{ err error }
+type channelInfoMsg struct{ channel *graph.Channel }
+type channelInfoErrMsg struct{ err error }
+
 type delayedReloadChannelsMsg struct{}
 type delayedReloadTeamsMsg struct{}
 
@@ -87,6 +92,26 @@ func reloadTeamsAfterShortDelayCmd() tea.Cmd {
 	return tea.Tick(3*time.Second, func(t time.Time) tea.Msg {
 		return delayedReloadTeamsMsg{}
 	})
+}
+
+func loadTeamInfoCmd(client *graph.Client, teamID string) tea.Cmd {
+	return func() tea.Msg {
+		team, err := client.GetTeamInfo(teamID)
+		if err != nil {
+			return teamInfoErrMsg{err}
+		}
+		return teamInfoMsg{team}
+	}
+}
+
+func loadChannelInfoCmd(client *graph.Client, teamID, channelID string) tea.Cmd {
+	return func() tea.Msg {
+		ch, err := client.GetChannelInfo(teamID, channelID)
+		if err != nil {
+			return channelInfoErrMsg{err}
+		}
+		return channelInfoMsg{ch}
+	}
 }
 
 func createTeamCmd(client *graph.Client, name string) tea.Cmd {
@@ -1261,6 +1286,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			clearStatusAfter(m.downloadStatusID),
 		)
 
+	case teamInfoMsg:
+		m.teamInfo = msg.team
+		m.showTeamInfo = true
+		return m, nil
+
+	case teamInfoErrMsg:
+		m.downloadStatus = fmt.Sprintf("✗ %v", msg.err)
+		m.downloadStatusID++
+		return m, clearStatusAfter(m.downloadStatusID)
+
+	case channelInfoMsg:
+		m.channelInfo = msg.channel
+		m.showChannelInfo = true
+		return m, nil
+
+	case channelInfoErrMsg:
+		m.downloadStatus = fmt.Sprintf("✗ %v", msg.err)
+		m.downloadStatusID++
+		return m, clearStatusAfter(m.downloadStatusID)
+
 	case delayedReloadChannelsMsg:
 		return m, loadChannelsCmd(m.client, m.teams[m.selectedTeam].ID)
 
@@ -1333,6 +1378,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.createTeamInput, cmd = m.createTeamInput.Update(msg)
 				return m, cmd
 			}
+		}
+
+		if m.showTeamInfo {
+			if msg.String() == "esc" || msg.String() == "enter" {
+				m.showTeamInfo = false
+				m.teamInfo = nil
+			}
+			return m, nil
+		}
+
+		if m.showChannelInfo {
+			if msg.String() == "esc" || msg.String() == "enter" {
+				m.showChannelInfo = false
+				m.channelInfo = nil
+			}
+			return m, nil
 		}
 
 		// Delete channel popup
@@ -1658,6 +1719,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				} else if m.focusList == 1 && len(m.channels) > 0 {
 					if m.selectedChan > 0 {
 						m.selectedChan--
+						m.loadedConvID = ""
+						m.viewMode = ModeChat
+						m.viewport.SetContent("")
 						// Adjust sliding window
 						if m.selectedChan < m.channelWindowStart {
 							m.channelWindowStart = m.selectedChan
@@ -1710,6 +1774,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				} else if m.focusList == 1 && len(m.channels) > 0 {
 					if m.selectedChan < len(m.channels)-1 {
 						m.selectedChan++
+						m.loadedConvID = ""
+						m.viewMode = ModeChat
+						m.viewport.SetContent("")
 						// Adjust sliding window
 						// To get maxChannels we need to calculate it the same way as in view.go
 						teamsLines := len(m.teams) + 3
@@ -1989,6 +2056,33 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.input.Focus()
 			}
 
+		case "I":
+			if m.workspace == WorkspaceTeams && m.focusList == 0 && len(m.teams) > 0 {
+				return m, loadTeamInfoCmd(m.client, m.teams[m.selectedTeam].ID)
+			} else if m.workspace == WorkspaceTeams && m.focusList == 1 && len(m.channels) > 0 {
+				return m, loadChannelInfoCmd(m.client, m.teams[m.selectedTeam].ID, m.channels[m.selectedChan].ID)
+			}
+
+		case "L":
+			if m.workspace == WorkspaceTeams && m.focusList == 0 && len(m.teams) > 0 {
+				teamID := m.teams[m.selectedTeam].ID
+				link := ""
+				if m.teamInfo != nil && m.teamInfo.WebUrl != "" {
+					link = m.teamInfo.WebUrl
+				} else {
+					// Fallback to construction if teamInfo hasn't been loaded
+					link = fmt.Sprintf("https://teams.microsoft.com/l/team/%s/conversations?groupId=%s", m.teamThreadID, teamID)
+				}
+				err := copyToClipboard(link)
+				if err != nil {
+					m.downloadStatus = "✗ Failed to copy link: " + err.Error()
+				} else {
+					m.downloadStatus = "✓ Link copied to clipboard"
+				}
+				m.downloadStatusID++
+				return m, clearStatusAfter(m.downloadStatusID)
+			}
+
 		case "enter":
 			if m.focusLeft && m.workspace == WorkspaceActivity && len(m.notifications) > 0 {
 			    n := &m.notifications[m.selectedNotif]
@@ -2098,6 +2192,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, tea.Batch(cmds...)
+}
+
+func copyToClipboard(text string) error {
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "linux":
+		if _, err := exec.LookPath("wl-copy"); err == nil {
+			cmd = exec.Command("wl-copy")
+		} else {
+			cmd = exec.Command("xclip", "-selection", "clipboard")
+		}
+	case "darwin":
+		cmd = exec.Command("pbcopy")
+	case "windows":
+		cmd = exec.Command("clip")
+	}
+	if cmd == nil {
+		return fmt.Errorf("no clipboard utility found")
+	}
+	cmd.Stdin = strings.NewReader(text)
+	return cmd.Run()
 }
 
 // makeClickableLink wraps text with the ANSI OSC 8 sequence

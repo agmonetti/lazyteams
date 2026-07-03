@@ -191,6 +191,10 @@ func (m Model) View() string {
 
 	// Loading state: only show "Loading..." on the splash
 	if m.loading && m.focusLeft && m.workspace != WorkspaceActivity && m.workspace != WorkspaceAssignments {
+		statusLine := ""
+		if m.downloadStatus != "" {
+			statusLine = lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Render(m.downloadStatus)
+		}
 		splashContent := lipgloss.JoinVertical(lipgloss.Center,
 			splashLogoStyle.Render(asciiLogo),
 			"",
@@ -200,6 +204,8 @@ func (m Model) View() string {
 			splashHintStyle.Render("[↑/↓] Navigate teams  ·  [Enter] Open channel"),
 			"",
 			splashHintStyle.Render("Loading..."),
+			"",
+			statusLine,
 		)
 		if m.ready {
 			rightContent = lipgloss.Place(rightInnerWidth, rightInnerHeight, lipgloss.Center, lipgloss.Center, splashContent)
@@ -208,6 +214,10 @@ func (m Model) View() string {
 		}
 	} else if m.focusLeft && m.loadedConvID == "" && m.workspace != WorkspaceActivity && m.workspace != WorkspaceAssignments {
 		// === SPLASH SCREEN ===
+		statusLine := ""
+		if m.downloadStatus != "" {
+			statusLine = lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Render(m.downloadStatus)
+		}
 		splashContent := lipgloss.JoinVertical(lipgloss.Center,
 			splashLogoStyle.Render(asciiLogo),
 			"",
@@ -215,6 +225,8 @@ func (m Model) View() string {
 			splashSubStyle.Render("v1.0.0-beta"),
 			"",
 			splashHintStyle.Render("[↑/↓] Navigate teams  ·  [Enter] Open channel"),
+			"",
+			statusLine,
 		)
 		if m.ready {
 			rightContent = lipgloss.Place(rightInnerWidth, rightInnerHeight, lipgloss.Center, lipgloss.Center, splashContent)
@@ -426,6 +438,62 @@ func (m Model) View() string {
 		rightPanel = lipgloss.Place(lipgloss.Width(rightPanel), lipgloss.Height(rightPanel), lipgloss.Center, lipgloss.Center, popup)
 	}
 
+	if m.showTeamInfo && m.teamInfo != nil {
+		t := m.teamInfo
+		archived := "No"
+		if t.IsArchived {
+			archived = "Yes"
+		}
+		content := fmt.Sprintf(
+			"Team Info\n\n"+
+				"Name:        %s\n"+
+				"Description: %s\n"+
+				"Visibility:  %s\n"+
+				"Archived:    %s\n"+
+				"Members:     %d  Owners: %d  Guests: %d\n\n"+
+				"[Esc] Close",
+			t.DisplayName, t.Description, t.Visibility,
+			archived, t.Summary.MembersCount, t.Summary.OwnersCount, t.Summary.GuestsCount,
+		)
+		popup := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("#0078D4")).
+			Padding(1, 3).
+			Width(60).
+			Render(content)
+		combined := lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, rightPanel)
+		return lipgloss.Place(lipgloss.Width(combined), lipgloss.Height(combined), lipgloss.Center, lipgloss.Center, popup)
+	}
+	
+	if m.showChannelInfo && m.channelInfo != nil {
+		ch := m.channelInfo
+		email := ch.Email
+		if email == "" {
+			email = "—"
+		}
+		created := ""
+		if len(ch.CreatedDateTime) >= 10 {
+			created = ch.CreatedDateTime[:10]
+		}
+		content := fmt.Sprintf(
+			"Channel Info\n\n"+
+				"Name:    %s\n"+
+				"Type:    %s\n"+
+				"Email:   %s\n"+
+				"Created: %s\n\n"+
+				"[Esc] Close",
+			ch.DisplayName, ch.MembershipType, email, created,
+		)
+		popup := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("#0078D4")).
+			Padding(1, 3).
+			Width(50).
+			Render(content)
+		combined := lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, rightPanel)
+		return lipgloss.Place(lipgloss.Width(combined), lipgloss.Height(combined), lipgloss.Center, lipgloss.Center, popup)
+	}
+
 	// Combine panels
 	ui := lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, rightPanel)
 
@@ -554,9 +622,9 @@ func (m Model) footerText() string {
 	case m.focusLeft && m.loadedConvID == "" && m.workspace == WorkspaceDMs:
 		return dim.Render(" [1] Teams  [2] DMs  ") + activityTab + dim.Render("  [4] Assignments  [↑/↓] Navigate  [Enter] Open  [n] New DM  [p] Status  [q] Quit")
 	case m.focusLeft && m.focusList == 1:
-		return dim.Render(" [↑/↓] Navigate  [Enter] Open  [C] New channel  [X] Delete channel  [←] Back to teams  [q] Quit")
+		return dim.Render(" [↑/↓] Navigate  [Enter] Open  [I] Info  [C] New channel  [X] Delete channel  [←] Back to teams  [q] Quit")
 	case m.focusLeft && m.loadedConvID == "":
-		return dim.Render(" [1] Teams  [2] DMs  ") + activityTab + dim.Render("  [4] Assignments  [↑/↓] Navigate  [Enter] Open  [N] New team  [D] Delete team  [p] Status  [q] Quit")
+		return dim.Render(" [1] Teams  [2] DMs  ") + activityTab + dim.Render("  [4] Assignments  [↑/↓] Nav  [Enter] Open  [I] Info  [L] Link  [N] New  [D] Delete  [p] Status  [q] Quit")
 	case m.previewing:
 		return dim.Render(" [Esc] Back to files  [↑/↓] Scroll")
 	case !m.focusLeft && m.viewMode == ModeFiles:

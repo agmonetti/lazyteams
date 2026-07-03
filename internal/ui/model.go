@@ -204,6 +204,12 @@ type Model struct {
 	// Delete confirmations
 	showDeleteChannelPopup bool
 	showDeleteTeamPopup    bool
+
+	// Info panels
+	showTeamInfo    bool
+	showChannelInfo bool
+	teamInfo        *graph.Team
+	channelInfo     *graph.Channel
 }
 
 func New(client *graph.Client, userName string) Model {
