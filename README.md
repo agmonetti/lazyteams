@@ -29,12 +29,13 @@ TUI client for Microsoft Teams. Runs in the terminal — no Electron, no browser
 
 ## Features
 
-- **4 Workspaces**: Teams & channels, DMs, Activity/Notifications, Education Assignments
+- **4 Workspaces**: Teams and channels, DMs, Activity/Notifications, Education Assignments
+- **Team Management**: Create and delete teams and channels directly from the TUI
 - **Messages**: Read and send messages (RichText/Html), auto-refresh every 15s, clickable links (OSC 8)
-- **Files**: Recursive Drive browser, multi-selection, download with customizable directory
+- **Files**: Recursive Drive browser, multi-selection, file preview, chunked file upload, customizable download directory
+- **Direct Messages**: Create new 1:1 chats via user search, auto-discovery of "Personal notes" chat
 - **Presence**: Read and change your status (Available, Busy, DoNotDisturb, etc.)
-- **Notifications**: Filter by type, navigate to source channel
-- **Auto-discovery**: Personal chat ("Personal notes"), smart group names
+- **Notifications**: Mark as read, filter by type/read state, navigate to source channel
 
 ## Requirements
 
@@ -58,7 +59,7 @@ go build -o msTTui-auth ./cmd/auth-helper/
 
 ## Tokens
 
-msTTui needs 5 tokens to connect to the Teams APIs. The `msTTui-auth` helper captures them automatically via Playwright (Firefox) in ~90 seconds:
+msTTui needs 7 tokens to connect to the Teams APIs. The `msTTui-auth` helper captures them automatically via Playwright (Firefox) in ~90 seconds:
 
 | Token | Expiration | Usage |
 |-------|-----------|-----|
@@ -66,9 +67,11 @@ msTTui needs 5 tokens to connect to the Teams APIs. The `msTTui-auth` helper cap
 | `TEAMS_WEB_TOKEN` | ~24h | Read/write messages (ChatSvc) |
 | `TEAMS_NOTIF_TOKEN` | ~24h | Push notifications |
 | `EDU_TOKEN` | ~1h | Education Assignments |
+| `EDU_COOKIE` | ~24h | Education Assignments auth |
+| `TEAMS_SPACES_TOKEN` | ~24h | Team and channel creation/deletion |
 | `TEAMS_COOKIE` | ~24h | Session authentication |
 
-Tokens are saved to `~/.config/teamstui/tokens.env`. There is no automatic renewal — run `./msTTui-auth` again when they expire.
+Tokens are saved to `~/.config/teamstui/tokens.env`. The TUI automatically renews most expired tokens in the background via the auth helper.
 
 ## Architecture
 
@@ -76,7 +79,7 @@ Tokens are saved to `~/.config/teamstui/tokens.env`. There is no automatic renew
 msTTui/
 ├── main.go                          # Entry point
 ├── cmd/
-│   ├── auth-helper/                 # Playwright auth helper (captures 5 tokens)
+│   ├── auth-helper/                 # Playwright auth helper (captures 7 tokens)
 │   ├── debug-assignments/           # Debug tool for Education API
 │   └── debug-endpoints/             # Debug tool for endpoints
 └── internal/
