@@ -742,6 +742,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Pass all other keys to the input
 		m.input, cmd = m.input.Update(msg)
 		cmds = append(cmds, cmd)
+		
+		// Adjust viewport height dynamically as textarea grows
+		if m.ready {
+			rightInnerHeight := m.height - 6 - 2
+			inputHeight := strings.Count(m.input.View(), "\n") + 1
+			newVpHeight := rightInnerHeight - 4 - inputHeight
+			if newVpHeight < 5 {
+				newVpHeight = 5 // minimum safety height
+			}
+			m.viewport.Height = newVpHeight
+		}
+		
 		return m, tea.Batch(cmds...)
 	}
 	// --------------------------------
@@ -761,8 +773,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		panelOuterHeight := m.height - 6
 		leftInnerHeight  := panelOuterHeight - 2
 		rightInnerHeight := panelOuterHeight - 2
-		vpInnerHeight    := rightInnerHeight - 5
-		m.input.Width = rightInnerWidth - 2
+		
+		m.input.SetWidth(rightInnerWidth - 2)
+		// Max height for textarea to prevent it from covering the whole screen
+		m.input.MaxHeight = rightInnerHeight / 3
+		
+		// We calculate the current height of the textarea to adjust the viewport
+		inputLines := strings.Count(m.input.View(), "\n") + 1
+		vpInnerHeight := rightInnerHeight - 4 - inputLines
+		if vpInnerHeight < 5 {
+			vpInnerHeight = 5
+		}
+		
 		if !m.ready {
 			m.viewport = viewport.New(rightInnerWidth, vpInnerHeight)
 			m.leftVp = viewport.New(leftInnerWidth, leftInnerHeight)

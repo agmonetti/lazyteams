@@ -303,16 +303,7 @@ func (m Model) View() string {
 		}
 
 		if !m.focusLeft && m.viewMode == ModeChat {
-			if m.isTyping {
-				m.input.PromptStyle = selectedItemStyle
-				m.input.TextStyle = normalItemStyle
-			} else {
-				m.input.PromptStyle = normalItemStyle
-				m.input.TextStyle = normalItemStyle
-			}
 			inputView := m.input.View()
-			inputLines := strings.Count(inputView, "\n") +1
-			m.viewport.Height = rightInnerHeight - 4 - inputLines -1
 			rightContent += inputView
 		}
 	} else if m.workspace == WorkspaceTeams {
@@ -341,16 +332,7 @@ func (m Model) View() string {
 		}
 
 		if !m.focusLeft && m.viewMode == ModeChat && m.loadedConvID == m.activeConversationID() {
-			if m.isTyping {
-				m.input.PromptStyle = selectedItemStyle
-				m.input.TextStyle = normalItemStyle
-			} else {
-				m.input.PromptStyle = normalItemStyle
-				m.input.TextStyle = normalItemStyle
-			}
 			inputView := m.input.View()
-			inputLines := strings.Count(inputView, "\n") +1
-			m.viewport.Height = rightInnerHeight - 4 - inputLines -1
 			rightContent += inputView
 		}
 	} else if m.workspace == WorkspaceActivity {

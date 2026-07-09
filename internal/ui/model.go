@@ -4,9 +4,11 @@ import (
 	"teamsTUI/internal/graph"
 	"teamsTUI/internal/ui/components/directorypicker"
 
+	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 type errMsg struct{ err error }
@@ -131,7 +133,7 @@ type Model struct {
 	teamThreadID string
 
 	// Input for sending messages
-	input    textinput.Model
+	input    textarea.Model
 	isTyping bool
 
 	// Token renewal
@@ -235,10 +237,15 @@ type Model struct {
 }
 
 func New(client *graph.Client, userName string) Model {
-	ti := textinput.New()
-	ti.Placeholder = "Press 'i' to type a message..."
-	ti.CharLimit = 1000
-	ti.Width = 50
+	ta := textarea.New()
+	ta.Placeholder = "Press 'i' to type a message..."
+	ta.ShowLineNumbers = false
+	ta.CharLimit = 4000
+	ta.SetWidth(50)
+	ta.SetHeight(1)
+	ta.FocusedStyle.CursorLine = lipgloss.NewStyle()
+	ta.FocusedStyle.Prompt = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	ta.BlurredStyle.Prompt = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 
 	newDMInput := textinput.New()
 	newDMInput.Placeholder = "Search by name..."
@@ -270,7 +277,7 @@ func New(client *graph.Client, userName string) Model {
 		focusLeft:    true,
 		focusList:    0,
 		loading:      true,
-		input:        ti,
+		input:        ta,
 		newDMQuery:   newDMInput,
 		createTeamInput: createTeamInput,
 		createChannelInput: createChannelInput,
