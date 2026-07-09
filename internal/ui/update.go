@@ -1737,6 +1737,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.addChannelMemberCursor < len(m.addChannelMemberResults)-1 {
 					m.addChannelMemberCursor++
 				}
+			case "g", "home":
+				m.addChannelMemberCursor = 0
+			case "G", "end":
+				if len(m.addChannelMemberResults) > 0 {
+					m.addChannelMemberCursor = len(m.addChannelMemberResults) - 1
+				}
 			case "enter":
 				if len(m.addChannelMemberResults) > 0 {
 					target := m.addChannelMemberResults[m.addChannelMemberCursor]
@@ -1793,6 +1799,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.newDMCursor < len(m.newDMResults)-1 {
 					m.newDMCursor++
 				}
+			case "g", "home":
+				m.newDMCursor = 0
+			case "G", "end":
+				if len(m.newDMResults) > 0 {
+					m.newDMCursor = len(m.newDMResults) - 1
+				}
 			case "enter":
 				if len(m.newDMResults) > 0 {
 					target := m.newDMResults[m.newDMCursor]
@@ -1844,6 +1856,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "down", "j":
 				if m.membersCursor < len(m.teamMembers)-1 {
 					m.membersCursor++
+				}
+			case "g", "home":
+				m.membersCursor = 0
+			case "G", "end":
+				if len(m.teamMembers) > 0 {
+					m.membersCursor = len(m.teamMembers) - 1
 				}
 			case "a":
 				m.showMembersPopup = false
@@ -1954,6 +1972,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.newDMCursor < len(m.newDMResults)-1 {
 					m.newDMCursor++
 				}
+			case "g", "home":
+				m.newDMCursor = 0
+			case "G", "end":
+				if len(m.newDMResults) > 0 {
+					m.newDMCursor = len(m.newDMResults) - 1
+				}
 			case "enter":
 				if len(m.newDMResults) > 0 {
 					target := m.newDMResults[m.newDMCursor]
@@ -1989,6 +2013,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "down", "j":
 				if m.presenceCursor < len(m.presenceOptions)-1 {
 					m.presenceCursor++
+				}
+			case "g", "home":
+				m.presenceCursor = 0
+			case "G", "end":
+				if len(m.presenceOptions) > 0 {
+					m.presenceCursor = len(m.presenceOptions) - 1
 				}
 			case "enter":
 				m.showPresenceMenu = false
@@ -2205,6 +2235,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			if !m.focusLeft {
 				m.focusLeft = true
+			}
+
+		case "g", "home":
+			if !m.focusLeft {
+				if m.viewMode == ModeFiles {
+					m.selectedFile = 0
+					m.viewport.SetContent(renderFilesContent(&m))
+				} else {
+					m.viewport.GotoTop()
+				}
+			}
+
+		case "G", "end":
+			if !m.focusLeft {
+				if m.viewMode == ModeFiles {
+					if len(m.files) > 0 {
+						m.selectedFile = len(m.files) - 1
+					}
+					m.viewport.SetContent(renderFilesContent(&m))
+				} else {
+					m.viewport.GotoBottom()
+				}
 			}
 
 		case "up", "k":
