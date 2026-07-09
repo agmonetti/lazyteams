@@ -87,7 +87,8 @@ type teamMembersMsg struct{ members []graph.TeamMember }
 type teamMembersErrMsg struct{ err error }
 type addMemberMsg struct{ err error }
 type removeMemberMsg struct{ err error }
-type addChannelMemberMsg struct{ err error }
+type addChannelMemberMsg struct{ err error; member graph.TeamMember }
+type removeChannelMemberMsg struct{ err error; userID string }
 
 type delayedReloadChannelsMsg struct{}
 type delayedReloadTeamsMsg struct{}
@@ -158,10 +159,19 @@ func removeMemberCmd(client *graph.Client, teamThreadID, teamGUID, userID string
 	}
 }
 
-func addChannelMemberCmd(client *graph.Client, teamThreadID, channelThreadID, userID string) tea.Cmd {
+func addChannelMemberCmd(client *graph.Client, teamGUID, channelThreadID string, target graph.TeamMember) tea.Cmd {
 	return func() tea.Msg {
-		err := client.AddChannelMember(teamThreadID, channelThreadID, userID)
-		return addChannelMemberMsg{err}
+		tenantID := client.GetTenantID()
+		err := client.AddChannelMember(teamGUID, channelThreadID, target.ID, tenantID)
+		return addChannelMemberMsg{err: err, member: target}
+	}
+}
+
+func removeChannelMemberCmd(client *graph.Client, teamGUID, channelThreadID, userID string) tea.Cmd {
+	return func() tea.Msg {
+		tenantID := client.GetTenantID()
+		err := client.RemoveChannelMember(teamGUID, channelThreadID, userID, tenantID)
+		return removeChannelMemberMsg{err: err, userID: userID}
 	}
 }
 
@@ -1066,7 +1076,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.channels = msg.channels
 		m.selectedChan = 0
-		m.channelWindowStart = 0
 		m.messages = nil
 		m.channelErr = nil
 		m.loading = false
@@ -1554,13 +1563,40 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.downloadStatus = fmt.Sprintf("✗ %v", msg.err)
 		} else {
 			m.downloadStatus = "✓ Member added to channel"
+			// Optimistically append the member so it renders instantly
+			msg.member.Role = "Member"
+			m.channelMembers = append(m.channelMembers, msg.member)
 			m.downloadStatusID++
-			return m, tea.Batch(
-				loadChannelMembersCmd(m.client, m.channels[m.selectedChan].ID),
-				clearStatusAfter(m.downloadStatusID),
-			)
+			if m.viewMode == ModeInfo {
+				m.viewport.SetContent(renderInfoContent(&m))
+			}
+			return m, clearStatusAfter(m.downloadStatusID)
 		}
 		m.downloadStatusID++
+		if m.viewMode == ModeInfo {
+			m.viewport.SetContent(renderInfoContent(&m))
+		}
+		return m, clearStatusAfter(m.downloadStatusID)
+
+	case removeChannelMemberMsg:
+		m.showRemoveChannelMemberPopup = false
+		if msg.err != nil {
+			m.downloadStatus = fmt.Sprintf("✗ %v", msg.err)
+		} else {
+			m.downloadStatus = "✓ Member removed from channel"
+			// Optimistic update
+			var updated []graph.TeamMember
+			for _, cm := range m.channelMembers {
+				if cm.ID != msg.userID {
+					updated = append(updated, cm)
+				}
+			}
+			m.channelMembers = updated
+		}
+		m.downloadStatusID++
+		if m.viewMode == ModeInfo {
+			m.viewport.SetContent(renderInfoContent(&m))
+		}
 		return m, clearStatusAfter(m.downloadStatusID)
 
 	case delayedReloadChannelsMsg:
@@ -1749,8 +1785,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.showAddChannelMemberPopup = false
 					m.addChannelMemberInput.Reset()
 					m.addChannelMemberResults = nil
+					teamGUID := m.teams[m.selectedTeam].ID
 					channelID := m.channels[m.selectedChan].ID
-					return m, addChannelMemberCmd(m.client, m.teamThreadID, channelID, target.ID)
+					return m, addChannelMemberCmd(m.client, teamGUID, channelID, target)
 				}
 			default:
 				// Handle text input manually (no Focus())
@@ -1839,6 +1876,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, removeMemberCmd(m.client, m.teamThreadID, teamGUID, member.ID)
 			case "n", "esc":
 				m.showRemoveMemberPopup = false
+			}
+			return m, nil
+		}
+
+		if m.showRemoveChannelMemberPopup {
+			switch msg.String() {
+			case "y", "enter":
+				if m.channelMemberCursor < len(m.channelMembers) {
+					member := m.channelMembers[m.channelMemberCursor]
+					if member.ID != m.selfID {
+						teamGUID := m.teams[m.selectedTeam].ID
+						channelID := m.channels[m.selectedChan].ID
+						return m, removeChannelMemberCmd(m.client, teamGUID, channelID, member.ID)
+					}
+				}
+			case "n", "esc":
+				m.showRemoveChannelMemberPopup = false
 			}
 			return m, nil
 		}
@@ -2287,7 +2341,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if m.selectedTeam > 0 {
 						m.selectedTeam--
 						m.loading = true
-						m.channelWindowStart = 0
 						cmds = append(cmds, loadChannelsCmd(m.client, m.teams[m.selectedTeam].ID))
 					}
 				} else if m.focusList == 1 && len(m.channels) > 0 {
@@ -2296,10 +2349,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.loadedConvID = ""
 						m.viewMode = ModeChat
 						m.viewport.SetContent("")
-						// Adjust sliding window
-						if m.selectedChan < m.channelWindowStart {
-							m.channelWindowStart = m.selectedChan
-						}
 					}
 				}
 			} else {
@@ -2307,6 +2356,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if m.selectedFile > 0 {
 						m.selectedFile--
 						m.viewport.SetContent(renderFilesContent(&m))
+					}
+				} else if m.viewMode == ModeInfo {
+					if m.channelMemberCursor > 0 {
+						m.channelMemberCursor--
+						m.viewport.SetContent(renderInfoContent(&m))
+					} else {
+						m.viewport, cmd = m.viewport.Update(msg)
+						cmds = append(cmds, cmd)
 					}
 				} else {
 					m.viewport, cmd = m.viewport.Update(msg)
@@ -2342,7 +2399,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if m.selectedTeam < len(m.teams)-1 {
 						m.selectedTeam++
 						m.loading = true
-						m.channelWindowStart = 0
 						cmds = append(cmds, loadChannelsCmd(m.client, m.teams[m.selectedTeam].ID))
 					}
 				} else if m.focusList == 1 && len(m.channels) > 0 {
@@ -2351,20 +2407,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.loadedConvID = ""
 						m.viewMode = ModeChat
 						m.viewport.SetContent("")
-						// Adjust sliding window
-						// To get maxChannels we need to calculate it the same way as in view.go
-						teamsLines := len(m.teams) + 3
-						viewportH := m.leftVp.Height
-						if viewportH <= 0 {
-							viewportH = m.height - 6
-						}
-						maxChannels := viewportH - teamsLines - 2
-						if maxChannels < 5 {
-							maxChannels = 5
-						}
-						if m.selectedChan >= m.channelWindowStart + maxChannels {
-							m.channelWindowStart = m.selectedChan - maxChannels + 1
-						}
 					}
 				}
 			} else {
@@ -2372,6 +2414,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if m.selectedFile < len(m.files)-1 {
 						m.selectedFile++
 						m.viewport.SetContent(renderFilesContent(&m))
+					}
+				} else if m.viewMode == ModeInfo {
+					if m.channelMemberCursor < len(m.channelMembers)-1 {
+						m.channelMemberCursor++
+						m.viewport.SetContent(renderInfoContent(&m))
+					} else {
+						m.viewport, cmd = m.viewport.Update(msg)
+						cmds = append(cmds, cmd)
 					}
 				} else {
 					m.viewport, cmd = m.viewport.Update(msg)
@@ -2617,8 +2667,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case "X", "x":
-			// Delete channel — solo en focusList==1 y si hay canales
-			if m.workspace == WorkspaceTeams && m.focusList == 1 && len(m.channels) > 0 {
+			if !m.focusLeft && m.viewMode == ModeInfo && len(m.channelMembers) > 0 {
+				member := m.channelMembers[m.channelMemberCursor]
+				if member.ID != m.selfID && m.channelInfo != nil && strings.ToLower(m.channelInfo.MembershipType) == "private" {
+					m.showRemoveChannelMemberPopup = true
+				}
+			} else if m.workspace == WorkspaceTeams && m.focusList == 1 && len(m.channels) > 0 {
 				ch := m.channels[m.selectedChan]
 				if !strings.EqualFold(ch.DisplayName, "General") {
 					m.showDeleteChannelPopup = true
@@ -2770,25 +2824,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 			}
-		}
-
-		// --- LEFT PANEL CAMERA ENGINE ---
-		if m.focusLeft && m.ready {
-			var cursorLine int
-			if m.workspace == WorkspaceDMs {
-				cursorLine = 1 + m.selectedChat // 1 for the "Chats" title
-			} else if m.focusList == 1 {
-				cursorLine = len(m.teams) + 3 + m.selectedChan // Add teams and spacing
-			} else {
-				cursorLine = 1 + m.selectedTeam // 1 for the "Teams" title
-			}
-
-			// Center the camera on the cursor
-			offset := cursorLine - (m.leftVp.Height / 2)
-			if offset < 0 {
-				offset = 0
-			}
-			m.leftVp.SetYOffset(offset)
 		}
 	}
 

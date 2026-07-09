@@ -157,9 +157,6 @@ type Model struct {
 	presenceOptions  []string
 	presenceError    string
 
-	// Sliding window for channels
-	channelWindowStart int
-
 	// Activity / Notifications
 	notifications      []graph.NotificationItem
 	notifLoaded        bool
@@ -234,11 +231,13 @@ type Model struct {
 	addMemberErr       string
 
 	// Add member to channel
-	showAddChannelMemberPopup bool
-	addChannelMemberInput     textinput.Model
-	addChannelMemberResults   []graph.TeamMember
-	addChannelMemberCursor    int
-	addChannelMemberErr       string
+	showAddChannelMemberPopup    bool
+	addChannelMemberInput        textinput.Model
+	addChannelMemberResults      []graph.TeamMember
+	addChannelMemberCursor       int
+	addChannelMemberErr          string
+	showRemoveChannelMemberPopup bool
+	channelMemberCursor          int
 
 	// Channel members (separate from team members)
 	channelMembers []graph.TeamMember

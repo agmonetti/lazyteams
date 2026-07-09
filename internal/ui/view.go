@@ -45,12 +45,17 @@ func renderInfoContent(m *Model) string {
 
 	if len(m.channelMembers) > 0 {
 		content += "\nMembers:\n"
-		for _, member := range m.channelMembers {
+		for i, member := range m.channelMembers {
+			cursor := "  "
+			if !m.focusLeft && m.viewMode == ModeInfo && i == m.channelMemberCursor {
+				cursor = "▶ "
+			}
 			roleIcon := normalItemStyle.Render("Member   ")
 			if member.Role == "Owner" {
 			    roleIcon = lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Render("Owner ★  ")
 			}
-			content += fmt.Sprintf("%s%s  %s\n",
+			content += fmt.Sprintf("%s%s%s  %s\n",
+				cursor,
 				roleIcon,
 				member.DisplayName,
 				metaStyle.Render(member.Mail),
@@ -61,7 +66,11 @@ func renderInfoContent(m *Model) string {
 	}
 
 	if strings.ToLower(ch.MembershipType) == "private" {
-		content += "\n\n" + helpStyle.Render("Press [a] to add a member to this private channel.")
+		content += "\n\n" + helpStyle.Render("Press [a] to add or [x] to remove members in this private channel.")
+	}
+
+	if m.downloadStatus != "" {
+		content += "\n\n" + lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Render(m.downloadStatus)
 	}
 
 	return content
@@ -89,8 +98,6 @@ func (m Model) View() string {
 	rightOuterWidth := available - leftOuterWidth
 
 	// INNER dimensions
-	leftInnerHeight := panelOuterHeight - 2
-
 	rightInnerWidth := rightOuterWidth - 2
 	rightInnerHeight := panelOuterHeight - 2
 
@@ -159,43 +166,8 @@ func (m Model) View() string {
 		} else if len(m.channels) == 0 {
 			leftContent += "  (no channels)\n"
 		} else {
-			// Calculate how many channels fit in the viewport
-			teamsLines := len(m.teams) + 3
-			viewportH := leftInnerHeight
-			if viewportH <= 0 {
-				viewportH = 10
-			}
-			// Reserve 2 lines for indicators
-			maxChannels := viewportH - teamsLines - 2
-			if maxChannels < 5 {
-				maxChannels = 5
-			}
-
-			totalChans := len(m.channels)
-
-			// Sliding window
-			windowStart := m.channelWindowStart
-			if windowStart < 0 {
-				windowStart = 0
-			}
-			windowEnd := windowStart + maxChannels
-			if windowEnd > totalChans {
-				windowEnd = totalChans
-				// Adjust windowStart if we're at the end and there's extra space
-				if totalChans >= maxChannels {
-					windowStart = totalChans - maxChannels
-				} else {
-					windowStart = 0
-				}
-			}
-
-			// Hidden channels indicator above
-			if windowStart > 0 {
-				leftContent += metaStyle.Render(fmt.Sprintf("  ... (%d above)\n", windowStart))
-			}
-
-			for i := windowStart; i < windowEnd; i++ {
-				c := m.channels[i]
+			// Sin sliding window — el leftVp maneja el scroll
+			for i, c := range m.channels {
 				cursor := "  "
 				style := normalItemStyle
 				if i == m.selectedChan {
@@ -212,12 +184,6 @@ func (m Model) View() string {
 				}
 				leftContent += fmt.Sprintf("%s%s\n", cursor, style.Render(truncateText(c.DisplayName, leftOuterWidth-6))+lock)
 			}
-
-			// More channels indicator below
-			if windowEnd < totalChans {
-				hidden := totalChans - windowEnd
-				leftContent += metaStyle.Render(fmt.Sprintf("  ... (%d more)\n", hidden))
-			}
 		}
 	} else if m.workspace == WorkspaceActivity {
 		leftContent = renderNotifList(m)
@@ -228,6 +194,32 @@ func (m Model) View() string {
 	// Pass all that text to the left viewport
 	if m.ready {
 		m.leftVp.SetContent(leftContent)
+
+		// --- LEFT PANEL CAMERA ENGINE ---
+		if m.focusLeft {
+			var cursorLine int
+			if m.workspace == WorkspaceDMs {
+				cursorLine = 1 + m.selectedChat // 1 for the "Chats" title
+			} else if m.workspace == WorkspaceTeams {
+				if m.focusList == 1 {
+					cursorLine = len(m.teams) + 3 + m.selectedChan // Add teams and spacing
+				} else {
+					cursorLine = 1 + m.selectedTeam // 1 for the "Teams" title
+				}
+			} else if m.workspace == WorkspaceActivity {
+				cursorLine = 1 + m.selectedNotif
+			} else if m.workspace == WorkspaceAssignments {
+				cursorLine = 1 + m.selectedAssign
+			}
+
+			// Center the camera on the cursor
+			offset := cursorLine - (m.leftVp.Height / 2)
+			if offset < 0 {
+				offset = 0
+			}
+			m.leftVp.SetYOffset(offset)
+		}
+
 		leftContent = m.leftVp.View()
 	}
 
@@ -512,6 +504,18 @@ func (m Model) View() string {
 	if m.showRemoveMemberPopup && m.membersCursor < len(m.teamMembers) {
 		member := m.teamMembers[m.membersCursor]
 		content := fmt.Sprintf("Remove \"%s\" from team?\n\n[Enter/y] Confirm   [Esc/n] Cancel", member.DisplayName)
+		popup := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("#E74C3C")).
+			Padding(1, 3).
+			Render(content)
+		combined := lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, rightPanel)
+		return lipgloss.Place(lipgloss.Width(combined), lipgloss.Height(combined), lipgloss.Center, lipgloss.Center, popup)
+	}
+
+	if m.showRemoveChannelMemberPopup && m.channelMemberCursor < len(m.channelMembers) {
+		member := m.channelMembers[m.channelMemberCursor]
+		content := fmt.Sprintf("Remove \"%s\" from channel?\n\n[Enter/y] Confirm   [Esc/n] Cancel", member.DisplayName)
 		popup := lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(lipgloss.Color("#E74C3C")).
@@ -820,7 +824,7 @@ func (m Model) footerText() string {
 		return dim.Render(" [↑/↓] Scroll  [i] Type  [/] Search  [u] Upload  [f] Files  [I] Info  [p] Status  [?] Help  [Esc/h] Back")
 	case !m.focusLeft && m.viewMode == ModeInfo:
 		if m.channelInfo != nil && strings.ToLower(m.channelInfo.MembershipType) == "private" {
-			return dim.Render(" [↑/↓] Scroll  [a] Add member  [f] Files  [I] Chat  [p] Status  [?] Help  [Esc/h] Back")
+			return dim.Render(" [↑/↓] Scroll  [a] Add member  [x] Remove  [f] Files  [I] Chat  [p] Status  [?] Help  [Esc/h] Back")
 		}
 		return dim.Render(" [↑/↓] Scroll  [f] Files  [I] Chat  [p] Status  [?] Help  [Esc/h] Back")
 	default:
