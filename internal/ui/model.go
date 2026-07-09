@@ -52,6 +52,7 @@ type ViewMode int
 const (
 	ModeChat ViewMode = iota
 	ModeFiles
+	ModeInfo
 )
 
 type ActivityFilter int
@@ -207,7 +208,6 @@ type Model struct {
 
 	// Info panels
 	showTeamInfo    bool
-	showChannelInfo bool
 	teamInfo        *graph.Team
 	channelInfo     *graph.Channel
 

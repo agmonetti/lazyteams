@@ -1348,7 +1348,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case channelInfoMsg:
 		m.channelInfo = msg.channel
-		m.showChannelInfo = true
+		if m.viewMode == ModeInfo {
+			m.viewport.SetContent(renderInfoContent(&m))
+			m.viewport.GotoTop()
+		}
 		return m, nil
 
 	case channelInfoErrMsg:
@@ -1358,6 +1361,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case channelMembersMsg:
 		m.channelMembers = msg.members
+		if m.viewMode == ModeInfo {
+			m.viewport.SetContent(renderInfoContent(&m))
+			m.viewport.GotoTop()
+		}
 		return m, nil
 
 	case channelMembersErrMsg:
@@ -1574,41 +1581,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				m.addChannelMemberResults = filtered
 				m.addChannelMemberCursor = 0
-			}
-			return m, nil
-		}
-
-		if m.showChannelInfo {
-			switch msg.String() {
-			case "esc", "enter":
-				m.showChannelInfo = false
-				m.channelInfo = nil
-				m.channelMembers = nil
-			case "a":
-				if m.channelInfo != nil && strings.ToLower(m.channelInfo.MembershipType) == "private" {
-					m.showChannelInfo = false
-					m.showAddChannelMemberPopup = true
-					m.addChannelMemberInput.Reset()
-					m.addChannelMemberCursor = 0
-					m.addChannelMemberErr = ""
-					m.addChannelMemberResults = nil
-					// Pre-cargar miembros del equipo si no están
-					if len(m.teamMembers) == 0 {
-						return m, loadTeamMembersCmd(m.client, m.teams[m.selectedTeam].ID)
-					}
-					// Pre-poblar con todos los no-miembros del canal
-					excluded := make(map[string]bool)
-					for _, cm := range m.channelMembers {
-						excluded[cm.ID] = true
-					}
-					var available []graph.TeamMember
-					for _, tm := range m.teamMembers {
-						if !excluded[tm.ID] {
-							available = append(available, tm)
-						}
-					}
-					m.addChannelMemberResults = available
-				}
 			}
 			return m, nil
 		}
@@ -1921,6 +1893,33 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 
+		case "a":
+			if !m.focusLeft && m.workspace == WorkspaceTeams && m.viewMode == ModeInfo {
+				if m.channelInfo != nil && strings.ToLower(m.channelInfo.MembershipType) == "private" {
+					m.showAddChannelMemberPopup = true
+					m.addChannelMemberInput.Reset()
+					m.addChannelMemberCursor = 0
+					m.addChannelMemberErr = ""
+					m.addChannelMemberResults = nil
+					// Pre-cargar miembros del equipo si no están
+					if len(m.teamMembers) == 0 {
+						return m, loadTeamMembersCmd(m.client, m.teams[m.selectedTeam].ID)
+					}
+					// Pre-poblar con todos los no-miembros del canal
+					excluded := make(map[string]bool)
+					for _, cm := range m.channelMembers {
+						excluded[cm.ID] = true
+					}
+					var available []graph.TeamMember
+					for _, tm := range m.teamMembers {
+						if !excluded[tm.ID] {
+							available = append(available, tm)
+						}
+					}
+					m.addChannelMemberResults = available
+				}
+			}
+
 		case "tab":
 			m.focusLeft = !m.focusLeft
 
@@ -1983,6 +1982,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.downloadStatus = ""
 				m.viewport.SetContent(renderFilesContent(&m))
 				return m, nil
+			}
+			if !m.focusLeft && m.viewMode == ModeInfo {
+				m.viewMode = ModeChat
+				m.loading = true
+				return m, loadMessagesCmd(m.client, m.teams[m.selectedTeam].ID, m.channels[m.selectedChan].ID, 200)
 			}
 			if !m.focusLeft {
 				m.focusLeft = true
@@ -2120,7 +2124,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.selectedAssign = 0
 				}
 			} else if !m.focusLeft {
-				if m.viewMode == ModeFiles && len(m.folderStack) > 0 {
+				if m.viewMode == ModeInfo {
+					m.viewMode = ModeChat
+					m.loading = true
+					cmds = append(cmds, loadMessagesCmd(m.client, m.teams[m.selectedTeam].ID, m.channels[m.selectedChan].ID, 200))
+				} else if m.viewMode == ModeFiles && len(m.folderStack) > 0 {
 					m.folderStack = m.folderStack[:len(m.folderStack)-1]
 					m.selectedFiles = make(map[int]bool)
 					if len(m.folderStack) == 0 {
@@ -2178,7 +2186,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if !m.isTyping {
 				m.isTyping = false // safety reset
 				if m.workspace == WorkspaceTeams && len(m.channels) > 0 {
-					if m.viewMode == ModeChat {
+					if m.viewMode == ModeChat || m.viewMode == ModeInfo {
 						m.viewMode = ModeFiles
 						m.folderStack = nil
 						// Check cache for root
@@ -2362,11 +2370,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "I":
 			if m.workspace == WorkspaceTeams && m.focusList == 0 && len(m.teams) > 0 {
 				return m, loadTeamInfoCmd(m.client, m.teams[m.selectedTeam].ID)
-			} else if m.workspace == WorkspaceTeams && m.focusList == 1 && len(m.channels) > 0 {
-				return m, tea.Batch(
-					loadChannelInfoCmd(m.client, m.teams[m.selectedTeam].ID, m.channels[m.selectedChan].ID),
-					loadChannelMembersCmd(m.client, m.channels[m.selectedChan].ID),
-				)
+			} else if !m.focusLeft && m.workspace == WorkspaceTeams && m.focusList == 1 && len(m.channels) > 0 {
+				if m.viewMode == ModeInfo {
+					m.viewMode = ModeChat
+					m.loading = true
+					return m, loadMessagesCmd(m.client, m.teams[m.selectedTeam].ID, m.channels[m.selectedChan].ID, 200)
+				} else {
+					m.viewMode = ModeInfo
+					m.channelInfo = nil
+					m.channelMembers = nil
+					m.viewport.SetContent("Loading info...")
+					return m, tea.Batch(
+						loadChannelInfoCmd(m.client, m.teams[m.selectedTeam].ID, m.channels[m.selectedChan].ID),
+						loadChannelMembersCmd(m.client, m.channels[m.selectedChan].ID),
+					)
+				}
 			}
 
 		case "L":

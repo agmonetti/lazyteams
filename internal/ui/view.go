@@ -19,6 +19,54 @@ const asciiLogo = `
                                                                         `
 
 
+func renderInfoContent(m *Model) string {
+	if m.channelInfo == nil {
+		return "Loading info..."
+	}
+
+	ch := m.channelInfo
+	email := ch.Email
+	if email == "" {
+		email = "—"
+	}
+	created := ""
+	if len(ch.CreatedDateTime) >= 10 {
+		created = ch.CreatedDateTime[:10]
+	}
+	
+	var content string
+	content += fmt.Sprintf(
+		"Name:    %s\n"+
+		"Type:    %s\n"+
+		"Email:   %s\n"+
+		"Created: %s\n",
+		ch.DisplayName, ch.MembershipType, email, created,
+	)
+
+	if len(m.channelMembers) > 0 {
+		content += "\nMembers:\n"
+		for _, member := range m.channelMembers {
+			roleIcon := normalItemStyle.Render("Member   ")
+			if member.Role == "Owner" {
+			    roleIcon = lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Render("Owner ★  ")
+			}
+			content += fmt.Sprintf("%s%s  %s\n",
+				roleIcon,
+				member.DisplayName,
+				metaStyle.Render(member.Mail),
+			)
+		}
+	} else if m.channelMembers == nil {
+		content += "\nMembers: Loading...\n"
+	}
+
+	if strings.ToLower(ch.MembershipType) == "private" {
+		content += "\n\n" + helpStyle.Render("Press [a] to add a member to this private channel.")
+	}
+
+	return content
+}
+
 func (m Model) View() string {
 	if m.err != nil {
 		return fmt.Sprintf("\n[!] Error: %v\n\nPress 'q' to quit.\n", m.err)
@@ -270,7 +318,7 @@ func (m Model) View() string {
 	} else if m.workspace == WorkspaceTeams {
 		// Header: only if data is loaded
 		if m.loadedConvID != "" && m.loadedConvID == m.activeConversationID() && len(m.channels) > 0 && m.selectedChan < len(m.channels) {
-			tabChat, tabFiles := renderTabs(m.viewMode, ModeChat, "Posts", "Files")
+			tabChat, tabFiles, tabInfo := renderThreeTabs(m.viewMode, "Posts", "Files", "Info")
 			title := fmt.Sprintf("# %s", m.channels[m.selectedChan].DisplayName)
 			if m.viewMode == ModeFiles && len(m.folderStack) > 0 {
 				for _, node := range m.folderStack {
@@ -278,7 +326,7 @@ func (m Model) View() string {
 				}
 			}
 			header := titleStyle.Render(title)
-			rightContent += fmt.Sprintf("%s\n%s %s %s\n\n", header, tabChat, tabDividerStyle.Render("·"), tabFiles)
+			rightContent += fmt.Sprintf("%s\n%s %s %s %s %s\n\n", header, tabChat, tabDividerStyle.Render("·"), tabFiles, tabDividerStyle.Render("·"), tabInfo)
 		}
 
 		if m.viewMode == ModeChat {
@@ -469,55 +517,6 @@ func (m Model) View() string {
 		return lipgloss.Place(lipgloss.Width(combined), lipgloss.Height(combined), lipgloss.Center, lipgloss.Center, popup)
 	}
 	
-	if m.showChannelInfo && m.channelInfo != nil {
-		ch := m.channelInfo
-		email := ch.Email
-		if email == "" {
-			email = "—"
-		}
-		created := ""
-		if len(ch.CreatedDateTime) >= 10 {
-			created = ch.CreatedDateTime[:10]
-		}
-		content := fmt.Sprintf(
-			"Channel Info\n\n"+
-				"Name:    %s\n"+
-				"Type:    %s\n"+
-				"Email:   %s\n"+
-				"Created: %s\n",
-			ch.DisplayName, ch.MembershipType, email, created,
-		)
-
-		if len(m.channelMembers) > 0 {
-			content += "\nMembers:\n"
-			for _, member := range m.channelMembers {
-				roleIcon := normalItemStyle.Render("Member   ")
-				if member.Role == "Owner" {
-				    roleIcon = lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Render("Owner ★  ")
-				}
-				content += fmt.Sprintf("%s%s  %s\n",
-					roleIcon,
-					member.DisplayName,
-					metaStyle.Render(member.Mail),
-				)
-			}
-		}
-
-		if strings.ToLower(ch.MembershipType) == "private" {
-			content += "\n" + helpStyle.Render("[a] Add member   [Esc] Close")
-		} else {
-			content += "\n" + helpStyle.Render("[Esc] Close")
-		}
-		popup := lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("#0078D4")).
-			Padding(1, 3).
-			Width(55).
-			Render(content)
-		combined := lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, rightPanel)
-		return lipgloss.Place(lipgloss.Width(combined), lipgloss.Height(combined), lipgloss.Center, lipgloss.Center, popup)
-	}
-
 	if m.showRemoveMemberPopup && m.membersCursor < len(m.teamMembers) {
 		member := m.teamMembers[m.membersCursor]
 		content := fmt.Sprintf("Remove \"%s\" from team?\n\n[Enter/y] Confirm   [Esc/n] Cancel", member.DisplayName)
@@ -736,6 +735,30 @@ func renderTabs(current, active ViewMode, nameA, nameB string) (string, string) 
 	return tabA, tabB
 }
 
+func renderThreeTabs(current ViewMode, nameA, nameB, nameC string) (string, string, string) {
+	var tabA, tabB, tabC string
+	
+	if current == ModeChat {
+		tabA = activeTabStyle.Render("[ " + nameA + " ]")
+	} else {
+		tabA = inactiveTabStyle.Render("[ " + nameA + " ]")
+	}
+	
+	if current == ModeFiles {
+		tabB = activeTabStyle.Render("[ " + nameB + " ]")
+	} else {
+		tabB = inactiveTabStyle.Render("[ " + nameB + " ]")
+	}
+	
+	if current == ModeInfo {
+		tabC = activeTabStyle.Render("[ " + nameC + " ]")
+	} else {
+		tabC = inactiveTabStyle.Render("[ " + nameC + " ]")
+	}
+	
+	return tabA, tabB, tabC
+}
+
 func (m Model) unreadCount() int {
 	count := 0
 	for _, n := range m.notifications {
@@ -769,11 +792,6 @@ func (m Model) footerText() string {
 		return dim.Render(" [↑/↓] Navigate   [Enter] Confirm   [Esc/q] Cancel")
 	case m.showAddChannelMemberPopup:
 		return dim.Render(" [↑/↓] Navigate  [Enter] Add  [Esc] Cancel")
-	case m.showChannelInfo:
-		if m.channelInfo != nil && strings.ToLower(m.channelInfo.MembershipType) == "private" {
-			return dim.Render(" [a] Add member to channel   [Esc] Close")
-		}
-		return dim.Render(" [Esc] Close")
 	case m.confirmingDownload:
 		return dim.Render(" [Enter/y] Download   [e] Change folder   [Esc/n] Cancel")
 	case m.workspace == WorkspaceAssignments:
@@ -783,18 +801,23 @@ func (m Model) footerText() string {
 			return dim.Render(" [o] Go to channel  [Esc] Back  [q] Quit")
 		}
 		return dim.Render(" ") + workspaceHint + dim.Render("  [←/→] Filter  [↑/↓] Navigate  [Enter] View details  [q] Quit")
-	case m.focusLeft && m.loadedConvID == "" && m.workspace == WorkspaceDMs:
+	case m.focusLeft && m.workspace == WorkspaceDMs:
 		return dim.Render(" ") + workspaceHint + dim.Render("  [↑/↓] Navigate  [Enter] Open  [n] New DM  [p] Status  [q] Quit")
-	case m.focusLeft && m.focusList == 1:
-		return dim.Render(" [↑/↓] Navigate  [Enter] Open  [I] Info+Members  [C] New channel  [X] Delete channel  [←] Back to teams  [q] Quit")
-	case m.focusLeft && m.loadedConvID == "":
+	case m.focusLeft && m.workspace == WorkspaceTeams && m.focusList == 1:
+		return dim.Render(" [↑/↓] Navigate  [Enter] Open  [C] New channel  [X] Delete channel  [←] Back to teams  [q] Quit")
+	case m.focusLeft && m.workspace == WorkspaceTeams && m.focusList == 0:
 		return dim.Render(" ") + workspaceHint + dim.Render("  [↑/↓] Nav  [Enter] Open  [I] Info  [M] Members  [L] Link  [N] New  [D] Delete  [p] Status  [q] Quit")
 	case m.previewing:
 		return dim.Render(" [Esc] Back to files  [↑/↓] Scroll")
 	case !m.focusLeft && m.viewMode == ModeFiles:
 		return dim.Render(" [↑/↓] Navigate  [Enter] Open  [Space] Select  [v] Preview  [o] Download  [u] Upload  [p] Status  [Esc/h] Back")
 	case !m.focusLeft && m.viewMode == ModeChat:
-		return dim.Render(" [↑/↓] Scroll  [i] Type  [u] Upload  [f] Files  [p] Status  [Esc/h] Back")
+		return dim.Render(" [↑/↓] Scroll  [i] Type  [u] Upload  [f] Files  [I] Info  [p] Status  [Esc/h] Back")
+	case !m.focusLeft && m.viewMode == ModeInfo:
+		if m.channelInfo != nil && strings.ToLower(m.channelInfo.MembershipType) == "private" {
+			return dim.Render(" [↑/↓] Scroll  [a] Add member  [f] Files  [I] Chat  [p] Status  [Esc/h] Back")
+		}
+		return dim.Render(" [↑/↓] Scroll  [f] Files  [I] Chat  [p] Status  [Esc/h] Back")
 	default:
 		return dim.Render(" ") + workspaceHint + dim.Render("  [↑/↓] Navigate  [Enter] Open  [p] Status  [q] Quit")
 	}
