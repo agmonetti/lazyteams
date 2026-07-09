@@ -1,6 +1,7 @@
 package graph
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"html"
@@ -74,10 +75,11 @@ type Client struct {
 	Cookie      string
 	EduCookie   string
 	SpacesToken string
+	FabricToken string
 	HTTPClient  *http.Client
 }
 
-func NewClient(graphToken, webToken, notifToken, eduToken, cookie, eduCookie, spacesToken string) *Client {
+func NewClient(graphToken, webToken, notifToken, eduToken, cookie, eduCookie, spacesToken, fabricToken string) *Client {
 	return &Client{
 		GraphToken:  graphToken,
 		WebToken:    webToken,
@@ -86,6 +88,7 @@ func NewClient(graphToken, webToken, notifToken, eduToken, cookie, eduCookie, sp
 		Cookie:      cookie,
 		EduCookie:   eduCookie,
 		SpacesToken: spacesToken,
+		FabricToken: fabricToken,
 		HTTPClient: &http.Client{
 			Timeout: 10 * time.Second,
 		},
@@ -163,5 +166,41 @@ func (c *Client) ReloadTokens() error {
 	if v := tokens["TEAMS_COOKIE"]; v != "" {
 		c.Cookie = v
 	}
+	if v := tokens["EDU_COOKIE"]; v != "" {
+		c.EduCookie = v
+	}
+	if v := tokens["TEAMS_SPACES_TOKEN"]; v != "" {
+		c.SpacesToken = strings.TrimPrefix(v, "Bearer ")
+	}
+	if v := tokens["TEAMS_FABRIC_TOKEN"]; v != "" {
+		c.FabricToken = strings.TrimPrefix(v, "Bearer ")
+	}
 	return nil
+}
+
+func (c *Client) GetTenantID() string {
+	parts := strings.Split(c.WebToken, ".")
+	if len(parts) < 2 {
+		return ""
+	}
+	payload := parts[1]
+	switch len(payload) % 4 {
+	case 2:
+		payload += "=="
+	case 3:
+		payload += "="
+	}
+	payload = strings.NewReplacer("-", "+", "_", "/").Replace(payload)
+	decoded, err := base64.StdEncoding.DecodeString(payload)
+	if err != nil {
+		return ""
+	}
+	var claims map[string]interface{}
+	if err := json.Unmarshal(decoded, &claims); err != nil {
+		return ""
+	}
+	if tid, ok := claims["tid"].(string); ok {
+		return tid
+	}
+	return ""
 }

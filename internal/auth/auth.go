@@ -36,7 +36,7 @@ func loadTokensFile() {
 	}
 }
 
-func GetTokens() (string, string, string, string, string, string, string, error) {
+func GetTokens() (string, string, string, string, string, string, string, string, error) {
 	loadTokensFile()
 
 	graphToken := os.Getenv("MS_GRAPH_TOKEN")
@@ -46,15 +46,16 @@ func GetTokens() (string, string, string, string, string, string, string, error)
 	cookie := os.Getenv("TEAMS_COOKIE")
 	eduCookie := os.Getenv("EDU_COOKIE")
 	spacesToken := os.Getenv("TEAMS_SPACES_TOKEN")
+	fabricToken := os.Getenv("TEAMS_FABRIC_TOKEN")
 
 	if graphToken == "" || webToken == "" {
-		return "", "", "", "", "", "", "", errors.New(
+		return "", "", "", "", "", "", "", "", errors.New(
 			"Tokens not found.\n\n" +
 			"Run ./msTTui-auth first\n" +
 			"to capture tokens automatically.")
 	}
 	if cookie == "" {
-		return "", "", "", "", "", "", "", errors.New("Missing TEAMS_COOKIE in environment.")
+		return "", "", "", "", "", "", "", "", errors.New("Missing TEAMS_COOKIE in environment.")
 	}
 
 	graphToken = strings.TrimSpace(strings.TrimPrefix(graphToken, "Bearer "))
@@ -62,8 +63,10 @@ func GetTokens() (string, string, string, string, string, string, string, error)
 	notifToken = strings.TrimSpace(strings.TrimPrefix(notifToken, "Bearer "))
 	eduToken = strings.TrimSpace(strings.TrimPrefix(eduToken, "Bearer "))
 	eduCookie = strings.TrimSpace(eduCookie)
+	spacesToken = strings.TrimSpace(strings.TrimPrefix(spacesToken, "Bearer "))
+	fabricToken = strings.TrimSpace(strings.TrimPrefix(fabricToken, "Bearer "))
 
-	return graphToken, webToken, notifToken, eduToken, cookie, eduCookie, spacesToken, nil
+	return graphToken, webToken, notifToken, eduToken, cookie, eduCookie, spacesToken, fabricToken, nil
 }
 
 func ParseUserNameFromToken(token string) string {
