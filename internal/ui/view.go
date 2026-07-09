@@ -319,7 +319,11 @@ func (m Model) View() string {
 
 		if m.viewMode == ModeChat {
 			if m.loadedConvID != "" && m.loadedConvID == m.activeConversationID() {
-				rightContent += m.viewport.View() + "\n"
+				if m.showThread {
+					rightContent += renderThreadView(&m, rightInnerWidth, rightInnerHeight)
+				} else {
+					rightContent += m.viewport.View() + "\n"
+				}
 			} else if !m.focusLeft {
 				emptyState := helpStyle.Render("Press Enter to open this channel.")
 				rightContent = lipgloss.Place(rightInnerWidth, rightInnerHeight, lipgloss.Center, lipgloss.Center, emptyState)
@@ -328,7 +332,7 @@ func (m Model) View() string {
 			rightContent += m.viewport.View() + "\n"
 		}
 
-		if !m.focusLeft && m.viewMode == ModeChat && m.loadedConvID == m.activeConversationID() {
+		if !m.focusLeft && m.viewMode == ModeChat && m.loadedConvID == m.activeConversationID() && !m.showThread {
 			var inputView string
 			if m.isSearching {
 				inputView = lipgloss.NewStyle().Foreground(lipgloss.Color("205")).Render("Search: ") + m.searchInput.View()
@@ -786,6 +790,12 @@ func (m Model) footerText() string {
 		}
 	}
 	switch {
+	case m.showThread && m.isReplyTyping:
+		return dim.Render(" [Enter] Send reply   [Esc] Cancel")
+	case m.showThread:
+		return dim.Render(" [i/r] Reply  [↑/↓] Scroll  [Esc] Close thread")
+	case m.cursorMode:
+		return dim.Render(" [↑/↓] Navigate messages  [Enter] Open thread  [Esc] Exit cursor mode")
 	case m.showCreateChannelPopup && m.createChannelStep == 0:
 		return dim.Render(" [Enter] Next   [Esc] Cancel")
 	case m.showCreateChannelPopup && m.createChannelStep == 1:
@@ -830,6 +840,124 @@ func (m Model) footerText() string {
 	default:
 		return dim.Render(" ") + workspaceHint + dim.Render("  [↑/↓] Navigate  [Enter] Open  [p] Status  [?] Help  [q] Quit")
 	}
+}
+
+func renderThreadView(m *Model, width, height int) string {
+	var content string
+
+	// Header
+	content += titleStyle.Render("Thread") + "\n"
+	content += metaStyle.Render("─────────────────────────────────") + "\n\n"
+
+	content += m.threadViewport.View() + "\n"
+
+	// Input
+	if m.isReplyTyping {
+		// Just render the input, styling is usually handled when focused
+		content += "\n" + m.input.View()
+	} else {
+		content += "\n" + helpStyle.Render("[i/r] Reply  [↑/↓] Scroll  [Esc] Close thread")
+	}
+
+	return content
+}
+
+func formatThread(parent graph.Message, replies []graph.Message, width int, selfName string) string {
+	var content string
+
+	actualW := width - 4
+	if actualW < 10 {
+		actualW = 10
+	}
+
+	// Parent message
+	timeStr := parent.CreatedAt.Local().Format("02/01 15:04")
+	
+	var parentAttStr string
+	for _, att := range parent.Attachments {
+		icon := "[Link]"
+		if att.Type == "file" {
+			icon = "[File]"
+		}
+		linkStr := makeClickableLink(att.Name, att.URL)
+		parentAttStr += fmt.Sprintf("  %s %s\n", systemEventStyle.Render(icon), linkStr)
+	}
+
+	parentBody := renderMarkdown(parent.Body, actualW)
+	if parentBody != "" && parentAttStr != "" {
+		parentBody += "\n\n"
+	}
+	parentBody += parentAttStr
+
+	content += fmt.Sprintf("%s %s:\n%s\n\n",
+		metaStyle.Render(fmt.Sprintf("[%s]", timeStr)),
+		selectedItemStyle.Render(parent.FromName),
+		parentBody,
+	)
+
+	if len(replies) == 0 {
+		content += helpStyle.Render("No replies yet.") + "\n"
+		return content
+	}
+
+	content += metaStyle.Render(fmt.Sprintf("─── %d repl", len(replies)))
+	if len(replies) == 1 {
+		content += metaStyle.Render("y") + "\n\n"
+	} else {
+		content += metaStyle.Render("ies") + "\n\n"
+	}
+
+	// Replies
+	for _, r := range replies {
+		timeStr := r.CreatedAt.Local().Format("02/01 15:04")
+		isSelf := r.FromName == selfName && r.FromName != "User" && r.FromName != ""
+		
+		var rAttStr string
+		for _, att := range r.Attachments {
+			icon := "[Link]"
+			if att.Type == "file" {
+				icon = "[File]"
+			}
+			linkStr := makeClickableLink(att.Name, att.URL)
+			rAttStr += fmt.Sprintf("  %s %s\n", systemEventStyle.Render(icon), linkStr)
+		}
+
+		rBody := renderMarkdown(r.Body, actualW)
+		if rBody != "" && rAttStr != "" {
+			rBody += "\n\n"
+		}
+		rBody += rAttStr
+
+		if isSelf {
+			ts := metaStyle.Render(timeStr)
+			pad := width - lipgloss.Width(ts) - 4
+			if pad < 0 {
+				pad = 0
+			}
+			content += strings.Repeat(" ", pad) + ts + "\n"
+			
+			wrapped := lipgloss.NewStyle().Width(width * 2 / 3).Render(rBody)
+			for _, line := range strings.Split(wrapped, "\n") {
+				line = strings.TrimSpace(line)
+				if line == "" {
+					continue
+				}
+				p := width - lipgloss.Width(line) - 4
+				if p < 0 {
+					p = 0
+				}
+				content += strings.Repeat(" ", p) + line + "\n"
+			}
+		} else {
+			content += fmt.Sprintf("%s %s:\n%s\n",
+				metaStyle.Render(fmt.Sprintf("[%s]", timeStr)),
+				selectedItemStyle.Render(r.FromName),
+				rBody,
+			)
+		}
+		content += "\n"
+	}
+	return content
 }
 
 func renderNotifList(m Model) string {

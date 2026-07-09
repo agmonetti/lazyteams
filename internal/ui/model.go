@@ -132,6 +132,15 @@ type Model struct {
 	// teamThreadID is the threadId of the current team's General channel
 	teamThreadID string
 
+	// Thread view
+	messageCursor    int
+	cursorMode       bool
+	showThread       bool
+	threadParentID   string
+	threadParentMsg  graph.Message
+	threadViewport   viewport.Model
+	isReplyTyping    bool
+
 	// Input for sending messages
 	input    textarea.Model
 	isTyping bool

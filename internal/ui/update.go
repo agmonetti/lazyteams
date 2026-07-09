@@ -566,6 +566,19 @@ func loadMessagesCmd(client *graph.Client, teamID, channelID string, pageSize in
 	}
 }
 
+type threadReplySentMsg struct{}
+type threadReplySendErrMsg struct{ err error }
+
+func sendReplyCmd(client *graph.Client, channelID, parentID, content string) tea.Cmd {
+	return func() tea.Msg {
+		err := client.SendReply(channelID, parentID, content)
+		if err != nil {
+			return threadReplySendErrMsg{err}
+		}
+		return threadReplySentMsg{}
+	}
+}
+
 func sendMessageCmd(client *graph.Client, channelID, content string) tea.Cmd {
 	return func() tea.Msg {
 		err := client.SendMessage(channelID, content)
@@ -637,6 +650,88 @@ func renderMarkdown(content string, width int) string {
 	}
 	// Glamour adds extra newlines at the end, let's trim them
 	return strings.TrimSpace(out)
+}
+
+func rootMessages(msgs []graph.Message) []graph.Message {
+	var result []graph.Message
+	for _, m := range msgs {
+		if m.RootMessageID == m.ID || m.RootMessageID == "" {
+			if m.MessageType == "Text" || m.MessageType == "RichText/Html" {
+				result = append(result, m)
+			}
+		}
+	}
+	return result
+}
+
+func repliesFor(msgs []graph.Message, parentID string) []graph.Message {
+	var result []graph.Message
+	for _, m := range msgs {
+		if m.RootMessageID == parentID && m.ID != parentID {
+			result = append(result, m)
+		}
+	}
+	return result
+}
+
+func replyCount(msgs []graph.Message, parentID string) int {
+	return len(repliesFor(msgs, parentID))
+}
+
+func formatMessagesWithCursor(messages []graph.Message, width, cursor int, cursorMode bool) string {
+	var content string
+	roots := rootMessages(messages)
+	
+	actualW := width - 4
+	if actualW < 10 {
+		actualW = 10
+	}
+
+	for i := len(roots) - 1; i >= 0; i-- {
+		msg := roots[i]
+		cursorStr := "  "
+		if cursorMode && i == cursor {
+			cursorStr = "▶ "
+		}
+		timeStr := msg.CreatedAt.Local().Format("02/01 15:04")
+		formattedTime := metaStyle.Render(fmt.Sprintf("[%s]", timeStr))
+		sender := selectedItemStyle.Render(msg.FromName)
+		
+		var attachmentsStr string
+		for _, att := range msg.Attachments {
+			icon := "[Link]"
+			if att.Type == "file" {
+				icon = "[File]"
+			}
+			linkStr := makeClickableLink(att.Name, att.URL)
+			attachmentsStr += fmt.Sprintf("  %s %s\n", systemEventStyle.Render(icon), linkStr)
+		}
+
+		body := renderMarkdown(msg.Body, actualW)
+		if body != "" && attachmentsStr != "" {
+			body += "\n\n"
+		}
+		body += attachmentsStr
+
+		content += fmt.Sprintf("%s%s %s:\n%s\n", cursorStr, formattedTime, sender, body)
+
+		// Reply count indicator
+		count := replyCount(messages, msg.ID)
+		if count > 0 {
+			replyStr := fmt.Sprintf("  ↳ %d repl", count)
+			if count == 1 {
+				replyStr += "y"
+			} else {
+				replyStr += "ies"
+			}
+			if cursorMode {
+				replyStr += " [Enter to open]"
+			}
+			content += metaStyle.Render(replyStr) + "\n"
+		}
+		content += "\n"
+	}
+	return content
 }
 
 // formatMessages converts the message list into a renderable string for the viewport
@@ -879,12 +974,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !m.ready {
 			m.viewport = viewport.New(rightInnerWidth, vpInnerHeight)
 			m.leftVp = viewport.New(leftInnerWidth, leftInnerHeight)
+			m.threadViewport = viewport.New(rightInnerWidth, vpInnerHeight-4)
 			m.ready = true
 		} else {
 			m.viewport.Width = rightInnerWidth
 			m.viewport.Height = vpInnerHeight
 			m.leftVp.Width = leftInnerWidth
 			m.leftVp.Height = leftInnerHeight
+			m.threadViewport.Width = rightInnerWidth
+			m.threadViewport.Height = vpInnerHeight - 4
 		}
 
 		// Re-wrap existing content with the new width
@@ -898,7 +996,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.workspace == WorkspaceDMs {
 					content = formatMessagesDM(msgsToRender, rightInnerWidth, m.userName)
 				} else {
-					content = formatMessages(msgsToRender, rightInnerWidth)
+					content = formatMessagesWithCursor(msgsToRender, rightInnerWidth, m.messageCursor, m.cursorMode)
 				}
 				m.viewport.SetContent(content)
 			} else if m.viewMode == ModeFiles {
@@ -1007,7 +1105,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.workspace == WorkspaceDMs {
 					partial = formatMessagesDM(msgsToRender, m.viewport.Width, m.userName)
 				} else {
-					partial = formatMessages(msgsToRender, m.viewport.Width)
+					partial = formatMessagesWithCursor(msgsToRender, m.viewport.Width, m.messageCursor, m.cursorMode)
 				}
 				m.viewport.SetContent(partial + "\n\n(partial load due to network error)")
 			}
@@ -1032,6 +1130,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case messageSendErrMsg:
 		m.viewport.SetContent(fmt.Sprintf("Error sending message: %v", msg.err))
 		m.loading = false
+		return m, nil
+
+	case threadReplySentMsg:
+		m.isReplyTyping = false
+		m.input.Reset()
+		// Reload messages to get the new reply
+		return m, loadMessagesCmd(m.client, "", m.activeConversationID(), 200)
+
+	case threadReplySendErrMsg:
+		m.isReplyTyping = false
+		m.threadViewport.SetContent(fmt.Sprintf("Error sending reply: %v", msg.err))
 		return m, nil
 
 	case filesErrMsg:
@@ -1199,10 +1308,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.workspace == WorkspaceDMs {
 				content = formatMessagesDM(msgsToRender, m.viewport.Width, m.userName)
 			} else {
-				content = formatMessages(msgsToRender, m.viewport.Width)
+				content = formatMessagesWithCursor(msgsToRender, m.viewport.Width, m.messageCursor, m.cursorMode)
 			}
 			m.viewport.SetContent(content)
 			m.viewport.GotoBottom()
+			
+			// Also update thread view if active
+			if m.showThread {
+				replies := repliesFor(m.messages, m.threadParentID)
+				threadContent := formatThread(m.threadParentMsg, replies, m.threadViewport.Width, m.userName)
+				m.threadViewport.SetContent(threadContent)
+			}
 		} else if m.viewMode == ModeFiles {
 			m.files = teams.AggregateChatAttachments(m.messages)
 			m.selectedFile = 0
@@ -1669,6 +1785,88 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
+		// Thread view — intercepts keys
+		if m.showThread {
+			switch msg.String() {
+			case "esc":
+				m.showThread = false
+				m.threadParentID = ""
+				m.cursorMode = false
+				return m, nil
+			case "i", "r":
+				if !m.isReplyTyping {
+					m.isReplyTyping = true
+					m.input.Focus()
+				}
+				return m, nil
+			case "enter":
+				if m.isReplyTyping {
+					v := strings.TrimSpace(m.input.Value())
+					if v != "" {
+						m.input.Reset()
+						m.isReplyTyping = false
+						m.input.Blur()
+						return m, sendReplyCmd(m.client, m.activeConversationID(), m.threadParentID, v)
+					}
+				}
+				return m, nil
+			case "up", "k":
+				m.threadViewport.LineUp(1)
+				return m, nil
+			case "down", "j":
+				m.threadViewport.LineDown(1)
+				return m, nil
+			}
+			// Pass to input if typing
+			if m.isReplyTyping {
+				var cmd tea.Cmd
+				m.input, cmd = m.input.Update(msg)
+				return m, cmd
+			}
+			return m, nil
+		}
+
+		// Cursor mode — j/k move cursor, Enter opens thread
+		if m.cursorMode && m.workspace == WorkspaceTeams && m.viewMode == ModeChat {
+			switch msg.String() {
+			case "esc":
+				m.cursorMode = false
+				m.messageCursor = 0
+				content := formatMessagesWithCursor(m.messages, m.viewport.Width, m.messageCursor, m.cursorMode)
+				m.viewport.SetContent(content)
+				return m, nil
+			case "down", "k":
+				if m.messageCursor > 0 {
+					m.messageCursor--
+				}
+				content := formatMessagesWithCursor(m.messages, m.viewport.Width, m.messageCursor, m.cursorMode)
+				m.viewport.SetContent(content)
+				return m, nil
+			case "up", "j":
+				rootMsgs := rootMessages(m.messages)
+				if m.messageCursor < len(rootMsgs)-1 {
+					m.messageCursor++
+				}
+				content := formatMessagesWithCursor(m.messages, m.viewport.Width, m.messageCursor, m.cursorMode)
+				m.viewport.SetContent(content)
+				return m, nil
+			case "enter":
+				rootMsgs := rootMessages(m.messages)
+				if m.messageCursor < len(rootMsgs) {
+					selected := rootMsgs[m.messageCursor]
+					m.threadParentID = selected.ID
+					m.threadParentMsg = selected
+					m.showThread = true
+					// Render thread content
+					replies := repliesFor(m.messages, selected.ID)
+					content := formatThread(selected, replies, m.threadViewport.Width, m.userName)
+					m.threadViewport.SetContent(content)
+					m.threadViewport.GotoTop()
+				}
+				return m, nil
+			}
+		}
+
 		// Chat search — intercepts keys
 		if m.isSearching {
 			switch msg.String() {
@@ -1682,7 +1880,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.workspace == WorkspaceDMs {
 					content = formatMessagesDM(m.messages, m.viewport.Width, m.userName)
 				} else {
-					content = formatMessages(m.messages, m.viewport.Width)
+					content = formatMessagesWithCursor(m.messages, m.viewport.Width, m.messageCursor, m.cursorMode)
 				}
 				m.viewport.SetContent(content)
 				return m, nil
@@ -1708,7 +1906,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.workspace == WorkspaceDMs {
 					content = formatMessagesDM(filtered, m.viewport.Width, m.userName)
 				} else {
-					content = formatMessages(filtered, m.viewport.Width)
+					content = formatMessagesWithCursor(filtered, m.viewport.Width, m.messageCursor, m.cursorMode)
 				}
 				m.viewport.SetContent(content)
 				return m, cmd
@@ -2277,7 +2475,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.workspace == WorkspaceDMs {
 					content = formatMessagesDM(m.messages, m.viewport.Width, m.userName)
 				} else {
-					content = formatMessages(m.messages, m.viewport.Width)
+					content = formatMessagesWithCursor(m.messages, m.viewport.Width, m.messageCursor, m.cursorMode)
 				}
 				m.viewport.SetContent(content)
 				return m, nil
@@ -2556,7 +2754,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							if m.workspace == WorkspaceDMs {
 								fresh = formatMessagesDM(msgsToRender, m.viewport.Width, m.userName)
 							} else {
-								fresh = formatMessages(msgsToRender, m.viewport.Width)
+								fresh = formatMessagesWithCursor(msgsToRender, m.viewport.Width, m.messageCursor, m.cursorMode)
 							}
 							m.viewport.SetContent(fresh)
 						}
@@ -2652,7 +2850,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case "c", "C":
-			if m.workspace == WorkspaceTeams && m.focusList == 1 && m.teamThreadID != "" {
+			if m.workspace == WorkspaceTeams && m.viewMode == ModeChat && !m.isTyping && !m.focusLeft {
+				m.cursorMode = !m.cursorMode
+				m.messageCursor = 0
+				content := formatMessagesWithCursor(m.messages, m.viewport.Width, m.messageCursor, m.cursorMode)
+				m.viewport.SetContent(content)
+			} else if m.workspace == WorkspaceTeams && m.focusList == 1 && m.teamThreadID != "" {
 				m.showCreateChannelPopup = true
 				m.createChannelInput.Reset()
 				m.createChannelErr = ""

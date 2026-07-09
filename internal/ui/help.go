@@ -52,7 +52,8 @@ var HelpData = []HelpCategory{
 	{
 		Title: "Chat & Messages",
 		Shortcuts: []Shortcut{
-			{Key: "i", Description: "Type a new message"},
+			{Key: "c", Description: "Cursor mode (Threads)"},
+			{Key: "i/r", Description: "Type message / Reply"},
 			{Key: "/", Description: "Search in current chat"},
 			{Key: "Esc", Description: "Clear search / Exit typing"},
 			{Key: "f", Description: "View Files tab"},
