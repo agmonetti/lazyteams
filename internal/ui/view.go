@@ -749,11 +749,11 @@ func (m Model) unreadCount() int {
 func (m Model) footerText() string {
 	dim := lipgloss.NewStyle().Foreground(colorMuted)
 
-	activityTab := dim.Render("[3] Activity")
+	workspaceHint := dim.Render("[1-4] Workspace")
 	if m.notifLoaded {
 		if count := m.unreadCount(); count > 0 {
 			badge := lipgloss.NewStyle().Foreground(colorRed).Bold(true).Render(fmt.Sprintf("(%d)", count))
-			activityTab = dim.Render("[3] Activity ") + badge
+			workspaceHint = dim.Render("[1-4] Workspace ") + badge
 		}
 	}
 	switch {
@@ -777,18 +777,18 @@ func (m Model) footerText() string {
 	case m.confirmingDownload:
 		return dim.Render(" [Enter/y] Download   [e] Change folder   [Esc/n] Cancel")
 	case m.workspace == WorkspaceAssignments:
-		return dim.Render(" [1] Teams  [2] DMs  ") + activityTab + dim.Render("  [4] Assignments  [←/→] Filter  [↑/↓] Navigate  [Enter] View  [q] Quit")
+		return dim.Render(" ") + workspaceHint + dim.Render("  [←/→] Filter  [↑/↓] Navigate  [Enter] View  [q] Quit")
 	case m.workspace == WorkspaceActivity:
 		if !m.focusLeft {
 			return dim.Render(" [o] Go to channel  [Esc] Back  [q] Quit")
 		}
-		return dim.Render(" [1-4] Workspace  [←/→] Filter  [↑/↓] Navigate  [Enter] View details  [q] Quit")
+		return dim.Render(" ") + workspaceHint + dim.Render("  [←/→] Filter  [↑/↓] Navigate  [Enter] View details  [q] Quit")
 	case m.focusLeft && m.loadedConvID == "" && m.workspace == WorkspaceDMs:
-		return dim.Render(" [1] Teams  [2] DMs  ") + activityTab + dim.Render("  [4] Assignments  [↑/↓] Navigate  [Enter] Open  [n] New DM  [p] Status  [q] Quit")
+		return dim.Render(" ") + workspaceHint + dim.Render("  [↑/↓] Navigate  [Enter] Open  [n] New DM  [p] Status  [q] Quit")
 	case m.focusLeft && m.focusList == 1:
 		return dim.Render(" [↑/↓] Navigate  [Enter] Open  [I] Info+Members  [C] New channel  [X] Delete channel  [←] Back to teams  [q] Quit")
 	case m.focusLeft && m.loadedConvID == "":
-		return dim.Render(" [1-4] Workspace  [↑/↓] Nav  [Enter] Open  [I] Info  [M] Members  [L] Link  [N] New  [D] Delete  [p] Status  [q] Quit")
+		return dim.Render(" ") + workspaceHint + dim.Render("  [↑/↓] Nav  [Enter] Open  [I] Info  [M] Members  [L] Link  [N] New  [D] Delete  [p] Status  [q] Quit")
 	case m.previewing:
 		return dim.Render(" [Esc] Back to files  [↑/↓] Scroll")
 	case !m.focusLeft && m.viewMode == ModeFiles:
@@ -796,7 +796,7 @@ func (m Model) footerText() string {
 	case !m.focusLeft && m.viewMode == ModeChat:
 		return dim.Render(" [↑/↓] Scroll  [i] Type  [u] Upload  [f] Files  [p] Status  [Esc/h] Back")
 	default:
-		return dim.Render(" [1] Teams  [2] DMs  ") + activityTab + dim.Render("  [4] Assignments  [↑/↓] Navigate  [Enter] Open  [p] Status  [q] Quit")
+		return dim.Render(" ") + workspaceHint + dim.Render("  [↑/↓] Navigate  [Enter] Open  [p] Status  [q] Quit")
 	}
 }
 

@@ -93,7 +93,34 @@ func (c *Client) GetChannels(teamID string) ([]Channel, error) {
 		}
 	}
 
-	return allChannels, nil
+	// Sort channels: "General" first, then alphabetically
+	var general *Channel
+	var others []Channel
+	for _, ch := range allChannels {
+		if strings.EqualFold(ch.DisplayName, "General") {
+			chCopy := ch
+			general = &chCopy
+		} else {
+			others = append(others, ch)
+		}
+	}
+
+	// Simple insertion sort for others (or we can use sort package)
+	for i := 0; i < len(others); i++ {
+		for j := i + 1; j < len(others); j++ {
+			if strings.ToLower(others[i].DisplayName) > strings.ToLower(others[j].DisplayName) {
+				others[i], others[j] = others[j], others[i]
+			}
+		}
+	}
+
+	var sortedChannels []Channel
+	if general != nil {
+		sortedChannels = append(sortedChannels, *general)
+	}
+	sortedChannels = append(sortedChannels, others...)
+
+	return sortedChannels, nil
 }
 
 func (c *Client) CreateTeam(displayName string) error {
