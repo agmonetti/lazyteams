@@ -308,7 +308,7 @@ func (c *Client) GetTeamMembers(teamGUID string) ([]TeamMember, error) {
 }
 
 func (c *Client) GetChannelMembers(channelThreadID string) ([]TeamMember, error) {
-	url := fmt.Sprintf("https://teams.microsoft.com/api/chatsvc/amer/v1/threads/%s/members?view=msnp24Equivalent&pageSize=100&selectMemberRoles=Admin", channelThreadID)
+	url := fmt.Sprintf("https://teams.microsoft.com/api/chatsvc/amer/v1/threads/%s/members?view=msnp24Equivalent&pageSize=100&selectMemberRoles=Admin|User|Guest", channelThreadID)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, err
@@ -392,14 +392,51 @@ func (c *Client) AddTeamMember(teamThreadID, teamGUID, userMRI string) error {
 	return fmt.Errorf("add member error %d: %s", resp.StatusCode, string(body))
 }
 
-func (c *Client) AddChannelMember(teamThreadID, channelThreadID, userID string) error {
-	payload := fmt.Sprintf(`{"value":[{"mri":"8:orgid:%s","role":0}]}`, userID)
-	url := fmt.Sprintf("https://teams.microsoft.com/api/mt/part/amer-02/beta/teams/%s/channels/%s/members", teamThreadID, channelThreadID)
-	req, err := http.NewRequest("PUT", url, strings.NewReader(payload))
+func (c *Client) GetChannelSubstrateID(channelThreadID string) (string, error) {
+	url := fmt.Sprintf("https://teams.microsoft.com/api/chatsvc/amer/v1/threads/%s?view=msnp24Equivalent", channelThreadID)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.WebToken)
+	req.Header.Set("Accept", "application/json")
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != 200 {
+		return "", fmt.Errorf("get channel substrate error %d: %s", resp.StatusCode, string(body))
+	}
+	var res struct {
+		Properties map[string]interface{} `json:"properties"`
+	}
+	if err := json.Unmarshal(body, &res); err != nil {
+		return "", err
+	}
+	if id, ok := res.Properties["substrateGroupId"].(string); ok && id != "" {
+		return id, nil
+	}
+	return "", fmt.Errorf("substrateGroupId not found")
+}
+
+func (c *Client) AddChannelMember(teamGUID, channelThreadID, userID, tenantID string) error {
+	// First get the substrateGroupId
+	substrateID, err := c.GetChannelSubstrateID(channelThreadID)
+	if err != nil {
+		return fmt.Errorf("could not get channel substrate ID: %w", err)
+	}
+	channelOID := fmt.Sprintf("OID:%s@%s", substrateID, tenantID)
+	userOID := fmt.Sprintf("OID:%s@%s", userID, tenantID)
+	payload := fmt.Sprintf(`{"users":[{"id":"%s","role":1}]}`, userOID)
+	url := fmt.Sprintf("https://teams.microsoft.com/fabric/amer/templates/api/teams/%s/channels/%s/users?forceSync=false",
+		teamGUID, channelOID)
+	req, err := http.NewRequest("POST", url, strings.NewReader(payload))
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+c.SpacesToken)
+	req.Header.Set("Authorization", "Bearer "+c.FabricToken)
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
@@ -432,4 +469,30 @@ func (c *Client) RemoveTeamMember(teamThreadID, teamGUID, userID string) error {
 	}
 	body, _ := io.ReadAll(resp.Body)
 	return fmt.Errorf("remove member error %d: %s", resp.StatusCode, string(body))
+}
+
+func (c *Client) RemoveChannelMember(teamGUID, channelThreadID, userID, tenantID string) error {
+	substrateID, err := c.GetChannelSubstrateID(channelThreadID)
+	if err != nil {
+		return fmt.Errorf("could not get channel substrate ID: %w", err)
+	}
+	channelOID := fmt.Sprintf("OID:%s@%s", substrateID, tenantID)
+	userOID := fmt.Sprintf("OID:%s@%s", userID, tenantID)
+	url := fmt.Sprintf("https://teams.microsoft.com/fabric/amer/templates/api/teams/%s/channels/%s/users/%s?forceSync=false",
+		teamGUID, channelOID, userOID)
+	req, err := http.NewRequest("DELETE", url, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.FabricToken)
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == 200 || resp.StatusCode == 204 {
+		return nil
+	}
+	body, _ := io.ReadAll(resp.Body)
+	return fmt.Errorf("remove channel member error %d: %s", resp.StatusCode, string(body))
 }
