@@ -17,18 +17,20 @@ type Attachment struct {
 }
 
 type Message struct {
-	ID          string       `json:"id"`
-	Body        string       `json:"body"`
-	FromName    string       `json:"fromName"`
-	CreatedAt   time.Time    `json:"createdAt"`
-	MessageType string       `json:"messageType"`
-	Attachments []Attachment `json:"attachments"`
+	ID            string
+	RootMessageID string // si == ID, es mensaje raíz; si != ID, es reply
+	Body          string
+	FromName      string
+	CreatedAt     time.Time
+	MessageType   string
+	Attachments   []Attachment
 }
 
 // Internal structures for ChatSvc (Teams Web) response
 type chatSvcResponse struct {
 	Messages []struct {
 		ID                  string                 `json:"id"`
+		RootMessageID       string                 `json:"rootMessageId"`
 		Type                string                 `json:"type"`
 		MessageType         string                 `json:"messagetype"`
 		Content             string                 `json:"content"`
@@ -167,13 +169,19 @@ func (c *Client) GetMessages(teamID, channelID string, pageSize int) ([]Message,
 				}
 			}
 
+			rootID := m.RootMessageID
+			if rootID == "" {
+				rootID = m.ID
+			}
+
 			allMsgs = append(allMsgs, Message{
-				ID:          m.ID,
-				Body:        cleanHTML(m.Content),
-				FromName:    name,
-				CreatedAt:   t,
-				MessageType: m.MessageType,
-				Attachments: attachments,
+				ID:            m.ID,
+				RootMessageID: rootID,
+				Body:          cleanHTML(m.Content),
+				FromName:      name,
+				CreatedAt:     t,
+				MessageType:   m.MessageType,
+				Attachments:   attachments,
 			})
 		}
 
@@ -230,5 +238,41 @@ func (c *Client) SendMessage(channelID, content string) error {
 		return fmt.Errorf("chatsvc send error %d: %s", resp.StatusCode, string(b))
 	}
 
+	return nil
+}
+
+func (c *Client) SendReply(channelID, parentMessageID, content string) error {
+	url := fmt.Sprintf(
+		"https://teams.microsoft.com/api/chatsvc/amer/v1/users/ME/conversations/%s%%3Bmessageid%%3D%s/messages",
+		channelID, parentMessageID,
+	)
+	payload := map[string]string{
+		"content":     content,
+		"messagetype": "RichText/Html",
+		"contenttype": "Text",
+	}
+	bodyBytes, _ := json.Marshal(payload)
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(bodyBytes))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.WebToken)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/plain, */*")
+	req.Header.Set("behavioroverride", "redirectAs404")
+	req.Header.Set("x-ms-migration", "True")
+	req.Header.Set("x-ms-request-priority", "0")
+	req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64; rv:151.0) Gecko/20100101 Firefox/151.0")
+	req.Header.Set("Referer", "https://teams.microsoft.com/")
+	req.Header.Set("Origin", "https://teams.microsoft.com")
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("chatsvc reply error %d: %s", resp.StatusCode, string(b))
+	}
 	return nil
 }
