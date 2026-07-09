@@ -136,6 +136,11 @@ type Model struct {
 	input    textarea.Model
 	isTyping bool
 
+	// Search in chat
+	isSearching bool
+	searchInput textinput.Model
+	searchQuery string
+
 	// Token renewal
 	tokenRenewing bool
 	tokenRenewErr string
@@ -272,12 +277,18 @@ func New(client *graph.Client, userName string) Model {
 	addChannelMemberInput.CharLimit = 64
 	addChannelMemberInput.Width = 40
 
+	searchInput := textinput.New()
+	searchInput.Placeholder = "Search in chat..."
+	searchInput.CharLimit = 64
+	searchInput.Width = 40
+
 	return Model{
 		client:       client,
 		focusLeft:    true,
 		focusList:    0,
 		loading:      true,
 		input:        ta,
+		searchInput:  searchInput,
 		newDMQuery:   newDMInput,
 		createTeamInput: createTeamInput,
 		createChannelInput: createChannelInput,

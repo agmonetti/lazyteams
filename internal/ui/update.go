@@ -16,6 +16,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -593,17 +594,72 @@ func loadFolderCmd(client *graph.Client, teamID string, node FolderNode) tea.Cmd
 	}
 }
 
+func getOptimalWrapWidth(raw string, maxW int) int {
+	lines := strings.Split(raw, "\n")
+	max := 0
+	for _, l := range lines {
+		w := lipgloss.Width(l)
+		if w > max {
+			max = w
+		}
+	}
+	if max >= maxW {
+		return maxW
+	}
+	return 0
+}
+
+func renderMarkdown(content string, width int) string {
+	if content == "" {
+		return ""
+	}
+	// Fallback in case of rendering error
+	r, err := glamour.NewTermRenderer(
+		glamour.WithStandardStyle("dark"),
+		glamour.WithWordWrap(width),
+	)
+	if err != nil {
+		return content
+	}
+	out, err := r.Render(content)
+	if err != nil {
+		return content
+	}
+	// Glamour adds extra newlines at the end, let's trim them
+	return strings.TrimSpace(out)
+}
+
 // formatMessages converts the message list into a renderable string for the viewport
 func formatMessages(messages []graph.Message, width int) string {
 	var content string
 	var lastDate string
+	actualW := width - 2
+	if actualW < 10 {
+		actualW = 10
+	}
+	todayStr := time.Now().Format("02/01/2006")
+
 	for i := len(messages) - 1; i >= 0; i-- {
 		msg := messages[i]
 
 		// Subtle separator between different days
 		msgDate := msg.CreatedAt.Local().Format("02/01/2006")
 		if lastDate != "" && msgDate != lastDate {
-			content += metaStyle.Render("─────────────────────────────────────") + "\n"
+			displayDate := msgDate
+			if msgDate == todayStr {
+				displayDate = "Hoy"
+			}
+			dateText := fmt.Sprintf(" %s ", displayDate)
+			padLeft := (actualW - len(dateText)) / 2
+			if padLeft < 0 {
+				padLeft = 0
+			}
+			padRight := actualW - len(dateText) - padLeft
+			if padRight < 0 {
+				padRight = 0
+			}
+			sep := strings.Repeat("─", padLeft) + dateText + strings.Repeat("─", padRight)
+			content += metaStyle.Render(sep) + "\n\n"
 		}
 		lastDate = msgDate
 
@@ -628,7 +684,7 @@ func formatMessages(messages []graph.Message, width int) string {
 			}
 
 			if msg.Body != "" || attachmentsStr != "" {
-				body := msg.Body
+				body := renderMarkdown(msg.Body, actualW)
 				if body != "" && attachmentsStr != "" {
 					body += "\n\n"
 				}
@@ -652,14 +708,19 @@ func formatMessages(messages []graph.Message, width int) string {
 			continue
 		}
 	}
-	if width > 0 {
-		content = lipgloss.NewStyle().Width(width - 2).Render(content)
-	}
+	content = lipgloss.NewStyle().Width(actualW).Render(content)
 	return content
 }
 
 func formatMessagesDM(messages []graph.Message, width int, selfName string) string {
 	var content string
+	var lastDate string
+	actualW := width - 2
+	if actualW < 10 {
+		actualW = 10
+	}
+	todayStr := time.Now().Format("02/01/2006")
+
 	for i := len(messages) - 1; i >= 0; i-- {
 		msg := messages[i]
 		// Only filter types we know are noise
@@ -669,6 +730,28 @@ func formatMessagesDM(messages []graph.Message, width int, selfName string) stri
 			msg.MessageType == "ThreadActivity/AddMember" {
 			continue
 		}
+		
+		msgDate := msg.CreatedAt.Local().Format("02/01/2006")
+		if lastDate != "" && msgDate != lastDate {
+			displayDate := msgDate
+			if msgDate == todayStr {
+				displayDate = "Hoy"
+			}
+			// Center the date separator based on the terminal width
+			dateText := fmt.Sprintf(" %s ", displayDate)
+			padLeft := (actualW - len(dateText)) / 2
+			if padLeft < 0 {
+				padLeft = 0
+			}
+			padRight := actualW - len(dateText) - padLeft
+			if padRight < 0 {
+				padRight = 0
+			}
+			sep := strings.Repeat("─", padLeft) + dateText + strings.Repeat("─", padRight)
+			content += metaStyle.Render(sep) + "\n\n"
+		}
+		lastDate = msgDate
+		
 		timeStr := msg.CreatedAt.Local().Format("02/01 15:04")
 		body := strings.TrimSpace(msg.Body)
 		isSelf := msg.FromName == selfName || msg.FromName == "User"
@@ -676,40 +759,38 @@ func formatMessagesDM(messages []graph.Message, width int, selfName string) stri
 			timeStr := msg.CreatedAt.Local().Format("02/01 15:04")
 
 			tsRaw := metaStyle.Render(timeStr)
-			tsPad := width - lipgloss.Width(tsRaw)
-			if tsPad < 0 {
-				tsPad = 0
-			}
-			timestamp := strings.Repeat(" ", tsPad) + tsRaw
+			timestamp := lipgloss.PlaceHorizontal(actualW, lipgloss.Right, tsRaw)
 
 			rawBody := strings.TrimSpace(body)
-			maxW := width * 2 / 3
-			wrapped := lipgloss.NewStyle().Width(maxW).Render(rawBody)
-			bodyLines := strings.Split(wrapped, "\n")
-			var paddedLines []string
-			for _, line := range bodyLines {
-				line = strings.TrimSpace(line)
-				if line == "" {
-					continue
+			maxW := actualW * 2 / 3
+			
+			optW := getOptimalWrapWidth(rawBody, maxW)
+			wrapped := renderMarkdown(rawBody, optW)
+			
+			// Find actual max width of the rendered output to create a tight bounding box
+			lines := strings.Split(wrapped, "\n")
+			actualMaxW := 0
+			for _, l := range lines {
+				lw := lipgloss.Width(l)
+				if lw > actualMaxW {
+					actualMaxW = lw
 				}
-				bodyW := lipgloss.Width(line)
-				pad := width - bodyW
-				if pad < 0 {
-					pad = 0
-				}
-				paddedLines = append(paddedLines, strings.Repeat(" ", pad)+line)
 			}
+			
+			styledBlock := lipgloss.NewStyle().Width(actualMaxW).Render(wrapped)
+			placedBlock := lipgloss.PlaceHorizontal(actualW, lipgloss.Right, styledBlock)
 
-			content += fmt.Sprintf("%s\n%s\n\n", timestamp, strings.Join(paddedLines, "\n"))
+			content += fmt.Sprintf("%s\n%s\n\n", timestamp, placedBlock)
 		} else {
-			if width > 0 {
-				body = lipgloss.NewStyle().Width(width - 2).Render(body)
+			if actualW > 0 {
+				body = renderMarkdown(body, actualW)
 			}
 			sender := selectedItemStyle.Render(msg.FromName)
 			formattedTime := metaStyle.Render(fmt.Sprintf("[%s]", timeStr))
 			content += fmt.Sprintf("%s %s:\n%s\n\n", formattedTime, sender, body)
 		}
 	}
+	content = lipgloss.NewStyle().Width(actualW).Render(content)
 	return content
 }
 // Update
@@ -800,10 +881,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.ready && len(m.messages) > 0 {
 			if m.viewMode == ModeChat {
 				var content string
+				msgsToRender := m.messages
+				if m.searchQuery != "" {
+					msgsToRender = m.filterMessages(m.messages, m.searchQuery)
+				}
 				if m.workspace == WorkspaceDMs {
-					content = formatMessagesDM(m.messages, rightInnerWidth, m.userName)
+					content = formatMessagesDM(msgsToRender, rightInnerWidth, m.userName)
 				} else {
-					content = formatMessages(m.messages, rightInnerWidth)
+					content = formatMessages(msgsToRender, rightInnerWidth)
 				}
 				m.viewport.SetContent(content)
 			} else if m.viewMode == ModeFiles {
@@ -905,10 +990,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.viewport.SetContent(renderFilesContent(&m) + "\n\n(partial load due to network error)")
 			} else {
 				var partial string
+				msgsToRender := m.messages
+				if m.searchQuery != "" {
+					msgsToRender = m.filterMessages(m.messages, m.searchQuery)
+				}
 				if m.workspace == WorkspaceDMs {
-					partial = formatMessagesDM(m.messages, m.viewport.Width, m.userName)
+					partial = formatMessagesDM(msgsToRender, m.viewport.Width, m.userName)
 				} else {
-					partial = formatMessages(m.messages, m.viewport.Width)
+					partial = formatMessages(msgsToRender, m.viewport.Width)
 				}
 				m.viewport.SetContent(partial + "\n\n(partial load due to network error)")
 			}
@@ -1093,10 +1182,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		if m.viewMode == ModeChat {
 			var content string
+			msgsToRender := m.messages
+			if m.searchQuery != "" {
+				msgsToRender = m.filterMessages(m.messages, m.searchQuery)
+			}
+
 			if m.workspace == WorkspaceDMs {
-				content = formatMessagesDM(m.messages, m.viewport.Width, m.userName)
+				content = formatMessagesDM(msgsToRender, m.viewport.Width, m.userName)
 			} else {
-				content = formatMessages(m.messages, m.viewport.Width)
+				content = formatMessages(msgsToRender, m.viewport.Width)
 			}
 			m.viewport.SetContent(content)
 			m.viewport.GotoBottom()
@@ -1507,7 +1601,67 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.showDirPicker = false
 		return m, nil
 	    
+	case tea.MouseMsg:
+		if msg.X < (m.width-5)/3 {
+			// Left panel: use wheel to navigate the list
+			if msg.Type == tea.MouseWheelUp {
+				return m.Update(tea.KeyMsg{Type: tea.KeyUp})
+			} else if msg.Type == tea.MouseWheelDown {
+				return m.Update(tea.KeyMsg{Type: tea.KeyDown})
+			} else if msg.Type == tea.MouseLeft {
+				m.focusLeft = true
+			}
+		} else {
+			// Right panel: scroll viewport
+			m.viewport, cmd = m.viewport.Update(msg)
+			if cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+			if msg.Type == tea.MouseLeft {
+				m.focusLeft = false
+			}
+		}
+		return m, tea.Batch(cmds...)
+
 	case tea.KeyMsg:
+		// Chat search — intercepts keys
+		if m.isSearching {
+			switch msg.String() {
+			case "esc":
+				m.isSearching = false
+				m.searchInput.Reset()
+				m.searchQuery = ""
+				
+				// Re-render chat
+				var content string
+				if m.workspace == WorkspaceDMs {
+					content = formatMessagesDM(m.messages, m.viewport.Width, m.userName)
+				} else {
+					content = formatMessages(m.messages, m.viewport.Width)
+				}
+				m.viewport.SetContent(content)
+				return m, nil
+			case "enter":
+				m.isSearching = false
+				m.searchQuery = strings.TrimSpace(m.searchInput.Value())
+				
+				// Filter messages and re-render
+				var content string
+				filtered := m.filterMessages(m.messages, m.searchQuery)
+				if m.workspace == WorkspaceDMs {
+					content = formatMessagesDM(filtered, m.viewport.Width, m.userName)
+				} else {
+					content = formatMessages(filtered, m.viewport.Width)
+				}
+				m.viewport.SetContent(content)
+				return m, nil
+			default:
+				var cmd tea.Cmd
+				m.searchInput, cmd = m.searchInput.Update(msg)
+				return m, cmd
+			}
+		}
+
 		// Directory picker — intercepts all keys
 		if m.showDirPicker {
 			var cmd tea.Cmd
@@ -1863,6 +2017,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		switch msg.String() {
+		case "/":
+			if !m.focusLeft && m.viewMode == ModeChat {
+				m.isSearching = true
+				m.searchInput.Reset()
+				m.searchInput.Focus()
+				return m, nil
+			}
+
 		case "q", "ctrl+c":
 			return m, tea.Quit
 
@@ -2254,10 +2416,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							cmds = append(cmds, loadMessagesCmd(m.client, "", activeID, 200))
 						} else {
 							var fresh string
+							msgsToRender := m.messages
+							if m.searchQuery != "" {
+								msgsToRender = m.filterMessages(m.messages, m.searchQuery)
+							}
 							if m.workspace == WorkspaceDMs {
-								fresh = formatMessagesDM(m.messages, m.viewport.Width, m.userName)
+								fresh = formatMessagesDM(msgsToRender, m.viewport.Width, m.userName)
 							} else {
-								fresh = formatMessages(m.messages, m.viewport.Width)
+								fresh = formatMessages(msgsToRender, m.viewport.Width)
 							}
 							m.viewport.SetContent(fresh)
 						}
@@ -2702,6 +2868,20 @@ func renderFilesContent(m *Model) string {
 	}
 
 	return b.String()
+}
+
+func (m *Model) filterMessages(msgs []graph.Message, query string) []graph.Message {
+	if query == "" {
+		return msgs
+	}
+	query = strings.ToLower(query)
+	var filtered []graph.Message
+	for _, msg := range msgs {
+		if strings.Contains(strings.ToLower(msg.Body), query) || strings.Contains(strings.ToLower(msg.FromName), query) {
+			filtered = append(filtered, msg)
+		}
+	}
+	return filtered
 }
 
 func isSharePointURL(rawURL string) bool {

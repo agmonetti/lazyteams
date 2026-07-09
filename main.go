@@ -25,7 +25,11 @@ func main() {
 	userName := auth.ParseUserNameFromToken(graphToken)
 
 	// 4. Start the TUI
-	p := tea.NewProgram(ui.New(graphClient, userName), tea.WithAltScreen())
+	p := tea.NewProgram(
+		ui.New(graphClient, userName),
+		tea.WithAltScreen(),
+		tea.WithMouseCellMotion(),
+	)
 	if _, err := p.Run(); err != nil {
 		fmt.Printf("Fatal TUI error: %v\n", err)
 		os.Exit(1)

@@ -410,6 +410,13 @@ func (m Model) View() string {
 
 		popup := popupStyle.Render(popupContent)
 		rightPanel = lipgloss.Place(lipgloss.Width(rightPanel), lipgloss.Height(rightPanel), lipgloss.Center, lipgloss.Center, popup)
+	} else if m.isSearching {
+		var content string
+		content += titleStyle.Render("Search in Chat") + "\n\n"
+		content += m.searchInput.View() + "\n\n"
+		content += helpStyle.Render("[Enter] Search   [Esc] Cancel")
+		popup := popupStyle.Render(content)
+		rightPanel = lipgloss.Place(lipgloss.Width(rightPanel), lipgloss.Height(rightPanel), lipgloss.Center, lipgloss.Center, popup)
 	} else if m.showCreateTeamPopup {
 		var content string
 		content += titleStyle.Render("New Team") + "\n\n"
@@ -772,6 +779,8 @@ func (m Model) footerText() string {
 		return dim.Render(" [↑/↓] Navigate results  [Enter] Open DM  [Esc] Cancel")
 	case m.showPresenceMenu:
 		return dim.Render(" [↑/↓] Navigate   [Enter] Confirm   [Esc/q] Cancel")
+	case m.isSearching:
+		return dim.Render(" [Enter] Search  [Esc] Cancel")
 	case m.showAddChannelMemberPopup:
 		return dim.Render(" [↑/↓] Navigate  [Enter] Add  [Esc] Cancel")
 	case m.confirmingDownload:
