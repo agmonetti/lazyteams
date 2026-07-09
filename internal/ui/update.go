@@ -1624,6 +1624,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmds...)
 
 	case tea.KeyMsg:
+		// Help menu — intercepts keys
+		if m.showHelp {
+			switch msg.String() {
+			case "esc", "q", "?", "enter", "space":
+				m.showHelp = false
+			}
+			return m, nil
+		}
+
 		// Chat search — intercepts keys
 		if m.isSearching {
 			switch msg.String() {
@@ -2035,6 +2044,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "q", "ctrl+c":
 			return m, tea.Quit
+
+		case "?":
+			m.showHelp = !m.showHelp
 
 		case "p":
 			m.showPresenceMenu = !m.showPresenceMenu

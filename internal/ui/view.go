@@ -693,6 +693,16 @@ func (m Model) View() string {
 	}
 	ui = lipgloss.JoinVertical(lipgloss.Left, ui, footerLine)
 
+	if m.showHelp {
+		helpContent := renderHelpMenu()
+		popup := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("#0078D4")).
+			Padding(1, 4).
+			Render(helpContent)
+		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, popup)
+	}
+
 	return ui
 }
 
@@ -787,34 +797,34 @@ func (m Model) footerText() string {
 	case m.confirmingDownload:
 		return dim.Render(" [Enter/y] Download   [e] Change folder   [Esc/n] Cancel")
 	case m.workspace == WorkspaceAssignments:
-		return dim.Render(" ") + workspaceHint + dim.Render("  [←/→] Filter  [↑/↓] Navigate  [Enter] View  [q] Quit")
+		return dim.Render(" ") + workspaceHint + dim.Render("  [←/→] Filter  [↑/↓] Navigate  [Enter] View  [?] Help  [q] Quit")
 	case m.workspace == WorkspaceActivity:
 		if !m.focusLeft {
-			return dim.Render(" [o] Go to channel  [Esc] Back  [q] Quit")
+			return dim.Render(" [o] Go to channel  [Esc] Back  [?] Help  [q] Quit")
 		}
-		return dim.Render(" ") + workspaceHint + dim.Render("  [←/→] Filter  [↑/↓] Navigate  [Enter] View details  [q] Quit")
+		return dim.Render(" ") + workspaceHint + dim.Render("  [←/→] Filter  [↑/↓] Navigate  [Enter] View details  [?] Help  [q] Quit")
 	case m.focusLeft && m.workspace == WorkspaceDMs:
-		return dim.Render(" ") + workspaceHint + dim.Render("  [↑/↓] Navigate  [Enter] Open  [n] New DM  [p] Status  [q] Quit")
+		return dim.Render(" ") + workspaceHint + dim.Render("  [↑/↓] Navigate  [Enter] Open  [n] New DM  [p] Status  [?] Help  [q] Quit")
 	case m.focusLeft && m.workspace == WorkspaceTeams && m.focusList == 1:
-		return dim.Render(" [↑/↓] Navigate  [Enter] Open  [C] New channel  [X] Delete channel  [←] Back to teams  [q] Quit")
+		return dim.Render(" [↑/↓] Navigate  [Enter] Open  [C] New channel  [X] Delete channel  [←] Back to teams  [?] Help  [q] Quit")
 	case m.focusLeft && m.workspace == WorkspaceTeams && m.focusList == 0:
-		return dim.Render(" ") + workspaceHint + dim.Render("  [↑/↓] Nav  [Enter] Open  [I] Info  [M] Members  [L] Link  [N] New  [D] Delete  [p] Status  [q] Quit")
+		return dim.Render(" ") + workspaceHint + dim.Render("  [↑/↓] Nav  [Enter] Open  [I] Info  [M] Members  [L] Link  [N] New  [D] Delete  [p] Status  [?] Help  [q] Quit")
 	case m.previewing:
 		return dim.Render(" [Esc] Back to files  [↑/↓] Scroll")
 	case !m.focusLeft && m.viewMode == ModeFiles:
-		return dim.Render(" [↑/↓] Navigate  [Enter] Open  [Space] Select  [v] Preview  [o] Download  [u] Upload  [p] Status  [Esc/h] Back")
+		return dim.Render(" [↑/↓] Navigate  [Enter] Open  [Space] Select  [v] Preview  [o] Download  [u] Upload  [p] Status  [?] Help  [Esc/h] Back")
 	case !m.focusLeft && m.viewMode == ModeChat:
 		if m.isSearching {
 			return dim.Render(" [↑/↓] Scroll  [Esc] Clear & Close")
 		}
-		return dim.Render(" [↑/↓] Scroll  [i] Type  [/] Search  [u] Upload  [f] Files  [I] Info  [p] Status  [Esc/h] Back")
+		return dim.Render(" [↑/↓] Scroll  [i] Type  [/] Search  [u] Upload  [f] Files  [I] Info  [p] Status  [?] Help  [Esc/h] Back")
 	case !m.focusLeft && m.viewMode == ModeInfo:
 		if m.channelInfo != nil && strings.ToLower(m.channelInfo.MembershipType) == "private" {
-			return dim.Render(" [↑/↓] Scroll  [a] Add member  [f] Files  [I] Chat  [p] Status  [Esc/h] Back")
+			return dim.Render(" [↑/↓] Scroll  [a] Add member  [f] Files  [I] Chat  [p] Status  [?] Help  [Esc/h] Back")
 		}
-		return dim.Render(" [↑/↓] Scroll  [f] Files  [I] Chat  [p] Status  [Esc/h] Back")
+		return dim.Render(" [↑/↓] Scroll  [f] Files  [I] Chat  [p] Status  [?] Help  [Esc/h] Back")
 	default:
-		return dim.Render(" ") + workspaceHint + dim.Render("  [↑/↓] Navigate  [Enter] Open  [p] Status  [q] Quit")
+		return dim.Render(" ") + workspaceHint + dim.Render("  [↑/↓] Navigate  [Enter] Open  [p] Status  [?] Help  [q] Quit")
 	}
 }
 

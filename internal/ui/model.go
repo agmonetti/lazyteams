@@ -148,6 +148,9 @@ type Model struct {
 	// User
 	userName string
 
+	// Help Menu
+	showHelp bool
+
 	// Presence (selection)
 	showPresenceMenu bool
 	presenceCursor   int
