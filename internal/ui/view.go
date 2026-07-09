@@ -303,7 +303,12 @@ func (m Model) View() string {
 		}
 
 		if !m.focusLeft && m.viewMode == ModeChat {
-			inputView := m.input.View()
+			var inputView string
+			if m.isSearching {
+				inputView = lipgloss.NewStyle().Foreground(lipgloss.Color("205")).Render("Search: ") + m.searchInput.View()
+			} else {
+				inputView = m.input.View()
+			}
 			rightContent += inputView
 		}
 	} else if m.workspace == WorkspaceTeams {
@@ -332,7 +337,12 @@ func (m Model) View() string {
 		}
 
 		if !m.focusLeft && m.viewMode == ModeChat && m.loadedConvID == m.activeConversationID() {
-			inputView := m.input.View()
+			var inputView string
+			if m.isSearching {
+				inputView = lipgloss.NewStyle().Foreground(lipgloss.Color("205")).Render("Search: ") + m.searchInput.View()
+			} else {
+				inputView = m.input.View()
+			}
 			rightContent += inputView
 		}
 	} else if m.workspace == WorkspaceActivity {
@@ -409,13 +419,6 @@ func (m Model) View() string {
 		popupContent += "\n" + helpStyle.Render("[↑/↓] Navigate  [Enter] Open DM  [Esc] Cancel")
 
 		popup := popupStyle.Render(popupContent)
-		rightPanel = lipgloss.Place(lipgloss.Width(rightPanel), lipgloss.Height(rightPanel), lipgloss.Center, lipgloss.Center, popup)
-	} else if m.isSearching {
-		var content string
-		content += titleStyle.Render("Search in Chat") + "\n\n"
-		content += m.searchInput.View() + "\n\n"
-		content += helpStyle.Render("[Enter] Search   [Esc] Cancel")
-		popup := popupStyle.Render(content)
 		rightPanel = lipgloss.Place(lipgloss.Width(rightPanel), lipgloss.Height(rightPanel), lipgloss.Center, lipgloss.Center, popup)
 	} else if m.showCreateTeamPopup {
 		var content string
@@ -779,8 +782,6 @@ func (m Model) footerText() string {
 		return dim.Render(" [↑/↓] Navigate results  [Enter] Open DM  [Esc] Cancel")
 	case m.showPresenceMenu:
 		return dim.Render(" [↑/↓] Navigate   [Enter] Confirm   [Esc/q] Cancel")
-	case m.isSearching:
-		return dim.Render(" [Enter] Search  [Esc] Cancel")
 	case m.showAddChannelMemberPopup:
 		return dim.Render(" [↑/↓] Navigate  [Enter] Add  [Esc] Cancel")
 	case m.confirmingDownload:
@@ -803,7 +804,10 @@ func (m Model) footerText() string {
 	case !m.focusLeft && m.viewMode == ModeFiles:
 		return dim.Render(" [↑/↓] Navigate  [Enter] Open  [Space] Select  [v] Preview  [o] Download  [u] Upload  [p] Status  [Esc/h] Back")
 	case !m.focusLeft && m.viewMode == ModeChat:
-		return dim.Render(" [↑/↓] Scroll  [i] Type  [u] Upload  [f] Files  [I] Info  [p] Status  [Esc/h] Back")
+		if m.isSearching {
+			return dim.Render(" [↑/↓] Scroll  [Esc] Clear & Close")
+		}
+		return dim.Render(" [↑/↓] Scroll  [i] Type  [/] Search  [u] Upload  [f] Files  [I] Info  [p] Status  [Esc/h] Back")
 	case !m.focusLeft && m.viewMode == ModeInfo:
 		if m.channelInfo != nil && strings.ToLower(m.channelInfo.MembershipType) == "private" {
 			return dim.Render(" [↑/↓] Scroll  [a] Add member  [f] Files  [I] Chat  [p] Status  [Esc/h] Back")

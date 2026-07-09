@@ -1643,21 +1643,29 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			case "enter":
 				m.isSearching = false
+				return m, nil
+			case "up", "down", "pgup", "pgdown", "ctrl+u", "ctrl+d":
+				var cmd tea.Cmd
+				m.viewport, cmd = m.viewport.Update(msg)
+				return m, cmd
+			default:
+				var cmd tea.Cmd
+				m.searchInput, cmd = m.searchInput.Update(msg)
+				
 				m.searchQuery = strings.TrimSpace(m.searchInput.Value())
 				
 				// Filter messages and re-render
 				var content string
-				filtered := m.filterMessages(m.messages, m.searchQuery)
+				filtered := m.messages
+				if m.searchQuery != "" {
+					filtered = m.filterMessages(m.messages, m.searchQuery)
+				}
 				if m.workspace == WorkspaceDMs {
 					content = formatMessagesDM(filtered, m.viewport.Width, m.userName)
 				} else {
 					content = formatMessages(filtered, m.viewport.Width)
 				}
 				m.viewport.SetContent(content)
-				return m, nil
-			default:
-				var cmd tea.Cmd
-				m.searchInput, cmd = m.searchInput.Update(msg)
 				return m, cmd
 			}
 		}
@@ -2165,6 +2173,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.previewFileName = ""
 				m.downloadStatus = ""
 				m.viewport.SetContent(renderFilesContent(&m))
+				return m, nil
+			}
+			if m.searchQuery != "" {
+				m.searchQuery = ""
+				var content string
+				if m.workspace == WorkspaceDMs {
+					content = formatMessagesDM(m.messages, m.viewport.Width, m.userName)
+				} else {
+					content = formatMessages(m.messages, m.viewport.Width)
+				}
+				m.viewport.SetContent(content)
 				return m, nil
 			}
 			if !m.focusLeft && m.viewMode == ModeInfo {
