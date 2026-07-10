@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 )
@@ -16,6 +17,12 @@ type Attachment struct {
 	Type string // "file" or "link"
 }
 
+type Reaction struct {
+	Key         string
+	Count       int
+	UserReacted bool
+}
+
 type Message struct {
 	ID            string
 	RootMessageID string // si == ID, es mensaje raíz; si != ID, es reply
@@ -24,6 +31,7 @@ type Message struct {
 	CreatedAt     time.Time
 	MessageType   string
 	Attachments   []Attachment
+	Reactions     []Reaction
 }
 
 // Internal structures for ChatSvc (Teams Web) response
@@ -37,6 +45,9 @@ type chatSvcResponse struct {
 		ImDisplayName       string                 `json:"imdisplayname"`
 		OriginalArrivalTime string                 `json:"originalarrivaltime"`
 		Properties          map[string]interface{} `json:"properties"`
+		AnnotationsSummary  *struct {
+			Emotions map[string]int `json:"emotions"`
+		} `json:"annotationsSummary"`
 	} `json:"messages"`
 	Metadata struct {
 		BackwardLink string `json:"backwardLink"`
@@ -174,6 +185,19 @@ func (c *Client) GetMessages(teamID, channelID string, pageSize int) ([]Message,
 				rootID = m.ID
 			}
 
+			var reactions []Reaction
+			if m.AnnotationsSummary != nil {
+				for key, count := range m.AnnotationsSummary.Emotions {
+					if count > 0 {
+						reactions = append(reactions, Reaction{Key: key, Count: count})
+					}
+				}
+				// Ordenar por count descendente
+				sort.Slice(reactions, func(i, j int) bool {
+					return reactions[i].Count > reactions[j].Count
+				})
+			}
+
 			allMsgs = append(allMsgs, Message{
 				ID:            m.ID,
 				RootMessageID: rootID,
@@ -182,6 +206,7 @@ func (c *Client) GetMessages(teamID, channelID string, pageSize int) ([]Message,
 				CreatedAt:     t,
 				MessageType:   m.MessageType,
 				Attachments:   attachments,
+				Reactions:     reactions,
 			})
 		}
 
@@ -275,4 +300,101 @@ func (c *Client) SendReply(channelID, parentMessageID, content string) error {
 		return fmt.Errorf("chatsvc reply error %d: %s", resp.StatusCode, string(b))
 	}
 	return nil
+}
+
+func (c *Client) AddReaction(channelID, messageID, key string) error {
+	url := fmt.Sprintf(
+		"https://teams.microsoft.com/api/chatsvc/amer/v1/users/ME/conversations/%s/messages/%s/properties?name=emotions",
+		channelID, messageID,
+	)
+	payload := fmt.Sprintf(`{"emotions":{"key":"%s","value":%d}}`, key, time.Now().UnixMilli())
+	req, err := http.NewRequest("PUT", url, strings.NewReader(payload))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.WebToken)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("behavioroverride", "redirectAs404")
+	req.Header.Set("x-ms-migration", "True")
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		b, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("reaction error %d: %s", resp.StatusCode, string(b))
+	}
+	return nil
+}
+
+func (c *Client) RemoveReaction(channelID, messageID, key string) error {
+	url := fmt.Sprintf(
+		"https://teams.microsoft.com/api/chatsvc/amer/v1/users/ME/conversations/%s/messages/%s/properties?name=emotions",
+		channelID, messageID,
+	)
+	payload := fmt.Sprintf(`{"emotions":{"key":"%s"}}`, key)
+	req, err := http.NewRequest("DELETE", url, strings.NewReader(payload))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.WebToken)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("behavioroverride", "redirectAs404")
+	req.Header.Set("x-ms-migration", "True")
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		b, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("remove reaction error %d: %s", resp.StatusCode, string(b))
+	}
+	return nil
+}
+
+func (c *Client) GetMessageReactions(channelID, messageID, selfID string) (map[string]bool, error) {
+	url := fmt.Sprintf("https://teams.microsoft.com/api/chatsvc/amer/v1/users/ME/conversations/%s/messages/%s?view=msnp24Equivalent|supportsMessageProperties", channelID, messageID)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.WebToken)
+	req.Header.Set("behavioroverride", "redirectAs404")
+	req.Header.Set("x-ms-migration", "True")
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	
+	var res struct {
+		Properties struct {
+			Emotions []struct {
+				Key   string `json:"key"`
+				Users []struct {
+					MRI string `json:"mri"`
+				} `json:"users"`
+			} `json:"emotions"`
+		} `json:"properties"`
+	}
+	if err := json.Unmarshal(body, &res); err != nil {
+		return nil, err
+	}
+	
+	// map[reactionKey] = userAlreadyReacted
+	result := make(map[string]bool)
+	for _, e := range res.Properties.Emotions {
+		for _, u := range e.Users {
+			// Extract GUID from "8:orgid:GUID"
+			if idx := strings.LastIndex(u.MRI, ":"); idx != -1 {
+				if u.MRI[idx+1:] == selfID {
+					result[e.Key] = true
+				}
+			}
+		}
+	}
+	return result, nil
 }
