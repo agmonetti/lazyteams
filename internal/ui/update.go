@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"teamsTUI/internal/graph"
 	"teamsTUI/internal/teams"
@@ -671,6 +672,10 @@ func repliesFor(msgs []graph.Message, parentID string) []graph.Message {
 			result = append(result, m)
 		}
 	}
+	// Sort by time ascending (oldest first)
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].CreatedAt.Before(result[j].CreatedAt)
+	})
 	return result
 }
 
@@ -911,17 +916,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "esc": // Exit insert mode
 				m.isTyping = false
 				m.input.Blur()
-				return m, nil
-			case "enter": // Send message
-				v := m.input.Value()
-				if v != "" && m.activeConversationID() != "" {
-					m.input.Reset()
-					m.isTyping = false
-					m.input.Blur()
-					m.loading = true
-					// Send and append the command
-					return m, sendMessageCmd(m.client, m.activeConversationID(), v)
+				m.input.Reset()
+				// Restaurar altura del viewport
+				if m.ready {
+					rightInnerHeight := m.height - 6 - 2
+					m.viewport.Height = rightInnerHeight - 4 - 1
 				}
+				return m, nil
+				case "enter": // Send message
+					v := m.input.Value()
+					if v != "" && m.activeConversationID() != "" {
+						m.input.Reset()
+						m.isTyping = false
+						m.input.Blur()
+						// Restaurar altura del viewport
+						if m.ready {
+							rightInnerHeight := m.height - 6 - 2
+							m.viewport.Height = rightInnerHeight - 4 - 1
+						}
+						m.loading = true
+						// Send and append the command
+						return m, sendMessageCmd(m.client, m.activeConversationID(), v)
+					}
 			}
 		}
 
@@ -964,9 +980,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Max height for textarea to prevent it from covering the whole screen
 		m.input.MaxHeight = rightInnerHeight / 3
 		
-		// We calculate the current height of the textarea to adjust the viewport
-		inputLines := strings.Count(m.input.View(), "\n") + 1
-		vpInnerHeight := rightInnerHeight - 4 - inputLines
+		// We reserve fixed lines for the input placeholder
+		vpInnerHeight := rightInnerHeight - 4 - 2 // reserve 2 lines
 		if vpInnerHeight < 5 {
 			vpInnerHeight = 5
 		}
@@ -974,7 +989,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !m.ready {
 			m.viewport = viewport.New(rightInnerWidth, vpInnerHeight)
 			m.leftVp = viewport.New(leftInnerWidth, leftInnerHeight)
-			m.threadViewport = viewport.New(rightInnerWidth, vpInnerHeight-4)
+			m.threadViewport = viewport.New(rightInnerWidth, vpInnerHeight-6)
 			m.ready = true
 		} else {
 			m.viewport.Width = rightInnerWidth
@@ -982,7 +997,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.leftVp.Width = leftInnerWidth
 			m.leftVp.Height = leftInnerHeight
 			m.threadViewport.Width = rightInnerWidth
-			m.threadViewport.Height = vpInnerHeight - 4
+			m.threadViewport.Height = vpInnerHeight - 6
 		}
 
 		// Re-wrap existing content with the new width
@@ -1787,41 +1802,66 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Thread view — intercepts keys
 		if m.showThread {
+			// If typing, pass FIRST to input
+			if m.isReplyTyping {
+				switch msg.String() {
+					case "esc":
+						m.isReplyTyping = false
+						m.input.Blur()
+						m.input.Reset()
+						// Restaurar threadViewport
+						if m.ready {
+							rightInnerHeight := m.height - 6 - 2
+							m.threadViewport.Height = rightInnerHeight - 12
+						}
+						return m, nil
+					case "enter":
+						v := strings.TrimSpace(m.input.Value())
+						if v != "" {
+							m.input.Reset()
+							m.isReplyTyping = false
+							m.input.Blur()
+							// Restaurar threadViewport
+							if m.ready {
+								rightInnerHeight := m.height - 6 - 2
+								m.threadViewport.Height = rightInnerHeight - 12
+							}
+							return m, sendReplyCmd(m.client, m.activeConversationID(), m.threadParentID, v)
+						}
+					return m, nil
+					default:
+						var cmd tea.Cmd
+						m.input, cmd = m.input.Update(msg)
+						if m.ready {
+							rightInnerHeight := m.height - 6 - 2
+							inputHeight := strings.Count(m.input.View(), "\n") + 1
+							m.threadViewport.Height = rightInnerHeight - 10 - inputHeight
+						}
+						return m, cmd
+				}
+			}
+			// If not typing, handle thread navigation
 			switch msg.String() {
 			case "esc":
 				m.showThread = false
 				m.threadParentID = ""
 				m.cursorMode = false
 				return m, nil
-			case "i", "r":
-				if !m.isReplyTyping {
-					m.isReplyTyping = true
-					m.input.Focus()
-				}
-				return m, nil
-			case "enter":
-				if m.isReplyTyping {
-					v := strings.TrimSpace(m.input.Value())
-					if v != "" {
-						m.input.Reset()
-						m.isReplyTyping = false
-						m.input.Blur()
-						return m, sendReplyCmd(m.client, m.activeConversationID(), m.threadParentID, v)
-					}
-				}
-				return m, nil
+					case "i", "r":
+						m.isReplyTyping = true
+						m.input.Focus()
+						if m.ready {
+							rightInnerHeight := m.height - 6 - 2
+							inputHeight := strings.Count(m.input.View(), "\n") + 1
+							m.threadViewport.Height = rightInnerHeight - 10 - inputHeight
+						}
+						return m, nil
 			case "up", "k":
 				m.threadViewport.LineUp(1)
 				return m, nil
 			case "down", "j":
 				m.threadViewport.LineDown(1)
 				return m, nil
-			}
-			// Pass to input if typing
-			if m.isReplyTyping {
-				var cmd tea.Cmd
-				m.input, cmd = m.input.Update(msg)
-				return m, cmd
 			}
 			return m, nil
 		}
