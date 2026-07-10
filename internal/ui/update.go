@@ -570,6 +570,36 @@ func loadMessagesCmd(client *graph.Client, teamID, channelID string, pageSize in
 type threadReplySentMsg struct{}
 type threadReplySendErrMsg struct{ err error }
 
+type addReactionMsg struct{ err error }
+type removeReactionMsg struct{ err error }
+
+type reactionsLoadedMsg struct {
+	messageID string
+	reactions map[string]bool
+	err       error
+}
+
+func getReactionsCmd(client *graph.Client, channelID, messageID, selfID string) tea.Cmd {
+	return func() tea.Msg {
+		reactions, err := client.GetMessageReactions(channelID, messageID, selfID)
+		return reactionsLoadedMsg{messageID: messageID, reactions: reactions, err: err}
+	}
+}
+
+func addReactionCmd(client *graph.Client, channelID, messageID, key string) tea.Cmd {
+	return func() tea.Msg {
+		err := client.AddReaction(channelID, messageID, key)
+		return addReactionMsg{err}
+	}
+}
+
+func removeReactionCmd(client *graph.Client, channelID, messageID, key string) tea.Cmd {
+	return func() tea.Msg {
+		err := client.RemoveReaction(channelID, messageID, key)
+		return removeReactionMsg{err}
+	}
+}
+
 func sendReplyCmd(client *graph.Client, channelID, parentID, content string) tea.Cmd {
 	return func() tea.Msg {
 		err := client.SendReply(channelID, parentID, content)
@@ -734,6 +764,21 @@ func formatMessagesWithCursor(messages []graph.Message, width, cursor int, curso
 			}
 			content += metaStyle.Render(replyStr) + "\n"
 		}
+
+		// Reacciones
+		if len(msg.Reactions) > 0 {
+			var reactionStr string
+			for _, r := range msg.Reactions {
+				emoji := reactionEmoji(r.Key)
+				if r.Count > 1 {
+					reactionStr += fmt.Sprintf("%s %d  ", emoji, r.Count)
+				} else {
+					reactionStr += fmt.Sprintf("%s  ", emoji)
+				}
+			}
+			content += "  " + metaStyle.Render(strings.TrimSpace(reactionStr)) + "\n"
+		}
+
 		content += "\n"
 	}
 	return content
@@ -1158,6 +1203,45 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.threadViewport.SetContent(fmt.Sprintf("Error sending reply: %v", msg.err))
 		return m, nil
 
+	case addReactionMsg:
+		if msg.err != nil {
+			m.downloadStatus = fmt.Sprintf("✗ %v", msg.err)
+			m.downloadStatusID++
+			return m, clearStatusAfter(m.downloadStatusID)
+		}
+		// Reload para ver la reacción actualizada
+		return m, loadMessagesCmd(m.client, m.teams[m.selectedTeam].ID, m.activeConversationID(), 200)
+
+	case removeReactionMsg:
+		if msg.err != nil {
+			m.downloadStatus = fmt.Sprintf("✗ %v", msg.err)
+			m.downloadStatusID++
+			return m, clearStatusAfter(m.downloadStatusID)
+		}
+		return m, loadMessagesCmd(m.client, m.teams[m.selectedTeam].ID, m.activeConversationID(), 200)
+
+	case reactionsLoadedMsg:
+		m.loading = false
+		if msg.err != nil {
+			m.downloadStatus = fmt.Sprintf("✗ %v", msg.err)
+			m.downloadStatusID++
+			return m, clearStatusAfter(m.downloadStatusID)
+		}
+		// Apply UserReacted to the specific message
+		for i, message := range m.messages {
+			if message.ID == msg.messageID {
+				for j, r := range message.Reactions {
+					if msg.reactions[r.Key] {
+						m.messages[i].Reactions[j].UserReacted = true
+					}
+				}
+				break
+			}
+		}
+		m.showReactionPicker = true
+		m.reactionCursor = 0
+		return m, nil
+
 	case filesErrMsg:
 		m.viewport.SetContent(fmt.Sprintf("Error loading files: %v", msg.err))
 		m.loading = false
@@ -1329,11 +1413,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.viewport.GotoBottom()
 			
 			// Also update thread view if active
-			if m.showThread {
-				replies := repliesFor(m.messages, m.threadParentID)
-				threadContent := formatThread(m.threadParentMsg, replies, m.threadViewport.Width, m.userName)
-				m.threadViewport.SetContent(threadContent)
-			}
+				if m.showThread {
+					replies := repliesFor(m.messages, m.threadParentID)
+					threadContent := formatThread(m.threadParentMsg, replies, m.threadViewport.Width, m.userName, m.threadCursor, true)
+					m.threadViewport.SetContent(threadContent)
+				}
 		} else if m.viewMode == ModeFiles {
 			m.files = teams.AggregateChatAttachments(m.messages)
 			m.selectedFile = 0
@@ -1796,11 +1880,52 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch msg.String() {
 			case "esc", "q", "?", "enter", "space":
 				m.showHelp = false
-			}
-			return m, nil
 		}
+		return m, nil
+	}
 
-		// Thread view — intercepts keys
+	if m.showReactionPicker {
+		switch msg.String() {
+		case "esc":
+			m.showReactionPicker = false
+			return m, nil
+		case "up", "k":
+			if m.reactionCursor > 0 {
+				m.reactionCursor--
+			}
+		case "down", "j":
+			if m.reactionCursor < len(m.reactionOptions)-1 {
+				m.reactionCursor++
+			}
+		case "enter":
+			m.showReactionPicker = false
+			key := m.reactionOptions[m.reactionCursor]
+			// Buscar en todos los mensajes, no solo roots
+			var targetMsg *graph.Message
+			for i := range m.messages {
+				if m.messages[i].ID == m.reactionTargetID {
+					targetMsg = &m.messages[i]
+					break
+				}
+			}
+			if targetMsg != nil {
+				alreadyReacted := false
+				for _, r := range targetMsg.Reactions {
+					if r.Key == key && r.UserReacted {
+						alreadyReacted = true
+						break
+					}
+				}
+				if alreadyReacted {
+					return m, removeReactionCmd(m.client, m.activeConversationID(), m.reactionTargetID, key)
+				}
+				return m, addReactionCmd(m.client, m.activeConversationID(), m.reactionTargetID, key)
+			}
+		}
+		return m, nil
+	}
+
+	// Thread view — intercepts keys
 		if m.showThread {
 			// If typing, pass FIRST to input
 			if m.isReplyTyping {
@@ -1810,12 +1935,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.input.Blur()
 						m.input.Reset()
 						// Restaurar threadViewport
-						if m.ready {
-							rightInnerHeight := m.height - 6 - 2
-							m.threadViewport.Height = rightInnerHeight - 12
-						}
-						return m, nil
-					case "enter":
+							if m.ready {
+								rightInnerHeight := m.height - 6 - 2
+								m.threadViewport.Height = rightInnerHeight - 12
+							}
+							return m, nil
+				case "enter":
 						v := strings.TrimSpace(m.input.Value())
 						if v != "" {
 							m.input.Reset()
@@ -1857,10 +1982,38 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						}
 						return m, nil
 			case "up", "k":
-				m.threadViewport.LineUp(1)
+				if m.threadCursor > 0 {
+					m.threadCursor--
+					replies := repliesFor(m.messages, m.threadParentID)
+					content := formatThread(m.threadParentMsg, replies, m.threadViewport.Width, m.userName, m.threadCursor, true)
+					m.threadViewport.SetContent(content)
+				} else {
+					m.threadViewport.LineUp(1)
+				}
 				return m, nil
 			case "down", "j":
-				m.threadViewport.LineDown(1)
+				replies := repliesFor(m.messages, m.threadParentID)
+				if m.threadCursor < len(replies) {
+					m.threadCursor++
+					content := formatThread(m.threadParentMsg, replies, m.threadViewport.Width, m.userName, m.threadCursor, true)
+					m.threadViewport.SetContent(content)
+				} else {
+					m.threadViewport.LineDown(1)
+				}
+				return m, nil
+			case "e":
+				replies := repliesFor(m.messages, m.threadParentID)
+				var targetID string
+				if m.threadCursor == 0 {
+					targetID = m.threadParentID
+				} else if m.threadCursor-1 < len(replies) {
+					targetID = replies[m.threadCursor-1].ID
+				}
+				if targetID != "" {
+					m.reactionTargetID = targetID
+					m.loading = true
+					return m, getReactionsCmd(m.client, m.activeConversationID(), targetID, m.selfID)
+				}
 				return m, nil
 			}
 			return m, nil
@@ -1874,6 +2027,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.messageCursor = 0
 				content := formatMessagesWithCursor(m.messages, m.viewport.Width, m.messageCursor, m.cursorMode)
 				m.viewport.SetContent(content)
+				return m, nil
+			case "e":
+				rootMsgs := rootMessages(m.messages)
+				if m.messageCursor < len(rootMsgs) {
+					m.reactionTargetID = rootMsgs[m.messageCursor].ID
+					m.loading = true
+					return m, getReactionsCmd(m.client, m.activeConversationID(), m.reactionTargetID, m.selfID)
+				}
 				return m, nil
 			case "down", "k":
 				if m.messageCursor > 0 {
@@ -1897,9 +2058,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.threadParentID = selected.ID
 					m.threadParentMsg = selected
 					m.showThread = true
+					m.threadCursor = 0
 					// Render thread content
 					replies := repliesFor(m.messages, selected.ID)
-					content := formatThread(selected, replies, m.threadViewport.Width, m.userName)
+					content := formatThread(selected, replies, m.threadViewport.Width, m.userName, m.threadCursor, true)
 					m.threadViewport.SetContent(content)
 					m.threadViewport.GotoTop()
 				}

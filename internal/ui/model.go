@@ -139,7 +139,14 @@ type Model struct {
 	threadParentID   string
 	threadParentMsg  graph.Message
 	threadViewport   viewport.Model
+	threadCursor     int // 0 = parent, 1..N = replies
 	isReplyTyping    bool
+
+	// Reactions
+	showReactionPicker bool
+	reactionCursor     int
+	reactionTargetID   string
+	reactionOptions    []string // keys
 
 	// Input for sending messages
 	input    textarea.Model
@@ -314,6 +321,7 @@ func New(client *graph.Client, userName string) Model {
 		channelToTeam: make(map[string]string),
 		userName:     userName,
 		presenceOptions: []string{"Available", "Busy", "DoNotDisturb", "BeRightBack", "Away", "Reset (Automatic)"},
+		reactionOptions: []string{"like", "heart", "laugh", "surprised", "sad", "angry"},
 	}
 }
 

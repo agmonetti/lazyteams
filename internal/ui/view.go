@@ -416,6 +416,25 @@ func (m Model) View() string {
 
 		popup := popupStyle.Render(popupContent)
 		rightPanel = lipgloss.Place(lipgloss.Width(rightPanel), lipgloss.Height(rightPanel), lipgloss.Center, lipgloss.Center, popup)
+	} else if m.showReactionPicker {
+		reactionEmojis := map[string]string{
+			"like": "👍", "heart": "❤️", "laugh": "😂",
+			"surprised": "😮", "sad": "😢", "angry": "😡",
+		}
+		var content string
+		content += titleStyle.Render("Add reaction") + "\n\n"
+		for i, key := range m.reactionOptions {
+			cursor := "  "
+			style := normalItemStyle
+			if i == m.reactionCursor {
+				cursor = "▶ "
+				style = selectedItemStyle
+			}
+			content += fmt.Sprintf("%s%s %s\n", cursor, reactionEmojis[key], style.Render(key))
+		}
+		content += "\n" + helpStyle.Render("[↑/↓] Navigate  [Enter] React  [Esc] Cancel")
+		popup := popupStyle.Render(content)
+		rightPanel = lipgloss.Place(lipgloss.Width(rightPanel), lipgloss.Height(rightPanel), lipgloss.Center, lipgloss.Center, popup)
 	} else if m.showCreateTeamPopup {
 		var content string
 		content += titleStyle.Render("New Team") + "\n\n"
@@ -790,12 +809,14 @@ func (m Model) footerText() string {
 		}
 	}
 	switch {
+	case m.showReactionPicker:
+		return dim.Render(" [↑/↓] Navigate  [Enter] React  [Esc] Cancel")
 	case m.showThread && m.isReplyTyping:
 		return dim.Render(" [Enter] Send reply   [Esc] Cancel")
 	case m.showThread:
 		return dim.Render(" [i/r] Reply  [↑/↓] Scroll  [Esc] Close thread")
 	case m.cursorMode:
-		return dim.Render(" [↑/↓] Navigate messages  [Enter] Open thread  [Esc] Exit cursor mode")
+		return dim.Render(" [↑/↓] Navigate  [Enter] Open thread  [e] React  [Esc] Exit cursor mode")
 	case m.showCreateChannelPopup && m.createChannelStep == 0:
 		return dim.Render(" [Enter] Next   [Esc] Cancel")
 	case m.showCreateChannelPopup && m.createChannelStep == 1:
@@ -842,6 +863,20 @@ func (m Model) footerText() string {
 	}
 }
 
+func reactionEmoji(key string) string {
+	switch key {
+	case "like":           return "👍"
+	case "heart":          return "❤️"
+	case "laugh":          return "😂"
+	case "surprised":      return "😮"
+	case "sad":            return "😢"
+	case "angry":          return "😡"
+	case "yes-tone2":      return "👍🏽"
+	case "heartlightblue": return "💙"
+	default:               return "●"
+	}
+}
+
 func renderThreadView(m *Model, width, height int) string {
 	var content string
 
@@ -862,17 +897,19 @@ func renderThreadView(m *Model, width, height int) string {
 	return content
 }
 
-func formatThread(parent graph.Message, replies []graph.Message, width int, selfName string) string {
+func formatThread(parent graph.Message, replies []graph.Message, width int, selfName string, cursor int, cursorActive bool) string {
 	var content string
-
 	actualW := width - 4
 	if actualW < 10 {
 		actualW = 10
 	}
 
 	// Parent message
+	parentCursor := "  "
+	if cursorActive && cursor == 0 {
+		parentCursor = "▶ "
+	}
 	timeStr := parent.CreatedAt.Local().Format("02/01 15:04")
-	
 	var parentAttStr string
 	for _, att := range parent.Attachments {
 		icon := "[Link]"
@@ -882,24 +919,36 @@ func formatThread(parent graph.Message, replies []graph.Message, width int, self
 		linkStr := makeClickableLink(att.Name, att.URL)
 		parentAttStr += fmt.Sprintf("  %s %s\n", systemEventStyle.Render(icon), linkStr)
 	}
-
 	parentBody := renderMarkdown(parent.Body, actualW)
 	if parentBody != "" && parentAttStr != "" {
 		parentBody += "\n\n"
 	}
 	parentBody += parentAttStr
-
-	content += fmt.Sprintf("%s %s:\n%s\n\n",
+	content += fmt.Sprintf("%s%s %s:\n%s\n",
+		parentCursor,
 		metaStyle.Render(fmt.Sprintf("[%s]", timeStr)),
 		selectedItemStyle.Render(parent.FromName),
 		parentBody,
 	)
+	// Reacciones del padre
+	if len(parent.Reactions) > 0 {
+		var reactionStr string
+		for _, r := range parent.Reactions {
+			emoji := reactionEmoji(r.Key)
+			if r.Count > 1 {
+				reactionStr += fmt.Sprintf("%s %d  ", emoji, r.Count)
+			} else {
+				reactionStr += fmt.Sprintf("%s  ", emoji)
+			}
+		}
+		content += "  " + metaStyle.Render(strings.TrimSpace(reactionStr)) + "\n"
+	}
+	content += "\n"
 
 	if len(replies) == 0 {
 		content += helpStyle.Render("No replies yet.") + "\n"
 		return content
 	}
-
 	content += metaStyle.Render(fmt.Sprintf("─── %d repl", len(replies)))
 	if len(replies) == 1 {
 		content += metaStyle.Render("y") + "\n\n"
@@ -908,13 +957,16 @@ func formatThread(parent graph.Message, replies []graph.Message, width int, self
 	}
 
 	// Replies
-	for _, r := range replies {
+	for i, r := range replies {
+		replyCursor := "  "
+		if cursorActive && cursor == i+1 {
+			replyCursor = "▶ "
+		}
 		timeStr := r.CreatedAt.Local().Format("02/01 15:04")
 		name := r.FromName
 		if name == "" || name == "User" {
 			name = selfName
 		}
-		
 		var rAttStr string
 		for _, att := range r.Attachments {
 			icon := "[Link]"
@@ -924,18 +976,31 @@ func formatThread(parent graph.Message, replies []graph.Message, width int, self
 			linkStr := makeClickableLink(att.Name, att.URL)
 			rAttStr += fmt.Sprintf("  %s %s\n", systemEventStyle.Render(icon), linkStr)
 		}
-
 		rBody := renderMarkdown(r.Body, actualW)
 		if rBody != "" && rAttStr != "" {
 			rBody += "\n\n"
 		}
 		rBody += rAttStr
-
-		content += fmt.Sprintf("%s %s:\n%s\n\n",
+		content += fmt.Sprintf("%s%s %s:\n%s\n",
+			replyCursor,
 			metaStyle.Render(fmt.Sprintf("[%s]", timeStr)),
 			selectedItemStyle.Render(name),
 			rBody,
 		)
+		// Reacciones del reply
+		if len(r.Reactions) > 0 {
+			var reactionStr string
+			for _, rx := range r.Reactions {
+				emoji := reactionEmoji(rx.Key)
+				if rx.Count > 1 {
+					reactionStr += fmt.Sprintf("%s %d  ", emoji, rx.Count)
+				} else {
+					reactionStr += fmt.Sprintf("%s  ", emoji)
+				}
+			}
+			content += "  " + metaStyle.Render(strings.TrimSpace(reactionStr)) + "\n"
+		}
+		content += "\n"
 	}
 	return content
 }
