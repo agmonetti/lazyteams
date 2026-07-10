@@ -148,6 +148,16 @@ type Model struct {
 	reactionTargetID   string
 	reactionOptions    []string // keys
 
+	// Edit message
+	showEditPopup    bool
+	editInput        textinput.Model
+	editMessageID    string
+	editOriginalBody string
+
+	// Delete message
+	showDeleteMsgPopup bool
+	deleteMsgID        string
+
 	// Input for sending messages
 	input    textarea.Model
 	isTyping bool
@@ -300,6 +310,10 @@ func New(client *graph.Client, userName string) Model {
 	searchInput.CharLimit = 64
 	searchInput.Width = 40
 
+	editInput := textinput.New()
+	editInput.CharLimit = 4000
+	editInput.Width = 60
+
 	return Model{
 		client:       client,
 		focusLeft:    true,
@@ -307,6 +321,7 @@ func New(client *graph.Client, userName string) Model {
 		loading:      true,
 		input:        ta,
 		searchInput:  searchInput,
+		editInput:    editInput,
 		newDMQuery:   newDMInput,
 		createTeamInput: createTeamInput,
 		createChannelInput: createChannelInput,

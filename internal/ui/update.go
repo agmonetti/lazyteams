@@ -573,6 +573,23 @@ type threadReplySendErrMsg struct{ err error }
 type addReactionMsg struct{ err error }
 type removeReactionMsg struct{ err error }
 
+type editMessageMsg struct{ err error }
+type deleteMessageMsg struct{ err error }
+
+func editMessageCmd(client *graph.Client, channelID, messageID, content string) tea.Cmd {
+	return func() tea.Msg {
+		err := client.EditMessage(channelID, messageID, content)
+		return editMessageMsg{err}
+	}
+}
+
+func deleteMessageCmd(client *graph.Client, channelID, messageID string) tea.Cmd {
+	return func() tea.Msg {
+		err := client.DeleteMessage(channelID, messageID)
+		return deleteMessageMsg{err}
+	}
+}
+
 type reactionsLoadedMsg struct {
 	messageID string
 	reactions map[string]bool
@@ -663,6 +680,18 @@ func getOptimalWrapWidth(raw string, maxW int) int {
 	return 0
 }
 
+func cleanHTMLForEdit(content string) string {
+	// Quitar tags pero preservar el texto
+	content = strings.ReplaceAll(content, "<p>", "")
+	content = strings.ReplaceAll(content, "</p>", "")
+	content = strings.ReplaceAll(content, "<br>", "\n")
+	content = strings.ReplaceAll(content, "&nbsp;", " ")
+	content = strings.ReplaceAll(content, "&amp;", "&")
+	content = strings.ReplaceAll(content, "&lt;", "<")
+	content = strings.ReplaceAll(content, "&gt;", ">")
+	return strings.TrimSpace(content)
+}
+
 func renderMarkdown(content string, width int) string {
 	if content == "" {
 		return ""
@@ -690,6 +719,19 @@ func rootMessages(msgs []graph.Message) []graph.Message {
 			if m.MessageType == "Text" || m.MessageType == "RichText/Html" {
 				result = append(result, m)
 			}
+		}
+	}
+	return result
+}
+
+func validDMMessages(msgs []graph.Message) []graph.Message {
+	var result []graph.Message
+	for _, m := range msgs {
+		if m.MessageType != "ThreadActivity/MemberJoined" &&
+			m.MessageType != "ThreadActivity/MemberLeft" &&
+			m.MessageType != "ThreadActivity/TopicUpdate" &&
+			m.MessageType != "ThreadActivity/AddMember" {
+			result = append(result, m)
 		}
 	}
 	return result
@@ -742,11 +784,16 @@ func formatMessagesWithCursor(messages []graph.Message, width, cursor int, curso
 			attachmentsStr += fmt.Sprintf("  %s %s\n", systemEventStyle.Render(icon), linkStr)
 		}
 
-		body := renderMarkdown(msg.Body, actualW)
-		if body != "" && attachmentsStr != "" {
-			body += "\n\n"
+		var body string
+		if msg.Deleted {
+			body = systemEventStyle.Render("This message has been deleted.")
+		} else {
+			body = renderMarkdown(msg.Body, actualW)
+			if body != "" && attachmentsStr != "" {
+				body += "\n\n"
+			}
+			body += attachmentsStr
 		}
-		body += attachmentsStr
 
 		content += fmt.Sprintf("%s%s %s:\n%s\n", cursorStr, formattedTime, sender, body)
 
@@ -867,24 +914,19 @@ func formatMessages(messages []graph.Message, width int) string {
 	return content
 }
 
-func formatMessagesDM(messages []graph.Message, width int, selfName string) string {
+func formatMessagesDM(messages []graph.Message, width int, selfName, selfID string, cursor int, cursorMode bool) string {
 	var content string
 	var lastDate string
-	actualW := width - 2
+	actualW := width - 4
 	if actualW < 10 {
 		actualW = 10
 	}
 	todayStr := time.Now().Format("02/01/2006")
 
-	for i := len(messages) - 1; i >= 0; i-- {
-		msg := messages[i]
-		// Only filter types we know are noise
-		if msg.MessageType == "ThreadActivity/MemberJoined" ||
-			msg.MessageType == "ThreadActivity/MemberLeft" ||
-			msg.MessageType == "ThreadActivity/TopicUpdate" ||
-			msg.MessageType == "ThreadActivity/AddMember" {
-			continue
-		}
+	validMsgs := validDMMessages(messages)
+
+	for i := len(validMsgs) - 1; i >= 0; i-- {
+		msg := validMsgs[i]
 		
 		msgDate := msg.CreatedAt.Local().Format("02/01/2006")
 		if lastDate != "" && msgDate != lastDate {
@@ -907,20 +949,30 @@ func formatMessagesDM(messages []graph.Message, width int, selfName string) stri
 		}
 		lastDate = msgDate
 		
+		cursorStr := "  "
+		if cursorMode && i == cursor {
+			cursorStr = "▶ "
+		}
+
 		timeStr := msg.CreatedAt.Local().Format("02/01 15:04")
 		body := strings.TrimSpace(msg.Body)
-		isSelf := msg.FromName == selfName || msg.FromName == "User"
+		isSelf := msg.FromName == selfName || msg.FromName == "User" || 
+			(selfID != "" && strings.HasSuffix(msg.FromUserID, selfID))
+		
 		if isSelf {
-			timeStr := msg.CreatedAt.Local().Format("02/01 15:04")
-
 			tsRaw := metaStyle.Render(timeStr)
 			timestamp := lipgloss.PlaceHorizontal(actualW, lipgloss.Right, tsRaw)
 
-			rawBody := strings.TrimSpace(body)
-			maxW := actualW * 2 / 3
-			
-			optW := getOptimalWrapWidth(rawBody, maxW)
-			wrapped := renderMarkdown(rawBody, optW)
+			var wrapped string
+			if msg.Deleted {
+				wrapped = systemEventStyle.Render("This message has been deleted.")
+			} else {
+				rawBody := strings.TrimSpace(body)
+				maxW := actualW * 2 / 3
+				
+				optW := getOptimalWrapWidth(rawBody, maxW)
+				wrapped = renderMarkdown(rawBody, optW)
+			}
 			
 			// Find actual max width of the rendered output to create a tight bounding box
 			lines := strings.Split(wrapped, "\n")
@@ -935,19 +987,54 @@ func formatMessagesDM(messages []graph.Message, width int, selfName string) stri
 			styledBlock := lipgloss.NewStyle().Width(actualMaxW).Render(wrapped)
 			placedBlock := lipgloss.PlaceHorizontal(actualW, lipgloss.Right, styledBlock)
 
-			content += fmt.Sprintf("%s\n%s\n\n", timestamp, placedBlock)
-		} else {
-			if actualW > 0 {
-				body = renderMarkdown(body, actualW)
+			content += fmt.Sprintf("%s%s\n  %s\n", cursorStr, timestamp, placedBlock)
+			if len(msg.Reactions) > 0 {
+				var reactionStr string
+				for _, rx := range msg.Reactions {
+					emoji := reactionEmoji(rx.Key)
+					if rx.Count > 1 {
+						reactionStr += fmt.Sprintf("%s %d  ", emoji, rx.Count)
+					} else {
+						reactionStr += fmt.Sprintf("%s  ", emoji)
+					}
+				}
+				reactionsBlock := lipgloss.PlaceHorizontal(actualW, lipgloss.Right, metaStyle.Render(strings.TrimSpace(reactionStr)))
+				content += fmt.Sprintf("  %s\n", reactionsBlock)
 			}
+			content += "\n"
+		} else {
 			sender := selectedItemStyle.Render(msg.FromName)
-			formattedTime := metaStyle.Render(fmt.Sprintf("[%s]", timeStr))
-			content += fmt.Sprintf("%s %s:\n%s\n\n", formattedTime, sender, body)
+			tsRaw := metaStyle.Render(timeStr)
+			header := fmt.Sprintf("%s %s:", tsRaw, sender)
+			
+			var wrapped string
+			if msg.Deleted {
+				wrapped = systemEventStyle.Render("This message has been deleted.")
+			} else {
+				rawBody := strings.TrimSpace(body)
+				wrapped = renderMarkdown(rawBody, actualW)
+			}
+			
+			content += fmt.Sprintf("%s%s\n  %s\n", cursorStr, header, strings.ReplaceAll(wrapped, "\n", "\n  "))
+			
+			if len(msg.Reactions) > 0 {
+				var reactionStr string
+				for _, rx := range msg.Reactions {
+					emoji := reactionEmoji(rx.Key)
+					if rx.Count > 1 {
+						reactionStr += fmt.Sprintf("%s %d  ", emoji, rx.Count)
+					} else {
+						reactionStr += fmt.Sprintf("%s  ", emoji)
+					}
+				}
+				content += fmt.Sprintf("  %s\n", metaStyle.Render(strings.TrimSpace(reactionStr)))
+			}
+			content += "\n"
 		}
 	}
-	content = lipgloss.NewStyle().Width(actualW).Render(content)
 	return content
 }
+
 // Update
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
@@ -968,21 +1055,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.viewport.Height = rightInnerHeight - 4 - 1
 				}
 				return m, nil
-				case "enter": // Send message
-					v := m.input.Value()
-					if v != "" && m.activeConversationID() != "" {
-						m.input.Reset()
-						m.isTyping = false
-						m.input.Blur()
-						// Restaurar altura del viewport
-						if m.ready {
-							rightInnerHeight := m.height - 6 - 2
-							m.viewport.Height = rightInnerHeight - 4 - 1
-						}
-						m.loading = true
-						// Send and append the command
-						return m, sendMessageCmd(m.client, m.activeConversationID(), v)
+			case "enter": // Send message
+				v := m.input.Value()
+				if v != "" && m.activeConversationID() != "" {
+					m.input.Reset()
+					m.isTyping = false
+					m.input.Blur()
+					// Restaurar altura del viewport
+					if m.ready {
+						rightInnerHeight := m.height - 6 - 2
+						m.viewport.Height = rightInnerHeight - 4 - 1
 					}
+					m.loading = true
+					// Send and append the command
+					return m, sendMessageCmd(m.client, m.activeConversationID(), v)
+				}
 			}
 		}
 
@@ -1054,7 +1141,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					msgsToRender = m.filterMessages(m.messages, m.searchQuery)
 				}
 				if m.workspace == WorkspaceDMs {
-					content = formatMessagesDM(msgsToRender, rightInnerWidth, m.userName)
+					content = formatMessagesDM(msgsToRender, rightInnerWidth, m.userName, m.selfID, m.messageCursor, m.cursorMode)
 				} else {
 					content = formatMessagesWithCursor(msgsToRender, rightInnerWidth, m.messageCursor, m.cursorMode)
 				}
@@ -1163,7 +1250,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					msgsToRender = m.filterMessages(m.messages, m.searchQuery)
 				}
 				if m.workspace == WorkspaceDMs {
-					partial = formatMessagesDM(msgsToRender, m.viewport.Width, m.userName)
+					partial = formatMessagesDM(msgsToRender, m.viewport.Width, m.userName, m.selfID, m.messageCursor, m.cursorMode)
 				} else {
 					partial = formatMessagesWithCursor(msgsToRender, m.viewport.Width, m.messageCursor, m.cursorMode)
 				}
@@ -1202,6 +1289,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.isReplyTyping = false
 		m.threadViewport.SetContent(fmt.Sprintf("Error sending reply: %v", msg.err))
 		return m, nil
+
+	case editMessageMsg:
+		m.showEditPopup = false
+		m.editInput.Reset()
+		if msg.err != nil {
+			m.downloadStatus = fmt.Sprintf("✗ %v", msg.err)
+			m.downloadStatusID++
+			return m, clearStatusAfter(m.downloadStatusID)
+		}
+		return m, loadMessagesCmd(m.client, "", m.activeConversationID(), 200)
+
+	case deleteMessageMsg:
+		m.showDeleteMsgPopup = false
+		if msg.err != nil {
+			m.downloadStatus = fmt.Sprintf("✗ %v", msg.err)
+			m.downloadStatusID++
+			return m, clearStatusAfter(m.downloadStatusID)
+		}
+		return m, loadMessagesCmd(m.client, "", m.activeConversationID(), 200)
 
 	case addReactionMsg:
 		if msg.err != nil {
@@ -1405,7 +1511,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 			if m.workspace == WorkspaceDMs {
-				content = formatMessagesDM(msgsToRender, m.viewport.Width, m.userName)
+				content = formatMessagesDM(msgsToRender, m.viewport.Width, m.userName, m.selfID, m.messageCursor, m.cursorMode)
 			} else {
 				content = formatMessagesWithCursor(msgsToRender, m.viewport.Width, m.messageCursor, m.cursorMode)
 			}
@@ -1884,6 +1990,34 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	if m.showDeleteMsgPopup {
+		switch msg.String() {
+		case "y", "enter":
+			return m, deleteMessageCmd(m.client, m.activeConversationID(), m.deleteMsgID)
+		case "n", "esc":
+			m.showDeleteMsgPopup = false
+		}
+		return m, nil
+	}
+
+	if m.showEditPopup {
+		switch msg.String() {
+		case "esc":
+			m.showEditPopup = false
+			m.editInput.Reset()
+		case "enter":
+			content := strings.TrimSpace(m.editInput.Value())
+			if content != "" {
+				return m, editMessageCmd(m.client, m.activeConversationID(), m.editMessageID, content)
+			}
+		default:
+			var cmd tea.Cmd
+			m.editInput, cmd = m.editInput.Update(msg)
+			return m, cmd
+		}
+		return m, nil
+	}
+
 	if m.showReactionPicker {
 		switch msg.String() {
 		case "esc":
@@ -2015,6 +2149,35 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, getReactionsCmd(m.client, m.activeConversationID(), targetID, m.selfID)
 				}
 				return m, nil
+			case "E":
+				replies := repliesFor(m.messages, m.threadParentID)
+				var targetMsg *graph.Message
+				if m.threadCursor == 0 {
+					targetMsg = &m.threadParentMsg
+				} else if m.threadCursor-1 < len(replies) {
+					targetMsg = &replies[m.threadCursor-1]
+				}
+				if targetMsg != nil && (targetMsg.FromName == "User" || targetMsg.FromName == m.userName || (m.selfID != "" && strings.HasSuffix(targetMsg.FromUserID, m.selfID))) {
+					m.editMessageID = targetMsg.ID
+					m.editOriginalBody = targetMsg.RawBody
+					m.editInput.SetValue(cleanHTMLForEdit(targetMsg.RawBody))
+					m.editInput.Focus()
+					m.showEditPopup = true
+				}
+				return m, nil
+			case "backspace", "delete":
+				replies := repliesFor(m.messages, m.threadParentID)
+				var targetMsg *graph.Message
+				if m.threadCursor == 0 {
+					targetMsg = &m.threadParentMsg
+				} else if m.threadCursor-1 < len(replies) {
+					targetMsg = &replies[m.threadCursor-1]
+				}
+				if targetMsg != nil && (targetMsg.FromName == "User" || targetMsg.FromName == m.userName || (m.selfID != "" && strings.HasSuffix(targetMsg.FromUserID, m.selfID))) {
+					m.deleteMsgID = targetMsg.ID
+					m.showDeleteMsgPopup = true
+				}
+				return m, nil
 			}
 			return m, nil
 		}
@@ -2034,6 +2197,29 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.reactionTargetID = rootMsgs[m.messageCursor].ID
 					m.loading = true
 					return m, getReactionsCmd(m.client, m.activeConversationID(), m.reactionTargetID, m.selfID)
+				}
+				return m, nil
+			case "E":
+				rootMsgs := rootMessages(m.messages)
+				if m.messageCursor < len(rootMsgs) {
+					selected := rootMsgs[m.messageCursor]
+					if selected.FromName == "User" || selected.FromName == m.userName || (m.selfID != "" && strings.HasSuffix(selected.FromUserID, m.selfID)) {
+						m.editMessageID = selected.ID
+						m.editOriginalBody = selected.RawBody
+						m.editInput.SetValue(cleanHTMLForEdit(selected.RawBody))
+						m.editInput.Focus()
+						m.showEditPopup = true
+					}
+				}
+				return m, nil
+			case "backspace", "delete":
+				rootMsgs := rootMessages(m.messages)
+				if m.messageCursor < len(rootMsgs) {
+					selected := rootMsgs[m.messageCursor]
+					if selected.FromName == "User" || selected.FromName == m.userName || (m.selfID != "" && strings.HasSuffix(selected.FromUserID, m.selfID)) {
+						m.deleteMsgID = selected.ID
+						m.showDeleteMsgPopup = true
+					}
 				}
 				return m, nil
 			case "down", "k":
@@ -2069,6 +2255,64 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
+		if m.cursorMode && m.workspace == WorkspaceDMs && m.viewMode == ModeChat {
+			switch msg.String() {
+			case "esc":
+				m.cursorMode = false
+				m.messageCursor = 0
+				content := formatMessagesDM(m.messages, m.viewport.Width, m.userName, m.selfID, m.messageCursor, m.cursorMode)
+				m.viewport.SetContent(content)
+				return m, nil
+			case "up", "k":
+				validMsgs := validDMMessages(m.messages)
+				if m.messageCursor < len(validMsgs)-1 {
+					m.messageCursor++
+				}
+				content := formatMessagesDM(m.messages, m.viewport.Width, m.userName, m.selfID, m.messageCursor, m.cursorMode)
+				m.viewport.SetContent(content)
+				return m, nil
+			case "down", "j":
+				if m.messageCursor > 0 {
+					m.messageCursor--
+				}
+				content := formatMessagesDM(m.messages, m.viewport.Width, m.userName, m.selfID, m.messageCursor, m.cursorMode)
+				m.viewport.SetContent(content)
+				return m, nil
+			case "e":
+				validMsgs := validDMMessages(m.messages)
+				if m.messageCursor < len(validMsgs) {
+					target := validMsgs[m.messageCursor]
+					m.reactionTargetID = target.ID
+					m.loading = true
+					return m, getReactionsCmd(m.client, m.activeConversationID(), target.ID, m.selfID)
+				}
+				return m, nil
+			case "E":
+				validMsgs := validDMMessages(m.messages)
+				if m.messageCursor < len(validMsgs) {
+					selected := validMsgs[m.messageCursor]
+					if selected.FromName == "User" || selected.FromName == m.userName || (m.selfID != "" && strings.HasSuffix(selected.FromUserID, m.selfID)) {
+						m.editMessageID = selected.ID
+						m.editOriginalBody = selected.RawBody
+						m.editInput.SetValue(cleanHTMLForEdit(selected.RawBody))
+						m.editInput.Focus()
+						m.showEditPopup = true
+					}
+				}
+				return m, nil
+			case "backspace", "delete":
+				validMsgs := validDMMessages(m.messages)
+				if m.messageCursor < len(validMsgs) {
+					selected := validMsgs[m.messageCursor]
+					if selected.FromName == "User" || selected.FromName == m.userName || (m.selfID != "" && strings.HasSuffix(selected.FromUserID, m.selfID)) {
+						m.deleteMsgID = selected.ID
+						m.showDeleteMsgPopup = true
+					}
+				}
+				return m, nil
+			}
+		}
+
 		// Chat search — intercepts keys
 		if m.isSearching {
 			switch msg.String() {
@@ -2080,7 +2324,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Re-render chat
 				var content string
 				if m.workspace == WorkspaceDMs {
-					content = formatMessagesDM(m.messages, m.viewport.Width, m.userName)
+					content = formatMessagesDM(m.messages, m.viewport.Width, m.userName, m.selfID, m.messageCursor, m.cursorMode)
 				} else {
 					content = formatMessagesWithCursor(m.messages, m.viewport.Width, m.messageCursor, m.cursorMode)
 				}
@@ -2106,7 +2350,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					filtered = m.filterMessages(m.messages, m.searchQuery)
 				}
 				if m.workspace == WorkspaceDMs {
-					content = formatMessagesDM(filtered, m.viewport.Width, m.userName)
+					content = formatMessagesDM(filtered, m.viewport.Width, m.userName, m.selfID, m.messageCursor, m.cursorMode)
 				} else {
 					content = formatMessagesWithCursor(filtered, m.viewport.Width, m.messageCursor, m.cursorMode)
 				}
@@ -2675,7 +2919,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.searchQuery = ""
 				var content string
 				if m.workspace == WorkspaceDMs {
-					content = formatMessagesDM(m.messages, m.viewport.Width, m.userName)
+					content = formatMessagesDM(m.messages, m.viewport.Width, m.userName, m.selfID, m.messageCursor, m.cursorMode)
 				} else {
 					content = formatMessagesWithCursor(m.messages, m.viewport.Width, m.messageCursor, m.cursorMode)
 				}
@@ -2954,7 +3198,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 								msgsToRender = m.filterMessages(m.messages, m.searchQuery)
 							}
 							if m.workspace == WorkspaceDMs {
-								fresh = formatMessagesDM(msgsToRender, m.viewport.Width, m.userName)
+								fresh = formatMessagesDM(msgsToRender, m.viewport.Width, m.userName, m.selfID, m.messageCursor, m.cursorMode)
 							} else {
 								fresh = formatMessagesWithCursor(msgsToRender, m.viewport.Width, m.messageCursor, m.cursorMode)
 							}
@@ -3052,10 +3296,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case "c", "C":
-			if m.workspace == WorkspaceTeams && m.viewMode == ModeChat && !m.isTyping && !m.focusLeft {
+			if (m.workspace == WorkspaceTeams || m.workspace == WorkspaceDMs) && m.viewMode == ModeChat && !m.isTyping && !m.focusLeft {
 				m.cursorMode = !m.cursorMode
 				m.messageCursor = 0
-				content := formatMessagesWithCursor(m.messages, m.viewport.Width, m.messageCursor, m.cursorMode)
+				var content string
+				if m.workspace == WorkspaceDMs {
+					content = formatMessagesDM(m.messages, m.viewport.Width, m.userName, m.selfID, m.messageCursor, m.cursorMode)
+				} else {
+					content = formatMessagesWithCursor(m.messages, m.viewport.Width, m.messageCursor, m.cursorMode)
+				}
 				m.viewport.SetContent(content)
 			} else if m.workspace == WorkspaceTeams && m.focusList == 1 && m.teamThreadID != "" {
 				m.showCreateChannelPopup = true

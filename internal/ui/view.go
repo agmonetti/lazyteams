@@ -416,6 +416,20 @@ func (m Model) View() string {
 
 		popup := popupStyle.Render(popupContent)
 		rightPanel = lipgloss.Place(lipgloss.Width(rightPanel), lipgloss.Height(rightPanel), lipgloss.Center, lipgloss.Center, popup)
+	} else if m.showDeleteMsgPopup {
+		popup := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("#E74C3C")).
+			Padding(1, 3).
+			Render("Delete this message?\n\n[Enter/y] Confirm   [Esc/n] Cancel")
+		rightPanel = lipgloss.Place(lipgloss.Width(rightPanel), lipgloss.Height(rightPanel), lipgloss.Center, lipgloss.Center, popup)
+	} else if m.showEditPopup {
+		var content string
+		content += titleStyle.Render("Edit Message") + "\n\n"
+		content += m.editInput.View() + "\n\n"
+		content += helpStyle.Render("[Enter] Save   [Esc] Cancel")
+		popup := popupStyle.Render(content)
+		rightPanel = lipgloss.Place(lipgloss.Width(rightPanel), lipgloss.Height(rightPanel), lipgloss.Center, lipgloss.Center, popup)
 	} else if m.showReactionPicker {
 		reactionEmojis := map[string]string{
 			"like": "👍", "heart": "❤️", "laugh": "😂",
@@ -814,9 +828,9 @@ func (m Model) footerText() string {
 	case m.showThread && m.isReplyTyping:
 		return dim.Render(" [Enter] Send reply   [Esc] Cancel")
 	case m.showThread:
-		return dim.Render(" [i/r] Reply  [↑/↓] Scroll  [Esc] Close thread")
+		return dim.Render(" [↑/↓] Navigate  [i/r] Reply  [e] React  [E] Edit  [Del] Delete  [Esc] Close")
 	case m.cursorMode:
-		return dim.Render(" [↑/↓] Navigate  [Enter] Open thread  [e] React  [Esc] Exit cursor mode")
+		return dim.Render(" [↑/↓] Navigate  [Enter] Thread  [e] React  [E] Edit  [Del] Delete  [Esc] Exit")
 	case m.showCreateChannelPopup && m.createChannelStep == 0:
 		return dim.Render(" [Enter] Next   [Esc] Cancel")
 	case m.showCreateChannelPopup && m.createChannelStep == 1:
@@ -919,11 +933,16 @@ func formatThread(parent graph.Message, replies []graph.Message, width int, self
 		linkStr := makeClickableLink(att.Name, att.URL)
 		parentAttStr += fmt.Sprintf("  %s %s\n", systemEventStyle.Render(icon), linkStr)
 	}
-	parentBody := renderMarkdown(parent.Body, actualW)
-	if parentBody != "" && parentAttStr != "" {
-		parentBody += "\n\n"
+	var parentBody string
+	if parent.Deleted {
+		parentBody = systemEventStyle.Render("This message has been deleted.")
+	} else {
+		parentBody = renderMarkdown(parent.Body, actualW)
+		if parentBody != "" && parentAttStr != "" {
+			parentBody += "\n\n"
+		}
+		parentBody += parentAttStr
 	}
-	parentBody += parentAttStr
 	content += fmt.Sprintf("%s%s %s:\n%s\n",
 		parentCursor,
 		metaStyle.Render(fmt.Sprintf("[%s]", timeStr)),
@@ -976,11 +995,16 @@ func formatThread(parent graph.Message, replies []graph.Message, width int, self
 			linkStr := makeClickableLink(att.Name, att.URL)
 			rAttStr += fmt.Sprintf("  %s %s\n", systemEventStyle.Render(icon), linkStr)
 		}
-		rBody := renderMarkdown(r.Body, actualW)
-		if rBody != "" && rAttStr != "" {
-			rBody += "\n\n"
+		var rBody string
+		if r.Deleted {
+			rBody = systemEventStyle.Render("This message has been deleted.")
+		} else {
+			rBody = renderMarkdown(r.Body, actualW)
+			if rBody != "" && rAttStr != "" {
+				rBody += "\n\n"
+			}
+			rBody += rAttStr
 		}
-		rBody += rAttStr
 		content += fmt.Sprintf("%s%s %s:\n%s\n",
 			replyCursor,
 			metaStyle.Render(fmt.Sprintf("[%s]", timeStr)),
