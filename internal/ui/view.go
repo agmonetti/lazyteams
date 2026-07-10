@@ -347,10 +347,10 @@ func (m Model) View() string {
 		rightContent = renderAssignDetail(m)
 	}
 
-	// Apply styles to the right panel — no fixed Height, content defines the height
-	rStyle := paneStyle.Width(rightOuterWidth)
+	// Apply styles to the right panel — fixed Height to match left panel
+	rStyle := paneStyle.Width(rightOuterWidth).Height(panelOuterHeight - 2)
 	if !m.focusLeft {
-		rStyle = focusedPaneStyle.Width(rightOuterWidth)
+		rStyle = focusedPaneStyle.Width(rightOuterWidth).Height(panelOuterHeight - 2)
 	}
 	rightPanel := rStyle.Render(rightContent)
 
@@ -856,7 +856,7 @@ func renderThreadView(m *Model, width, height int) string {
 		// Just render the input, styling is usually handled when focused
 		content += "\n" + m.input.View()
 	} else {
-		content += "\n" + helpStyle.Render("[i/r] Reply  [↑/↓] Scroll  [Esc] Close thread")
+		content += "\n" + helpStyle.Render("Press 'i/r' to type a reply...")
 	}
 
 	return content
@@ -910,7 +910,10 @@ func formatThread(parent graph.Message, replies []graph.Message, width int, self
 	// Replies
 	for _, r := range replies {
 		timeStr := r.CreatedAt.Local().Format("02/01 15:04")
-		isSelf := r.FromName == selfName && r.FromName != "User" && r.FromName != ""
+		name := r.FromName
+		if name == "" || name == "User" {
+			name = selfName
+		}
 		
 		var rAttStr string
 		for _, att := range r.Attachments {
@@ -928,34 +931,11 @@ func formatThread(parent graph.Message, replies []graph.Message, width int, self
 		}
 		rBody += rAttStr
 
-		if isSelf {
-			ts := metaStyle.Render(timeStr)
-			pad := width - lipgloss.Width(ts) - 4
-			if pad < 0 {
-				pad = 0
-			}
-			content += strings.Repeat(" ", pad) + ts + "\n"
-			
-			wrapped := lipgloss.NewStyle().Width(width * 2 / 3).Render(rBody)
-			for _, line := range strings.Split(wrapped, "\n") {
-				line = strings.TrimSpace(line)
-				if line == "" {
-					continue
-				}
-				p := width - lipgloss.Width(line) - 4
-				if p < 0 {
-					p = 0
-				}
-				content += strings.Repeat(" ", p) + line + "\n"
-			}
-		} else {
-			content += fmt.Sprintf("%s %s:\n%s\n",
-				metaStyle.Render(fmt.Sprintf("[%s]", timeStr)),
-				selectedItemStyle.Render(r.FromName),
-				rBody,
-			)
-		}
-		content += "\n"
+		content += fmt.Sprintf("%s %s:\n%s\n\n",
+			metaStyle.Render(fmt.Sprintf("[%s]", timeStr)),
+			selectedItemStyle.Render(name),
+			rBody,
+		)
 	}
 	return content
 }
