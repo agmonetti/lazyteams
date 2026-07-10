@@ -25,11 +25,11 @@ type Reaction struct {
 
 type Message struct {
 	ID            string
-	RootMessageID string // si == ID, es mensaje raíz; si != ID, es reply
+	RootMessageID string // if == ID, it is a root message; if != ID, it is a reply
 	Body          string
-	RawBody       string // contenido original sin procesar, para edición
+	RawBody       string // original unprocessed content, for editing
 	FromName      string
-	FromUserID    string // "8:orgid:GUID" para comparar autoría
+	FromUserID    string // "8:orgid:GUID" to compare authorship
 	CreatedAt     time.Time
 	MessageType   string
 	Deleted       bool

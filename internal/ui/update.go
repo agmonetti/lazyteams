@@ -681,7 +681,7 @@ func getOptimalWrapWidth(raw string, maxW int) int {
 }
 
 func cleanHTMLForEdit(content string) string {
-	// Quitar tags pero preservar el texto
+	// Strip tags but preserve text
 	content = strings.ReplaceAll(content, "<p>", "")
 	content = strings.ReplaceAll(content, "</p>", "")
 	content = strings.ReplaceAll(content, "<br>", "\n")
@@ -812,7 +812,7 @@ func formatMessagesWithCursor(messages []graph.Message, width, cursor int, curso
 			content += metaStyle.Render(replyStr) + "\n"
 		}
 
-		// Reacciones
+		// Reactions
 		if len(msg.Reactions) > 0 {
 			var reactionStr string
 			for _, r := range msg.Reactions {
@@ -1049,7 +1049,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.isTyping = false
 				m.input.Blur()
 				m.input.Reset()
-				// Restaurar altura del viewport
+				// Restore viewport height
 				if m.ready {
 					rightInnerHeight := m.height - 6 - 2
 					m.viewport.Height = rightInnerHeight - 4 - 1
@@ -1061,7 +1061,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.input.Reset()
 					m.isTyping = false
 					m.input.Blur()
-					// Restaurar altura del viewport
+					// Restore viewport height
 					if m.ready {
 						rightInnerHeight := m.height - 6 - 2
 						m.viewport.Height = rightInnerHeight - 4 - 1
@@ -1315,7 +1315,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.downloadStatusID++
 			return m, clearStatusAfter(m.downloadStatusID)
 		}
-		// Reload para ver la reacción actualizada
+		// Reload to see the updated reaction
 		return m, loadMessagesCmd(m.client, m.teams[m.selectedTeam].ID, m.activeConversationID(), 200)
 
 	case removeReactionMsg:
@@ -2034,7 +2034,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "enter":
 			m.showReactionPicker = false
 			key := m.reactionOptions[m.reactionCursor]
-			// Buscar en todos los mensajes, no solo roots
+			// Search across all messages, not just roots
 			var targetMsg *graph.Message
 			for i := range m.messages {
 				if m.messages[i].ID == m.reactionTargetID {
@@ -2833,11 +2833,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.addChannelMemberCursor = 0
 					m.addChannelMemberErr = ""
 					m.addChannelMemberResults = nil
-					// Pre-cargar miembros del equipo si no están
+					// Pre-load team members if missing
 					if len(m.teamMembers) == 0 {
 						return m, loadTeamMembersCmd(m.client, m.teams[m.selectedTeam].ID)
 					}
-					// Pre-poblar con todos los no-miembros del canal
+					// Pre-populate with all non-channel members
 					excluded := make(map[string]bool)
 					for _, cm := range m.channelMembers {
 						excluded[cm.ID] = true

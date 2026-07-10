@@ -166,7 +166,7 @@ func (m Model) View() string {
 		} else if len(m.channels) == 0 {
 			leftContent += "  (no channels)\n"
 		} else {
-			// Sin sliding window — el leftVp maneja el scroll
+			// No sliding window — leftVp handles scrolling
 			for i, c := range m.channels {
 				cursor := "  "
 				style := normalItemStyle
@@ -949,7 +949,7 @@ func formatThread(parent graph.Message, replies []graph.Message, width int, self
 		selectedItemStyle.Render(parent.FromName),
 		parentBody,
 	)
-	// Reacciones del padre
+	// Parent reactions
 	if len(parent.Reactions) > 0 {
 		var reactionStr string
 		for _, r := range parent.Reactions {
@@ -1011,7 +1011,7 @@ func formatThread(parent graph.Message, replies []graph.Message, width int, self
 			selectedItemStyle.Render(name),
 			rBody,
 		)
-		// Reacciones del reply
+		// Reply reactions
 		if len(r.Reactions) > 0 {
 			var reactionStr string
 			for _, rx := range r.Reactions {
