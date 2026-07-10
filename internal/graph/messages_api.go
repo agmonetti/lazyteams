@@ -27,9 +27,12 @@ type Message struct {
 	ID            string
 	RootMessageID string // si == ID, es mensaje raíz; si != ID, es reply
 	Body          string
+	RawBody       string // contenido original sin procesar, para edición
 	FromName      string
+	FromUserID    string // "8:orgid:GUID" para comparar autoría
 	CreatedAt     time.Time
 	MessageType   string
+	Deleted       bool
 	Attachments   []Attachment
 	Reactions     []Reaction
 }
@@ -43,6 +46,7 @@ type chatSvcResponse struct {
 		MessageType         string                 `json:"messagetype"`
 		Content             string                 `json:"content"`
 		ImDisplayName       string                 `json:"imdisplayname"`
+		FromUserId          string                 `json:"fromUserId"`
 		OriginalArrivalTime string                 `json:"originalarrivaltime"`
 		Properties          map[string]interface{} `json:"properties"`
 		AnnotationsSummary  *struct {
@@ -196,15 +200,59 @@ func (c *Client) GetMessages(teamID, channelID string, pageSize int) ([]Message,
 				sort.Slice(reactions, func(i, j int) bool {
 					return reactions[i].Count > reactions[j].Count
 				})
+			} else if m.Properties != nil && m.Properties["emotions"] != nil {
+				// Fallback to extract from properties (used in DMs)
+				if emoList, ok := m.Properties["emotions"].([]interface{}); ok {
+					for _, e := range emoList {
+						if emoMap, ok := e.(map[string]interface{}); ok {
+							if key, ok := emoMap["key"].(string); ok {
+								if users, ok := emoMap["users"].([]interface{}); ok {
+									if len(users) > 0 {
+										reactions = append(reactions, Reaction{Key: key, Count: len(users)})
+									}
+								}
+							}
+						}
+					}
+					// Ordenar por count descendente
+					sort.Slice(reactions, func(i, j int) bool {
+						return reactions[i].Count > reactions[j].Count
+					})
+				} else if emoStr, ok := m.Properties["emotions"].(string); ok {
+					var emoList []struct {
+						Key   string        `json:"key"`
+						Users []interface{} `json:"users"`
+					}
+					if json.Unmarshal([]byte(emoStr), &emoList) == nil {
+						for _, e := range emoList {
+							if len(e.Users) > 0 {
+								reactions = append(reactions, Reaction{Key: e.Key, Count: len(e.Users)})
+							}
+						}
+						sort.Slice(reactions, func(i, j int) bool {
+							return reactions[i].Count > reactions[j].Count
+						})
+					}
+				}
+			}
+
+			isDeleted := false
+			if m.Properties != nil {
+				if _, ok := m.Properties["deletetime"]; ok {
+					isDeleted = true
+				}
 			}
 
 			allMsgs = append(allMsgs, Message{
 				ID:            m.ID,
 				RootMessageID: rootID,
 				Body:          cleanHTML(m.Content),
+				RawBody:       m.Content,
 				FromName:      name,
+				FromUserID:    m.FromUserId,
 				CreatedAt:     t,
 				MessageType:   m.MessageType,
+				Deleted:       isDeleted,
 				Attachments:   attachments,
 				Reactions:     reactions,
 			})
@@ -397,4 +445,55 @@ func (c *Client) GetMessageReactions(channelID, messageID, selfID string) (map[s
 		}
 	}
 	return result, nil
+}
+
+func (c *Client) EditMessage(channelID, messageID, content string) error {
+	url := fmt.Sprintf("https://teams.microsoft.com/api/chatsvc/amer/v1/users/ME/conversations/%s/messages/%s", channelID, messageID)
+	payload := map[string]interface{}{
+		"content":     fmt.Sprintf("<p>%s</p>", content),
+		"messagetype": "RichText/Html",
+		"contenttype": "Text",
+	}
+	bodyBytes, _ := json.Marshal(payload)
+	req, err := http.NewRequest(http.MethodPut, url, bytes.NewBuffer(bodyBytes))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.WebToken)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("behavioroverride", "redirectAs404")
+	req.Header.Set("x-ms-migration", "True")
+	req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64; rv:151.0) Gecko/20100101 Firefox/151.0")
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == 200 || resp.StatusCode == 204 {
+		return nil
+	}
+	b, _ := io.ReadAll(resp.Body)
+	return fmt.Errorf("edit message error %d: %s", resp.StatusCode, string(b))
+}
+
+func (c *Client) DeleteMessage(channelID, messageID string) error {
+	url := fmt.Sprintf("https://teams.microsoft.com/api/chatsvc/amer/v1/users/ME/conversations/%s/messages/%s?behavior=softDelete", channelID, messageID)
+	req, err := http.NewRequest(http.MethodDelete, url, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.WebToken)
+	req.Header.Set("behavioroverride", "redirectAs404")
+	req.Header.Set("x-ms-migration", "True")
+	req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64; rv:151.0) Gecko/20100101 Firefox/151.0")
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == 200 || resp.StatusCode == 204 {
+		return nil
+	}
+	b, _ := io.ReadAll(resp.Body)
+	return fmt.Errorf("delete message error %d: %s", resp.StatusCode, string(b))
 }
