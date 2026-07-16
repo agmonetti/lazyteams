@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"sort"
 	"strings"
@@ -617,9 +618,9 @@ func removeReactionCmd(client *graph.Client, channelID, messageID, key string) t
 	}
 }
 
-func sendReplyCmd(client *graph.Client, channelID, parentID, content string) tea.Cmd {
+func sendReplyCmd(client *graph.Client, channelID, parentID, content string, mentions []graph.MentionedUser) tea.Cmd {
 	return func() tea.Msg {
-		err := client.SendReply(channelID, parentID, content)
+		err := client.SendReply(channelID, parentID, content, mentions)
 		if err != nil {
 			return threadReplySendErrMsg{err}
 		}
@@ -627,9 +628,9 @@ func sendReplyCmd(client *graph.Client, channelID, parentID, content string) tea
 	}
 }
 
-func sendMessageCmd(client *graph.Client, channelID, content string) tea.Cmd {
+func sendMessageCmd(client *graph.Client, channelID, content string, mentions []graph.MentionedUser) tea.Cmd {
 	return func() tea.Msg {
-		err := client.SendMessage(channelID, content)
+		err := client.SendMessage(channelID, content, mentions)
 		if err != nil {
 			return messageSendErrMsg{err}
 		}
@@ -689,7 +690,31 @@ func cleanHTMLForEdit(content string) string {
 	content = strings.ReplaceAll(content, "&amp;", "&")
 	content = strings.ReplaceAll(content, "&lt;", "<")
 	content = strings.ReplaceAll(content, "&gt;", ">")
+	
+	// Also clean up any mention markers we added in cleanHTML, in case they leaked into RawBody
+	// (Though RawBody is usually raw HTML so it has <readonly><span> instead)
+	content = graph.MentionSpan.ReplaceAllStringFunc(content, func(match string) string {
+		sub := graph.MentionSpan.FindStringSubmatch(match)
+		if len(sub) < 2 {
+			return match
+		}
+		return "@" + sub[1]
+	})
+	
 	return strings.TrimSpace(content)
+}
+
+var mentionToken = regexp.MustCompile(`\x1E(.*?)\x1F`)
+
+func highlightMentions(text string) string {
+	mentionStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("75")).Bold(true)
+	return mentionToken.ReplaceAllStringFunc(text, func(m string) string {
+		sub := mentionToken.FindStringSubmatch(m)
+		if len(sub) < 2 {
+			return m
+		}
+		return mentionStyle.Render(sub[1])
+	})
 }
 
 func renderMarkdown(content string, width int) string {
@@ -708,6 +733,8 @@ func renderMarkdown(content string, width int) string {
 	if err != nil {
 		return content
 	}
+	// Highlight @mentions after Glamour renders (ANSI-safe)
+	out = highlightMentions(out)
 	// Glamour adds extra newlines at the end, let's trim them
 	return strings.TrimSpace(out)
 }
@@ -1061,14 +1088,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.input.Reset()
 					m.isTyping = false
 					m.input.Blur()
-					// Restore viewport height
 					if m.ready {
 						rightInnerHeight := m.height - 6 - 2
 						m.viewport.Height = rightInnerHeight - 4 - 1
 					}
 					m.loading = true
-					// Send and append the command
-					return m, sendMessageCmd(m.client, m.activeConversationID(), v)
+					mentions := resolveMentions(v, m.buildMemberIndex())
+					return m, sendMessageCmd(m.client, m.activeConversationID(), v, mentions)
 				}
 			}
 		}
@@ -1372,13 +1398,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.teams = msg.teams
 		m.teamsLoaded = true
 		m.loading = false
-		if len(m.teams) > 0 {
-			if m.selectedTeam >= len(m.teams) {
-				m.selectedTeam = len(m.teams) - 1
-			}
-			m.loading = true
-			return m, loadChannelsCmd(m.client, m.teams[m.selectedTeam].ID)
-		} else {
+			if len(m.teams) > 0 {
+				if m.selectedTeam >= len(m.teams) {
+					m.selectedTeam = len(m.teams) - 1
+				}
+				m.loading = true
+				m.teamMembers = nil
+				return m, loadChannelsCmd(m.client, m.teams[m.selectedTeam].ID)
+			} else {
 			m.selectedTeam = 0
 			m.channels = nil
 		}
@@ -1710,7 +1737,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.workspace == WorkspaceDMs && msg.item.WebUrl != "" {
 				m.downloadStatusID++
 				return m, tea.Batch(
-					sendMessageCmd(m.client, m.activeConversationID(), fmt.Sprintf("📎 [%s](%s)", msg.item.Name, msg.item.WebUrl)),
+					sendMessageCmd(m.client, m.activeConversationID(), fmt.Sprintf("📎 [%s](%s)", msg.item.Name, msg.item.WebUrl), nil),
 					clearStatusAfter(m.downloadStatusID),
 				)
 			}
@@ -1832,6 +1859,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 			m.addChannelMemberResults = available
+			return m, nil
+		}
+		if m.membersLoadSilent {
+			m.membersLoadSilent = false
 			return m, nil
 		}
 		m.showMembersPopup = true
@@ -2085,7 +2116,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 								rightInnerHeight := m.height - 6 - 2
 								m.threadViewport.Height = rightInnerHeight - 12
 							}
-							return m, sendReplyCmd(m.client, m.activeConversationID(), m.threadParentID, v)
+							mentions := resolveMentions(v, m.buildMemberIndex())
+							return m, sendReplyCmd(m.client, m.activeConversationID(), m.threadParentID, v, mentions)
 						}
 					return m, nil
 					default:
@@ -2985,6 +3017,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if m.selectedTeam > 0 {
 						m.selectedTeam--
 						m.loading = true
+						m.teamMembers = nil // invalidate members cache on team change
 						cmds = append(cmds, loadChannelsCmd(m.client, m.teams[m.selectedTeam].ID))
 					}
 				} else if m.focusList == 1 && len(m.channels) > 0 {
@@ -3043,6 +3076,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if m.selectedTeam < len(m.teams)-1 {
 						m.selectedTeam++
 						m.loading = true
+						m.teamMembers = nil // invalidate members cache on team change
 						cmds = append(cmds, loadChannelsCmd(m.client, m.teams[m.selectedTeam].ID))
 					}
 				} else if m.focusList == 1 && len(m.channels) > 0 {
@@ -3389,6 +3423,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "M":
 			if m.workspace == WorkspaceTeams && m.focusList == 0 && len(m.teams) > 0 {
 				m.membersLoading = true
+				m.membersLoadSilent = false
 				return m, loadTeamMembersCmd(m.client, m.teams[m.selectedTeam].ID)
 			}
 
@@ -3427,6 +3462,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				chanID := m.channels[m.selectedChan].ID
 				m.loadedConvID = chanID
 				cmds = append(cmds, loadMessagesCmd(m.client, m.teams[m.selectedTeam].ID, chanID, 200))
+				// Pre-load team members for mention resolution if not already loaded
+				if len(m.teamMembers) == 0 {
+					m.membersLoadSilent = true
+					cmds = append(cmds, loadTeamMembersCmd(m.client, m.teams[m.selectedTeam].ID))
+				}
 			} else if !m.focusLeft && m.viewMode == ModeFiles && len(m.files) > 0 {
 				selected := m.files[m.selectedFile]
 				if selected.RemoteItem != nil {
@@ -3640,6 +3680,60 @@ func renderFilesContent(m *Model) string {
 	}
 
 	return b.String()
+}
+
+// resolveMentions parses @Name tokens from text and cross-references against
+// a member list. Returns resolved MentionedUser slice with sequential ItemIDs.
+// nameToMRI maps DisplayName → "8:orgid:GUID".
+func resolveMentions(text string, nameToMRI map[string]string) []graph.MentionedUser {
+	var mentions []graph.MentionedUser
+	// Find all @word+ sequences (greedy, supports multi-word names like "@Juan Perez")
+	// Strategy: scan for '@', then try longest match first against known names.
+	seen := make(map[string]bool)
+	itemID := 0
+
+	// Build sorted list of names by length descending (longest match wins)
+	names := make([]string, 0, len(nameToMRI))
+	for name := range nameToMRI {
+		names = append(names, name)
+	}
+	sort.Slice(names, func(i, j int) bool {
+		return len(names[i]) > len(names[j])
+	})
+
+	for _, name := range names {
+		token := "@" + name
+		if strings.Contains(text, token) && !seen[name] {
+			seen[name] = true
+			mentions = append(mentions, graph.MentionedUser{
+				ItemID:      itemID,
+				MRI:         nameToMRI[name],
+				DisplayName: name,
+			})
+			itemID++
+		}
+	}
+	return mentions
+}
+
+// buildMemberIndex builds a DisplayName → MRI map from team members and chat members.
+func (m *Model) buildMemberIndex() map[string]string {
+	index := make(map[string]string)
+	// Team members (WorkspaceTeams)
+	for _, tm := range m.teamMembers {
+		if tm.DisplayName != "" && tm.ID != "" {
+			index[tm.DisplayName] = "8:orgid:" + tm.ID
+		}
+	}
+	// Chat members (WorkspaceDMs) — UserID already is the GUID
+	if m.workspace == WorkspaceDMs && m.selectedChat < len(m.chats) {
+		for _, member := range m.chats[m.selectedChat].Members {
+			if member.DisplayName != "" && member.UserID != "" {
+				index[member.DisplayName] = "8:orgid:" + member.UserID
+			}
+		}
+	}
+	return index
 }
 
 func (m *Model) filterMessages(msgs []graph.Message, query string) []graph.Message {

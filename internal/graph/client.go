@@ -16,6 +16,7 @@ import (
 
 var stripTags = regexp.MustCompile(`<[^>]*>`)
 var multipleSpaces = regexp.MustCompile(`[ \t]+`)
+var MentionSpan = regexp.MustCompile(`<span[^>]*itemtype="http://schema\.skype\.com/Mention"[^>]*>([^<]+)</span>`)
 
 type ChatSvcError struct {
 	StatusCode int
@@ -27,6 +28,16 @@ func (e *ChatSvcError) Error() string {
 }
 
 func cleanHTML(content string) string {
+	// 0. Re-inject the @ symbol and markers for mentions before stripping tags
+	content = MentionSpan.ReplaceAllStringFunc(content, func(match string) string {
+		sub := MentionSpan.FindStringSubmatch(match)
+		if len(sub) < 2 {
+			return match
+		}
+		// Use control characters to delimit the exact mention
+		return "\x1E@" + sub[1] + "\x1F"
+	})
+
 	// 1. Remove literal newlines and tabs from HTML code
 	content = strings.ReplaceAll(content, "\n", " ")
 	content = strings.ReplaceAll(content, "\r", " ")

@@ -275,13 +275,31 @@ func (c *Client) GetMessages(teamID, channelID string, pageSize int) ([]Message,
 }
 
 // SendMessage sends a text message to the specified channel using the internal API
-func (c *Client) SendMessage(channelID, content string) error {
+func (c *Client) SendMessage(channelID, content string, mentions []MentionedUser) error {
 	url := fmt.Sprintf("https://teams.microsoft.com/api/chatsvc/amer/v1/users/ME/conversations/%s/messages", channelID)
 
-	payload := map[string]string{
-		"content":     content,
+	htmlContent := "<p>" + content + "</p>"
+	properties := map[string]string{
+		"importance": "",
+		"subject":    "",
+		"title":      "",
+		"cards":      "[]",
+		"links":      "[]",
+		"files":      "[]",
+		"mentions":   "[]",
+	}
+
+	if len(mentions) > 0 {
+		var mentionsJSON string
+		htmlContent, mentionsJSON = BuildMentionContent(content, mentions)
+		properties["mentions"] = mentionsJSON
+	}
+
+	payload := map[string]interface{}{
+		"content":     htmlContent,
 		"messagetype": "RichText/Html",
-		"contenttype": "text",
+		"contenttype": "Text",
+		"properties":  properties,
 	}
 	bodyBytes, _ := json.Marshal(payload)
 
@@ -289,7 +307,6 @@ func (c *Client) SendMessage(channelID, content string) error {
 	if err != nil {
 		return err
 	}
-
 	req.Header.Set("Authorization", "Bearer "+c.WebToken)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json, text/plain, */*")
@@ -305,26 +322,44 @@ func (c *Client) SendMessage(channelID, content string) error {
 		return err
 	}
 	defer resp.Body.Close()
-
 	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("chatsvc send error %d: %s", resp.StatusCode, string(b))
 	}
-
 	return nil
 }
 
-func (c *Client) SendReply(channelID, parentMessageID, content string) error {
+func (c *Client) SendReply(channelID, parentMessageID, content string, mentions []MentionedUser) error {
 	url := fmt.Sprintf(
 		"https://teams.microsoft.com/api/chatsvc/amer/v1/users/ME/conversations/%s%%3Bmessageid%%3D%s/messages",
 		channelID, parentMessageID,
 	)
-	payload := map[string]string{
-		"content":     content,
+
+	htmlContent := "<p>" + content + "</p>"
+	properties := map[string]string{
+		"importance": "",
+		"subject":    "",
+		"title":      "",
+		"cards":      "[]",
+		"links":      "[]",
+		"files":      "[]",
+		"mentions":   "[]",
+	}
+
+	if len(mentions) > 0 {
+		var mentionsJSON string
+		htmlContent, mentionsJSON = BuildMentionContent(content, mentions)
+		properties["mentions"] = mentionsJSON
+	}
+
+	payload := map[string]interface{}{
+		"content":     htmlContent,
 		"messagetype": "RichText/Html",
 		"contenttype": "Text",
+		"properties":  properties,
 	}
 	bodyBytes, _ := json.Marshal(payload)
+
 	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(bodyBytes))
 	if err != nil {
 		return err
@@ -338,6 +373,7 @@ func (c *Client) SendReply(channelID, parentMessageID, content string) error {
 	req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64; rv:151.0) Gecko/20100101 Firefox/151.0")
 	req.Header.Set("Referer", "https://teams.microsoft.com/")
 	req.Header.Set("Origin", "https://teams.microsoft.com")
+
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
 		return err
@@ -349,7 +385,6 @@ func (c *Client) SendReply(channelID, parentMessageID, content string) error {
 	}
 	return nil
 }
-
 func (c *Client) AddReaction(channelID, messageID, key string) error {
 	url := fmt.Sprintf(
 		"https://teams.microsoft.com/api/chatsvc/amer/v1/users/ME/conversations/%s/messages/%s/properties?name=emotions",
@@ -496,4 +531,52 @@ func (c *Client) DeleteMessage(channelID, messageID string) error {
 	}
 	b, _ := io.ReadAll(resp.Body)
 	return fmt.Errorf("delete message error %d: %s", resp.StatusCode, string(b))
+}
+
+// MentionedUser represents a resolved @mention ready to embed in a message.
+type MentionedUser struct {
+	ItemID      int    // incremental index (0, 1, 2...)
+	MRI         string // "8:orgid:GUID"
+	DisplayName string // shown inside the <span>
+}
+
+// BuildMentionContent converts plain text with @mentions into the Teams HTML
+// format and returns the content string + the mentions JSON string for properties.
+//
+// mentions must be pre-resolved (MRI known) and ItemID set sequentially.
+// The text must contain the display names exactly as stored in MentionedUser.DisplayName.
+func BuildMentionContent(text string, mentions []MentionedUser) (content, mentionsJSON string) {
+	// Replace each @DisplayName occurrence with the Teams readonly span.
+	// We iterate by ItemID order so indices are injected correctly.
+	result := text
+	for _, m := range mentions {
+		tag := fmt.Sprintf(
+			`<readonly class="skipProofing" itemtype="http://schema.skype.com/Mention" spellcheck="false" contenteditable="false"><span itemtype="http://schema.skype.com/Mention" itemscope itemid="%d">%s</span></readonly>`,
+			m.ItemID, m.DisplayName,
+		)
+		result = strings.ReplaceAll(result, "@"+m.DisplayName, tag)
+	}
+	content = "<p>" + result + "</p>"
+
+	// Build mentions JSON array (stored as a string in properties)
+	type mentionEntry struct {
+		Type        string `json:"@type"`
+		ItemID      string `json:"itemid"`
+		MRI         string `json:"mri"`
+		MentionType string `json:"mentionType"`
+		DisplayName string `json:"displayName"`
+	}
+	entries := make([]mentionEntry, len(mentions))
+	for i, m := range mentions {
+		entries[i] = mentionEntry{
+			Type:        "http://schema.skype.com/Mention",
+			ItemID:      fmt.Sprintf("%d", m.ItemID),
+			MRI:         m.MRI,
+			MentionType: "person",
+			DisplayName: m.DisplayName,
+		}
+	}
+	b, _ := json.Marshal(entries)
+	mentionsJSON = string(b)
+	return
 }

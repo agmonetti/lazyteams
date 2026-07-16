@@ -248,6 +248,7 @@ type Model struct {
 	showMembersPopup  bool
 	teamMembers       []graph.TeamMember
 	membersLoading    bool
+	membersLoadSilent bool // true when loading members for mention resolution, not for display
 	membersCursor     int
 	showRemoveMemberPopup bool
 
