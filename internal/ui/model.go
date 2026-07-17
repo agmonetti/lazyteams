@@ -158,6 +158,13 @@ type Model struct {
 	showDeleteMsgPopup bool
 	deleteMsgID        string
 
+	// Mention autocomplete
+	mentionQuery       string             // texto después del @ activo, e.g. "mon"
+	mentionSuggestions []graph.TeamMember // lista filtrada
+	mentionCursor      int                // índice seleccionado en el popup
+	showMentionPopup   bool
+	mentionAtPos       int                // posición del @ en el valor del textarea
+
 	// Input for sending messages
 	input    textarea.Model
 	isTyping bool

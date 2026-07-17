@@ -333,6 +333,30 @@ func (m Model) View() string {
 		}
 
 		if !m.focusLeft && m.viewMode == ModeChat && m.loadedConvID == m.activeConversationID() && !m.showThread {
+			if m.showMentionPopup && len(m.mentionSuggestions) > 0 {
+				var popupLines []string
+				max := 5
+				if len(m.mentionSuggestions) < max {
+					max = len(m.mentionSuggestions)
+				}
+				for i := 0; i < max; i++ {
+					s := m.mentionSuggestions[i]
+					cursor := "  "
+					style := normalItemStyle
+					if i == m.mentionCursor {
+						cursor = "▶ "
+						style = selectedItemStyle
+					}
+					popupLines = append(popupLines, fmt.Sprintf("%s%s", cursor, style.Render(s.DisplayName)))
+				}
+				mentionPopup := lipgloss.NewStyle().
+					Border(lipgloss.RoundedBorder()).
+					BorderForeground(lipgloss.Color("75")).
+					Padding(0, 1).
+					Render(strings.Join(popupLines, "\n"))
+				rightContent += mentionPopup + "\n"
+			}
+
 			var inputView string
 			if m.isSearching {
 				inputView = lipgloss.NewStyle().Foreground(lipgloss.Color("205")).Render("Search: ") + m.searchInput.View()
@@ -902,8 +926,31 @@ func renderThreadView(m *Model, width, height int) string {
 
 	// Input
 	if m.isReplyTyping {
-		// Just render the input, styling is usually handled when focused
-		content += "\n" + m.input.View()
+		if m.showMentionPopup && len(m.mentionSuggestions) > 0 {
+			var popupLines []string
+			max := 5
+			if len(m.mentionSuggestions) < max {
+				max = len(m.mentionSuggestions)
+			}
+			for i := 0; i < max; i++ {
+				s := m.mentionSuggestions[i]
+				cursor := "  "
+				style := normalItemStyle
+				if i == m.mentionCursor {
+					cursor = "▶ "
+					style = selectedItemStyle
+				}
+				popupLines = append(popupLines, fmt.Sprintf("%s%s", cursor, style.Render(s.DisplayName)))
+			}
+			mentionPopup := lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(lipgloss.Color("75")).
+				Padding(0, 1).
+				Render(strings.Join(popupLines, "\n"))
+			content += "\n" + mentionPopup + "\n" + m.input.View()
+		} else {
+			content += "\n" + m.input.View()
+		}
 	} else {
 		content += "\n" + helpStyle.Render("Press 'i/r' to type a reply...")
 	}

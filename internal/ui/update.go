@@ -705,6 +705,7 @@ func cleanHTMLForEdit(content string) string {
 }
 
 var mentionToken = regexp.MustCompile(`\x1E(.*?)\x1F`)
+var ansiToken = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 
 func highlightMentions(text string) string {
 	mentionStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("75")).Bold(true)
@@ -713,7 +714,10 @@ func highlightMentions(text string) string {
 		if len(sub) < 2 {
 			return m
 		}
-		return mentionStyle.Render(sub[1])
+		// Glamour may have injected ANSI codes (like color resets) inside the match,
+		// which would break our outer mentionStyle wrapper. We strip them first.
+		clean := ansiToken.ReplaceAllString(sub[1], "")
+		return mentionStyle.Render(clean)
 	})
 }
 
@@ -1068,11 +1072,59 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
 	// --- INSERT MODE (TEXT INPUT) ---
-	if m.isTyping {
-		switch msg := msg.(type) {
-		case tea.KeyMsg:
-			switch msg.String() {
-			case "esc": // Exit insert mode
+		if m.isTyping {
+			switch msg := msg.(type) {
+			case tea.KeyMsg:
+				// Si el popup está abierto, las flechas y enter van al popup
+				if m.showMentionPopup {
+					switch msg.String() {
+					case "up":
+						if m.mentionCursor > 0 {
+							m.mentionCursor--
+						}
+						return m, nil
+					case "down":
+						if m.mentionCursor < len(m.mentionSuggestions)-1 {
+							m.mentionCursor++
+						}
+						return m, nil
+					case "enter", "tab":
+						selected := m.mentionSuggestions[m.mentionCursor]
+						// Reemplazar desde el @ hasta el final con el nombre completo
+						v := m.input.Value()
+						newVal := v[:m.mentionAtPos] + "@" + selected.DisplayName + " "
+						m.input.SetValue(newVal)
+						// Mover cursor al final
+						m.input.CursorEnd()
+						m.showMentionPopup = false
+						m.mentionSuggestions = nil
+						m.mentionCursor = 0
+						if m.ready {
+							rightInnerHeight := m.height - 6 - 2
+							inputHeight := strings.Count(m.input.View(), "\n") + 1
+							newVpHeight := rightInnerHeight - 4 - inputHeight
+							if newVpHeight < 5 {
+								newVpHeight = 5
+							}
+							m.viewport.Height = newVpHeight
+						}
+						return m, nil
+					case "esc":
+						m.showMentionPopup = false
+						if m.ready {
+							rightInnerHeight := m.height - 6 - 2
+							inputHeight := strings.Count(m.input.View(), "\n") + 1
+							newVpHeight := rightInnerHeight - 4 - inputHeight
+							if newVpHeight < 5 {
+								newVpHeight = 5
+							}
+							m.viewport.Height = newVpHeight
+						}
+						return m, nil
+					}
+				}
+				switch msg.String() {
+				case "esc": // Exit insert mode
 				m.isTyping = false
 				m.input.Blur()
 				m.input.Reset()
@@ -1102,12 +1154,57 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Pass all other keys to the input
 		m.input, cmd = m.input.Update(msg)
 		cmds = append(cmds, cmd)
+
+		// Mention detection
+		v := m.input.Value()
+		m.showMentionPopup = false
+		if idx := strings.LastIndex(v, "@"); idx != -1 {
+			query := v[idx+1:]
+			if !strings.Contains(query, " ") || m.showMentionPopup {
+				q := strings.ToLower(query)
+				var suggestions []graph.TeamMember
+				for _, tm := range m.teamMembers {
+					if strings.Contains(strings.ToLower(tm.DisplayName), q) {
+						suggestions = append(suggestions, tm)
+					}
+				}
+				if m.workspace == WorkspaceDMs && m.selectedChat < len(m.chats) {
+					for _, member := range m.chats[m.selectedChat].Members {
+						if member.UserID != m.selfID && strings.Contains(strings.ToLower(member.DisplayName), q) {
+							suggestions = append(suggestions, graph.TeamMember{
+								DisplayName: member.DisplayName,
+								ID:          member.UserID,
+							})
+						}
+					}
+				}
+				if len(suggestions) > 0 {
+					m.showMentionPopup = true
+					m.mentionQuery = query
+					m.mentionAtPos = idx
+					m.mentionSuggestions = suggestions
+					if m.mentionCursor >= len(suggestions) {
+						m.mentionCursor = 0
+					}
+				}
+			}
+		}
 		
 		// Adjust viewport height dynamically as textarea grows
 		if m.ready {
 			rightInnerHeight := m.height - 6 - 2
 			inputHeight := strings.Count(m.input.View(), "\n") + 1
-			newVpHeight := rightInnerHeight - 4 - inputHeight
+			
+			popupHeight := 0
+			if m.showMentionPopup && len(m.mentionSuggestions) > 0 {
+				lines := len(m.mentionSuggestions)
+				if lines > 5 {
+					lines = 5
+				}
+				popupHeight = lines + 2 // borders
+			}
+
+			newVpHeight := rightInnerHeight - 4 - inputHeight - popupHeight
 			if newVpHeight < 5 {
 				newVpHeight = 5 // minimum safety height
 			}
@@ -2094,6 +2191,44 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.showThread {
 			// If typing, pass FIRST to input
 			if m.isReplyTyping {
+				if m.showMentionPopup {
+					switch msg.String() {
+					case "up":
+						if m.mentionCursor > 0 {
+							m.mentionCursor--
+						}
+						return m, nil
+					case "down":
+						if m.mentionCursor < len(m.mentionSuggestions)-1 {
+							m.mentionCursor++
+						}
+						return m, nil
+					case "enter", "tab":
+						selected := m.mentionSuggestions[m.mentionCursor]
+						v := m.input.Value()
+						newVal := v[:m.mentionAtPos] + "@" + selected.DisplayName + " "
+						m.input.SetValue(newVal)
+						m.input.CursorEnd()
+						m.showMentionPopup = false
+						m.mentionSuggestions = nil
+						m.mentionCursor = 0
+						if m.ready {
+							rightInnerHeight := m.height - 6 - 2
+							inputHeight := strings.Count(m.input.View(), "\n") + 1
+							m.threadViewport.Height = rightInnerHeight - 10 - inputHeight
+						}
+						return m, nil
+					case "esc":
+						m.showMentionPopup = false
+						if m.ready {
+							rightInnerHeight := m.height - 6 - 2
+							inputHeight := strings.Count(m.input.View(), "\n") + 1
+							m.threadViewport.Height = rightInnerHeight - 10 - inputHeight
+						}
+						return m, nil
+					}
+				}
+
 				switch msg.String() {
 					case "esc":
 						m.isReplyTyping = false
@@ -2120,14 +2255,60 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							return m, sendReplyCmd(m.client, m.activeConversationID(), m.threadParentID, v, mentions)
 						}
 					return m, nil
-					default:
-						var cmd tea.Cmd
-						m.input, cmd = m.input.Update(msg)
-						if m.ready {
-							rightInnerHeight := m.height - 6 - 2
-							inputHeight := strings.Count(m.input.View(), "\n") + 1
-							m.threadViewport.Height = rightInnerHeight - 10 - inputHeight
-						}
+						default:
+							var cmd tea.Cmd
+							m.input, cmd = m.input.Update(msg)
+
+							// Mention detection
+							v := m.input.Value()
+							m.showMentionPopup = false
+							if idx := strings.LastIndex(v, "@"); idx != -1 {
+								query := v[idx+1:]
+								if !strings.Contains(query, " ") || m.showMentionPopup {
+									q := strings.ToLower(query)
+									var suggestions []graph.TeamMember
+									for _, tm := range m.teamMembers {
+										if strings.Contains(strings.ToLower(tm.DisplayName), q) {
+											suggestions = append(suggestions, tm)
+										}
+									}
+									if m.workspace == WorkspaceDMs && m.selectedChat < len(m.chats) {
+										for _, member := range m.chats[m.selectedChat].Members {
+											if member.UserID != m.selfID && strings.Contains(strings.ToLower(member.DisplayName), q) {
+												suggestions = append(suggestions, graph.TeamMember{
+													DisplayName: member.DisplayName,
+													ID:          member.UserID,
+												})
+											}
+										}
+									}
+									if len(suggestions) > 0 {
+										m.showMentionPopup = true
+										m.mentionQuery = query
+										m.mentionAtPos = idx
+										m.mentionSuggestions = suggestions
+										if m.mentionCursor >= len(suggestions) {
+											m.mentionCursor = 0
+										}
+									}
+								}
+							}
+
+							if m.ready {
+								rightInnerHeight := m.height - 6 - 2
+								inputHeight := strings.Count(m.input.View(), "\n") + 1
+								
+								popupHeight := 0
+								if m.showMentionPopup && len(m.mentionSuggestions) > 0 {
+									lines := len(m.mentionSuggestions)
+									if lines > 5 {
+										lines = 5
+									}
+									popupHeight = lines + 2 // borders
+								}
+
+								m.threadViewport.Height = rightInnerHeight - 10 - inputHeight - popupHeight
+							}
 						return m, cmd
 				}
 			}
