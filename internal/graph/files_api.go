@@ -31,6 +31,15 @@ type DriveItem struct {
 		} `json:"folder,omitempty"`
 	} `json:"remoteItem,omitempty"`
 
+	// Metadata
+	LastModifiedDateTime string `json:"lastModifiedDateTime"`
+	LastModifiedBy       struct {
+		User struct {
+			DisplayName string `json:"displayName"`
+		} `json:"user"`
+	} `json:"lastModifiedBy"`
+	Size int64 `json:"size"`
+
 	// Internal flag for the UI (not part of Microsoft's JSON)
 	IsExternalLink bool `json:"-"`
 }

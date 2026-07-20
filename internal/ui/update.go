@@ -3946,11 +3946,42 @@ func renderFilesContent(m *Model) string {
 			link = f.WebUrl
 		}
 
-		line := fmt.Sprintf("%s%s %s", checkbox, icon, f.Name)
-		line = style.Render(line)
+		// Build metadata string: "2 days ago · Name"
+		meta := ""
+		if f.LastModifiedDateTime != "" {
+			if t, err := time.Parse(time.RFC3339, f.LastModifiedDateTime); err == nil {
+				age := t.Local().Format("02 Jan 2006")
+				who := f.LastModifiedBy.User.DisplayName
+				if who != "" {
+					if len(who) > 15 {
+						who = who[:15]
+					}
+					meta = metaStyle.Render(age + " · " + who)
+				} else {
+					meta = metaStyle.Render(age)
+				}
+			}
+		}
 
+		// Layout: name left-padded, meta right-aligned
+		prefix := checkbox + icon + " "
+		prefixWidth := lipgloss.Width(prefix)
+		metaWidth := lipgloss.Width(meta)
+		availableWidth := m.viewport.Width - lipgloss.Width(cursor)
+		nameMax := availableWidth - prefixWidth - metaWidth
+		if nameMax < 10 {
+			nameMax = 10
+		}
+		name := truncateText(f.Name, nameMax)
+		padLen := availableWidth - prefixWidth - lipgloss.Width(name) - metaWidth
+		if padLen < 1 {
+			padLen = 1
+		}
+		pad := strings.Repeat(" ", padLen)
+
+		namePart := style.Render(prefix + name)
+		line := namePart + pad + meta
 		clickableLine := makeClickableLink(line, link)
-
 		b.WriteString(cursor + clickableLine + "\n")
 	}
 
