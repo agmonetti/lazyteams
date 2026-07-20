@@ -10,6 +10,8 @@ main
 # Debug files
 debug_mensajes.json
 debug_api.go
+debug*.log
+debug*.json
 cmd/
 
 # Environment
