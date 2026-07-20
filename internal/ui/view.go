@@ -533,6 +533,25 @@ func (m Model) View() string {
 			Padding(1, 3).
 			Render(popupContent)
 		rightPanel = lipgloss.Place(lipgloss.Width(rightPanel), lipgloss.Height(rightPanel), lipgloss.Center, lipgloss.Center, popup)
+	} else if m.showDeleteFilePopup && m.selectedFile < len(m.files) {
+		target := m.files[m.selectedFile]
+		popupContent := fmt.Sprintf("Delete \"%s\"?\n\n[Enter/y] Confirm   [Esc/n] Cancel", target.Name)
+		popup := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("#E74C3C")).
+			Padding(1, 3).
+			Render(popupContent)
+		rightPanel = lipgloss.Place(lipgloss.Width(rightPanel), lipgloss.Height(rightPanel), lipgloss.Center, lipgloss.Center, popup)
+	} else if m.showCreateFolderPopup {
+		var content string
+		content += titleStyle.Render("New Folder") + "\n\n"
+		content += m.createFolderInput.View() + "\n\n"
+		if m.createFolderErr != "" {
+			content += errorStyle.Render(m.createFolderErr) + "\n\n"
+		}
+		content += helpStyle.Render("[Enter] Create   [Esc] Cancel")
+		popup := popupStyle.Render(content)
+		rightPanel = lipgloss.Place(lipgloss.Width(rightPanel), lipgloss.Height(rightPanel), lipgloss.Center, lipgloss.Center, popup)
 	}
 
 	if m.showTeamInfo && m.teamInfo != nil {
@@ -885,7 +904,7 @@ func (m Model) footerText() string {
 	case m.previewing:
 		return dim.Render(" [Esc] Back to files  [↑/↓] Scroll")
 	case !m.focusLeft && m.viewMode == ModeFiles:
-		return dim.Render(" [↑/↓] Navigate  [Enter] Open  [Space] Select  [v] Preview  [o] Download  [u] Upload  [p] Status  [?] Help  [Esc/h] Back")
+		return dim.Render(" [↑/↓] Navigate  [Enter] Open  [Space] Select  [v] Preview  [o] Download  [u] Upload  [F] New folder  [Del] Delete  [p] Status  [?] Help  [Esc/h] Back")
 	case !m.focusLeft && m.viewMode == ModeChat:
 		if m.isSearching {
 			return dim.Render(" [↑/↓] Scroll  [Esc] Clear & Close")

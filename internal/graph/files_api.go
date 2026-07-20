@@ -1,9 +1,12 @@
 package graph
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"net/url"
 	"strings"
 )
@@ -198,4 +201,93 @@ func (c *Client) GetItemChildren(driveID, itemID string) ([]DriveItem, error) {
 	}
 
 	return res.Value, nil
+}
+
+// DeleteItem deletes a file or folder from a team's drive.
+func (c *Client) DeleteItem(teamID, itemID string) error {
+	endpoint := fmt.Sprintf("%s/groups/%s/drive/items/%s", baseURL, teamID, itemID)
+	req, err := http.NewRequest("DELETE", endpoint, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.GraphToken)
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 204 && resp.StatusCode != 200 {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("delete failed (%d): %s", resp.StatusCode, string(body))
+	}
+	return nil
+}
+
+// DeleteRemoteItem deletes a file or folder from an arbitrary drive (for remoteItems).
+func (c *Client) DeleteRemoteItem(driveID, itemID string) error {
+	endpoint := fmt.Sprintf("%s/drives/%s/items/%s", baseURL, driveID, itemID)
+	req, err := http.NewRequest("DELETE", endpoint, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.GraphToken)
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 204 && resp.StatusCode != 200 {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("delete failed (%d): %s", resp.StatusCode, string(body))
+	}
+	return nil
+}
+
+// GetChannelFolder gets the channel folder metadata (ID, name) from the drive.
+// GET /groups/{teamID}/drive/root:/{channelName}
+func (c *Client) GetChannelFolder(teamID, channelName string) (*DriveItem, error) {
+	endpoint := fmt.Sprintf("/groups/%s/drive/root:/%s", teamID, url.PathEscape(channelName))
+	body, err := c.doReq(endpoint)
+	if err != nil {
+		return nil, err
+	}
+	var item DriveItem
+	if err := json.Unmarshal(body, &item); err != nil {
+		return nil, fmt.Errorf("error parsing channel folder: %w", err)
+	}
+	return &item, nil
+}
+
+// CreateFolder creates a new folder inside a team's drive channel folder.
+func (c *Client) CreateFolder(teamID, parentID, folderName string) (DriveItem, error) {
+	endpoint := fmt.Sprintf("%s/groups/%s/drive/items/%s/children", baseURL, teamID, parentID)
+	payload := map[string]any{
+		"name":                              folderName,
+		"folder":                            map[string]any{},
+		"@microsoft.graph.conflictBehavior": "rename",
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return DriveItem{}, err
+	}
+	req, err := http.NewRequest("POST", endpoint, bytes.NewReader(body))
+	if err != nil {
+		return DriveItem{}, err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.GraphToken)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return DriveItem{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 201 && resp.StatusCode != 200 {
+		b, _ := io.ReadAll(resp.Body)
+		return DriveItem{}, fmt.Errorf("create folder failed (%d): %s", resp.StatusCode, string(b))
+	}
+	var item DriveItem
+	if err := json.NewDecoder(resp.Body).Decode(&item); err != nil {
+		return DriveItem{}, err
+	}
+	return item, nil
 }

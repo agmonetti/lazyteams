@@ -247,6 +247,12 @@ type Model struct {
 	createChannelStep      int    // 0=name, 1=type
 	createChannelErr       string
 
+	// File management
+	showDeleteFilePopup   bool
+	showCreateFolderPopup bool
+	createFolderInput     textinput.Model
+	createFolderErr       string
+
 	// Delete confirmations
 	showDeleteChannelPopup bool
 	showDeleteTeamPopup    bool
@@ -318,6 +324,11 @@ func New(client *graph.Client, userName string) Model {
 	addChannelMemberInput.CharLimit = 64
 	addChannelMemberInput.Width = 40
 
+	createFolderInput := textinput.New()
+	createFolderInput.Placeholder = "Folder name..."
+	createFolderInput.CharLimit = 255
+	createFolderInput.Width = 40
+
 	searchInput := textinput.New()
 	searchInput.Placeholder = "Search in chat..."
 	searchInput.CharLimit = 64
@@ -335,6 +346,7 @@ func New(client *graph.Client, userName string) Model {
 		input:        ta,
 		searchInput:  searchInput,
 		editInput:    editInput,
+		createFolderInput: createFolderInput,
 		newDMQuery:   newDMInput,
 		createTeamInput: createTeamInput,
 		createChannelInput: createChannelInput,

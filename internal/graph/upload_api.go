@@ -24,6 +24,18 @@ func (c *Client) UploadFileToChannel(teamID, channelName, filePath string) (Driv
 	)
 }
 
+// UploadFileToFolder uploads a file to a specific folder (by ID) in the team's drive.
+func (c *Client) UploadFileToFolder(teamID, folderID, filePath string) (DriveItem, error) {
+	return c.uploadFile(
+		fmt.Sprintf("/groups/%s/drive/items/%s:/%s:/content",
+			teamID,
+			folderID,
+			url.PathEscape(filepath.Base(filePath)),
+		),
+		filePath,
+	)
+}
+
 // UploadFileToOneDrive uploads a file to the logged-in user's OneDrive.
 func (c *Client) UploadFileToOneDrive(filePath string) (DriveItem, error) {
 	return c.uploadFile(

@@ -60,6 +60,11 @@ type searchUsersMsg struct{ results []graph.UserSearchResult }
 type searchUsersErrMsg struct{ err error }
 type createDMMsg struct{ chat graph.Chat }
 type createDMErrMsg struct{ err error }
+type channelRootMsg struct {
+	node FolderNode
+	err  error
+}
+
 type uploadDoneMsg struct {
 	item graph.DriveItem
 	err  error
@@ -76,6 +81,8 @@ type createChannelMsg struct{ err error }
 
 type deleteChannelMsg struct{ err error }
 type deleteTeamMsg struct{ err error }
+type createFolderDoneMsg struct{ item graph.DriveItem }
+type deleteFileDoneMsg struct{}
 
 type teamInfoMsg struct{ team *graph.Team }
 type teamInfoErrMsg struct{ err error }
@@ -269,6 +276,37 @@ func uploadFileCmd(client *graph.Client, teamID, channelName, filePath string, i
 			item, err = client.UploadFileToChannel(teamID, channelName, filePath)
 		}
 		return uploadDoneMsg{item: item, err: err}
+	}
+}
+
+func uploadFileToFolderCmd(client *graph.Client, teamID, folderID, filePath string) tea.Cmd {
+	return func() tea.Msg {
+		if strings.HasPrefix(filePath, "~/") {
+			home, _ := os.UserHomeDir()
+			filePath = filepath.Join(home, filePath[2:])
+		}
+		item, err := client.UploadFileToFolder(teamID, folderID, filePath)
+		return uploadDoneMsg{item: item, err: err}
+	}
+}
+
+func reloadCurrentFolderCmd(client *graph.Client, teamID string, node FolderNode) tea.Cmd {
+	cacheKey := node.ID
+	if node.DriveID != "" {
+		return func() tea.Msg {
+			items, err := client.GetItemChildren(node.DriveID, node.ID)
+			if err != nil {
+				return errMsg{err}
+			}
+			return filesMsg{files: items, folderID: cacheKey}
+		}
+	}
+	return func() tea.Msg {
+		items, err := client.GetFolderChildren(teamID, node.ID)
+		if err != nil {
+			return errMsg{err}
+		}
+		return filesMsg{files: items, folderID: cacheKey}
 	}
 }
 
@@ -652,6 +690,21 @@ func sendMessageCmd(client *graph.Client, channelID, content string, mentions []
 			return messageSendErrMsg{err}
 		}
 		return messageSentMsg{}
+	}
+}
+
+func loadChannelRootCmd(client *graph.Client, teamID, channelName string) tea.Cmd {
+	return func() tea.Msg {
+		folder, err := client.GetChannelFolder(teamID, channelName)
+		if err != nil {
+			return channelRootMsg{err: err}
+		}
+		return channelRootMsg{
+			node: FolderNode{
+				ID:   folder.ID,
+				Name: folder.Name,
+			},
+		}
 	}
 }
 
@@ -1526,16 +1579,49 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loading = false
 		return m, nil
 
+	case channelRootMsg:
+		if msg.err != nil {
+			m.err = msg.err
+			m.loading = false
+			return m, nil
+		}
+		m.folderStack = append(m.folderStack, msg.node)
+		m.currentFilesDriveID = msg.node.DriveID
+		// Check cache for root
+		cacheKey := "root:" + m.channels[m.selectedChan].ID
+		if cached, ok := m.folderCache[cacheKey]; ok {
+			m.files = cached
+			m.selectedFile = 0
+			m.selectedFiles = make(map[int]bool)
+			m.loading = false
+			m.viewport.SetContent(renderFilesContent(&m))
+			m.viewport.GotoTop()
+		} else {
+			cmds = append(cmds, loadFilesCmd(m.client, m.teams[m.selectedTeam].ID, m.channels[m.selectedChan].DisplayName, m.channels[m.selectedChan].ID))
+		}
+		return m, tea.Batch(cmds...)
+
 	case filesMsg:
+		// Discard stale responses from a previous folder level
+		if msg.folderID != "" {
+			expectedKey := ""
+			rootKey := ""
+			if len(m.folderStack) > 0 {
+				expectedKey = m.folderStack[len(m.folderStack)-1].ID
+			}
+			if m.selectedChan < len(m.channels) {
+				rootKey = "root:" + m.channels[m.selectedChan].ID
+			}
+			if msg.folderID != expectedKey && msg.folderID != rootKey {
+				return m, nil
+			}
+			m.folderCache[msg.folderID] = msg.files
+		}
+
 		m.files = msg.files
 		m.loading = false
 		m.selectedFile = 0
 		m.selectedFiles = make(map[int]bool)
-
-		// Cache the result
-		if msg.folderID != "" {
-			m.folderCache[msg.folderID] = msg.files
-		}
 
 		m.viewport.SetContent(renderFilesContent(&m))
 		m.viewport.GotoTop()
@@ -1901,16 +1987,41 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				)
 			}
 			if m.workspace == WorkspaceTeams && m.viewMode == ModeFiles {
-				m.loading = true
 				m.downloadStatusID++
+				delete(m.folderCache, "root:"+m.channels[m.selectedChan].ID)
 				return m, tea.Batch(
-					loadFilesCmd(m.client, m.teams[m.selectedTeam].ID, m.channels[m.selectedChan].DisplayName, m.channels[m.selectedChan].ID),
+					reloadCurrentFolderCmd(m.client, m.teams[m.selectedTeam].ID, m.folderStack[len(m.folderStack)-1]),
 					clearStatusAfter(m.downloadStatusID),
 				)
 			}
 		}
 		m.downloadStatusID++
 		return m, clearStatusAfter(m.downloadStatusID)
+
+	case createFolderDoneMsg:
+		m.files = append([]graph.DriveItem{msg.item}, m.files...)
+		m.downloadStatus = fmt.Sprintf("✓ Folder \"%s\" created.", msg.item.Name)
+		m.downloadStatusID++
+		m.viewport.SetContent(renderFilesContent(&m))
+		return m, clearStatusAfter(m.downloadStatusID)
+
+	case deleteFileDoneMsg:
+		name := ""
+		if m.selectedFile < len(m.files) {
+			name = m.files[m.selectedFile].Name
+			m.files = append(m.files[:m.selectedFile], m.files[m.selectedFile+1:]...)
+		}
+		if m.selectedFile >= len(m.files) && m.selectedFile > 0 {
+			m.selectedFile--
+		}
+		m.downloadStatus = fmt.Sprintf("✓ \"%s\" deleted.", name)
+		m.downloadStatusID++
+		// Invalidate root cache and reload from server to confirm
+		delete(m.folderCache, "root:"+m.channels[m.selectedChan].ID)
+		return m, tea.Batch(
+			reloadCurrentFolderCmd(m.client, m.teams[m.selectedTeam].ID, m.folderStack[len(m.folderStack)-1]),
+			clearStatusAfter(m.downloadStatusID),
+		)
 
 	case dirPickerResultMsg:
 		m.showDirPicker = false
@@ -2134,13 +2245,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.uploading = true
 			isDM := m.workspace == WorkspaceDMs
-			channelName := ""
-			teamID := ""
 			if !isDM && len(m.channels) > 0 {
-				channelName = m.channels[m.selectedChan].DisplayName
-				teamID = m.teams[m.selectedTeam].ID
+				teamID := m.teams[m.selectedTeam].ID
+				if len(m.folderStack) > 0 {
+					folderID := m.folderStack[len(m.folderStack)-1].ID
+					return m, uploadFileToFolderCmd(m.client, teamID, folderID, msg.Path)
+				}
+				// fallback — no debería ocurrir con Opción B
+				channelName := m.channels[m.selectedChan].DisplayName
+				return m, uploadFileCmd(m.client, teamID, channelName, msg.Path, false)
 			}
-			return m, uploadFileCmd(m.client, teamID, channelName, msg.Path, isDM)
+			return m, uploadFileCmd(m.client, "", "", msg.Path, true)
 		}
 		return m, nil
 
@@ -3012,6 +3127,65 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(cmds...)
 		}
 
+		// Create folder popup — intercepts keys before everything else
+		if m.showCreateFolderPopup {
+			switch msg.String() {
+			case "esc":
+				m.showCreateFolderPopup = false
+				m.createFolderErr = ""
+				return m, nil
+			case "enter":
+				name := strings.TrimSpace(m.createFolderInput.Value())
+				if name == "" {
+					m.createFolderErr = "Folder name cannot be empty."
+					return m, nil
+				}
+				parentID := m.folderStack[len(m.folderStack)-1].ID
+				m.showCreateFolderPopup = false
+				m.createFolderErr = ""
+				return m, func() tea.Msg {
+					item, err := m.client.CreateFolder(m.teams[m.selectedTeam].ID, parentID, name)
+					if err != nil {
+						return errMsg{err}
+					}
+					return createFolderDoneMsg{item: item}
+				}
+			default:
+				var cmd tea.Cmd
+				m.createFolderInput, cmd = m.createFolderInput.Update(msg)
+				return m, cmd
+			}
+		}
+
+		// Delete file popup — intercepts keys before everything else
+		if m.showDeleteFilePopup {
+			switch msg.String() {
+			case "esc", "n":
+				m.showDeleteFilePopup = false
+				return m, nil
+			case "enter", "y":
+				if m.selectedFile >= len(m.files) {
+					m.showDeleteFilePopup = false
+					return m, nil
+				}
+				target := m.files[m.selectedFile]
+				driveID := m.currentFilesDriveID
+				m.showDeleteFilePopup = false
+				return m, func() tea.Msg {
+					var err error
+					if driveID != "" {
+						err = m.client.DeleteRemoteItem(driveID, target.ID)
+					} else {
+						err = m.client.DeleteItem(m.teams[m.selectedTeam].ID, target.ID)
+					}
+					if err != nil {
+						return errMsg{err}
+					}
+					return deleteFileDoneMsg{}
+				}
+			}
+		}
+
 		// Download confirmation popup — intercepts keys before everything else
 		if m.confirmingDownload {
 			switch msg.String() {
@@ -3105,6 +3279,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					Height:      m.height,
 				})
 				m.dirPicker, _ = m.dirPicker.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
+				return m, nil
+			}
+
+		case "F":
+			if !m.focusLeft && m.viewMode == ModeFiles {
+				m.showCreateFolderPopup = true
+				m.createFolderInput.SetValue("")
+				m.createFolderInput.Focus()
+				m.createFolderErr = ""
+				return m, nil
+			}
+
+		case "delete", "backspace":
+			if !m.focusLeft && m.viewMode == ModeFiles && len(m.files) > 0 {
+				m.showDeleteFilePopup = true
 				return m, nil
 			}
 
@@ -3451,18 +3640,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if m.viewMode == ModeChat || m.viewMode == ModeInfo {
 						m.viewMode = ModeFiles
 						m.folderStack = nil
-						// Check cache for root
-						cacheKey := "root:" + m.channels[m.selectedChan].ID
-						if cached, ok := m.folderCache[cacheKey]; ok {
-							m.files = cached
-							m.selectedFile = 0
-							m.selectedFiles = make(map[int]bool)
-							m.viewport.SetContent(renderFilesContent(&m))
-							m.viewport.GotoTop()
-						} else {
-							m.loading = true
-							cmds = append(cmds, loadFilesCmd(m.client, m.teams[m.selectedTeam].ID, m.channels[m.selectedChan].DisplayName, m.channels[m.selectedChan].ID))
-						}
+						m.currentFilesDriveID = ""
+						m.loading = true
+						cmds = append(cmds, loadChannelRootCmd(m.client, m.teams[m.selectedTeam].ID, m.channels[m.selectedChan].DisplayName))
 					} else {
 						m.viewMode = ModeChat
 						m.loading = true

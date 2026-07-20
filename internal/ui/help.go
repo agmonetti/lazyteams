@@ -71,6 +71,8 @@ var HelpData = []HelpCategory{
 			{Key: "v", Description: "Preview file"},
 			{Key: "o", Description: "Download selected file(s)"},
 			{Key: "u", Description: "Upload file to folder"},
+			{Key: "F", Description: "New folder"},
+			{Key: "Del", Description: "Delete file/folder"},
 			{Key: "h/Esc", Description: "Back to parent folder"},
 		},
 	},
