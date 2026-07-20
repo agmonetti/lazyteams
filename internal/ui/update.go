@@ -24,7 +24,7 @@ import (
 
 // Commands
 
-const pollInterval = 15       // seconds between DM polls
+const pollInterval = 3        // seconds between DM polls
 const presenceInterval = 60   // seconds between presence polls
 
 type tickMsg struct{}
