@@ -422,22 +422,26 @@ func (c *Client) GetChannelSubstrateID(channelThreadID string) (string, error) {
 }
 
 func (c *Client) AddChannelMember(teamGUID, channelThreadID, userID, tenantID string) error {
-	// First get the substrateGroupId
 	substrateID, err := c.GetChannelSubstrateID(channelThreadID)
 	if err != nil {
 		return fmt.Errorf("could not get channel substrate ID: %w", err)
 	}
 	channelOID := fmt.Sprintf("OID:%s@%s", substrateID, tenantID)
 	userOID := fmt.Sprintf("OID:%s@%s", userID, tenantID)
+
 	payload := fmt.Sprintf(`{"users":[{"id":"%s","role":1}]}`, userOID)
-	url := fmt.Sprintf("https://teams.microsoft.com/fabric/amer/templates/api/teams/%s/channels/%s/users?forceSync=false",
-		teamGUID, channelOID)
+	url := fmt.Sprintf(
+		"https://teams.microsoft.com/fabric/amer/templates/api/teams/%s/channels/%s/users?forceSync=false",
+		teamGUID, channelOID,
+	)
 	req, err := http.NewRequest("POST", url, strings.NewReader(payload))
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Authorization", "Bearer "+c.FabricToken)
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("x-ms-client-type", "web")
+
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
 		return err

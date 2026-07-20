@@ -23,10 +23,10 @@ type NotificationItem struct {
 
 type activityResponse struct {
 	Messages []struct {
-		ID           string `json:"id"`
-		SequenceID   int64  `json:"sequenceId"`
-		Composetime  string `json:"composetime"`
-		Properties   struct {
+		ID          string `json:"id"`
+		SequenceID  int64  `json:"sequenceId"`
+		Composetime string `json:"composetime"`
+		Properties  struct {
 			Activity *struct {
 				ActivityType            string `json:"activityType"`
 				ActivitySubtype         string `json:"activitySubtype"`
@@ -126,24 +126,24 @@ func (c *Client) FetchNotifications() ([]NotificationItem, error) {
 }
 
 func (c *Client) MarkNotificationRead(msgID string) error {
-    url := fmt.Sprintf("https://teams.microsoft.com/api/chatsvc/amer/v1/users/ME/conversations/48:notifications/messages/%s/properties?name=isread", msgID)
-    body := strings.NewReader(`{"isread":"true"}`)
-    req, err := http.NewRequest("PUT", url, body)
-    if err != nil {
-        return err
-    }
-    req.Header.Set("Authorization", "Bearer "+c.NotifToken)
-    req.Header.Set("Content-Type", "application/json")
-    req.Header.Set("X-Ms-Client-Type", "web")
-    resp, err := c.HTTPClient.Do(req)
-    if err != nil {
-        return err
-    }
-    defer resp.Body.Close()
-    if resp.StatusCode < 200 || resp.StatusCode > 299 {
-        return fmt.Errorf("mark read error %d", resp.StatusCode)
-    }
-    return nil
+	url := fmt.Sprintf("https://teams.microsoft.com/api/chatsvc/amer/v1/users/ME/conversations/48:notifications/messages/%s/properties?name=isread", msgID)
+	body := strings.NewReader(`{"isread":"true"}`)
+	req, err := http.NewRequest("PUT", url, body)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.NotifToken)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Ms-Client-Type", "web")
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return fmt.Errorf("mark read error %d", resp.StatusCode)
+	}
+	return nil
 }
 
 func ActivityTypeLabel(subtype string) string {

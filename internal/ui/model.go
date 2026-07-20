@@ -32,7 +32,8 @@ type channelsMsg struct {
 }
 
 type messagesMsg struct {
-	messages []graph.Message
+	messages     []graph.Message
+	backwardLink string // empty if no more pages
 }
 
 type notificationsMsg struct {
@@ -164,6 +165,10 @@ type Model struct {
 	mentionCursor      int                // índice seleccionado en el popup
 	showMentionPopup   bool
 	mentionAtPos       int                // posición del @ en el valor del textarea
+
+	// Pagination
+	messagesBackwardLink string // URL for loading older messages
+	loadingMore          bool   // true while fetching older messages
 
 	// Input for sending messages
 	input    textarea.Model

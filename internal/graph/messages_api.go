@@ -59,7 +59,7 @@ type chatSvcResponse struct {
 }
 
 // GetMessages fetches messages from a channel using the internal API (ChatSvc)
-func (c *Client) GetMessages(teamID, channelID string, pageSize int) ([]Message, error) {
+func (c *Client) GetMessagesWithLink(teamID, channelID string, pageSize int) ([]Message, string, error) {
 	var allMsgs []Message
 	batchSize := pageSize
 	if batchSize > 200 {
@@ -73,10 +73,12 @@ func (c *Client) GetMessages(teamID, channelID string, pageSize int) ([]Message,
 
 	urlStr := fmt.Sprintf("https://teams.microsoft.com/api/chatsvc/amer/v1/users/ME/conversations/%s/messages?view=msnp24Equivalent|supportsMessageProperties&pageSize=%d&startTime=1", channelID, batchSize)
 
+	var lastBackwardLink string
+
 	for page := 0; page < maxPages && len(allMsgs) < pageSize; page++ {
 		req, err := http.NewRequest(http.MethodGet, urlStr, nil)
 		if err != nil {
-			return allMsgs, err
+			return allMsgs, lastBackwardLink, err
 		}
 
 		req.Header.Set("Authorization", "Bearer "+c.WebToken)
@@ -90,24 +92,24 @@ func (c *Client) GetMessages(teamID, channelID string, pageSize int) ([]Message,
 
 		resp, err := c.HTTPClient.Do(req)
 		if err != nil {
-			return allMsgs, err
+			return allMsgs, lastBackwardLink, err
 		}
 
 		if resp.StatusCode != http.StatusOK {
 			body, _ := io.ReadAll(resp.Body)
 			resp.Body.Close()
-			return allMsgs, &ChatSvcError{StatusCode: resp.StatusCode, Message: string(body)}
+			return allMsgs, lastBackwardLink, &ChatSvcError{StatusCode: resp.StatusCode, Message: string(body)}
 		}
 
 		body, err := io.ReadAll(resp.Body)
 		resp.Body.Close()
 		if err != nil {
-			return allMsgs, fmt.Errorf("error reading response: %w", err)
+			return allMsgs, lastBackwardLink, fmt.Errorf("error reading response: %w", err)
 		}
 
 		var res chatSvcResponse
 		if err := json.Unmarshal(body, &res); err != nil {
-			return allMsgs, fmt.Errorf("error parsing messages: %w", err)
+			return allMsgs, lastBackwardLink, fmt.Errorf("error parsing messages: %w", err)
 		}
 
 		for _, m := range res.Messages {
@@ -261,6 +263,9 @@ func (c *Client) GetMessages(teamID, channelID string, pageSize int) ([]Message,
 		if len(res.Messages) == 0 {
 			break
 		}
+		if res.Metadata.BackwardLink != "" {
+			lastBackwardLink = res.Metadata.BackwardLink
+		}
 		if res.Metadata.BackwardLink == "" {
 			break
 		}
@@ -271,7 +276,147 @@ func (c *Client) GetMessages(teamID, channelID string, pageSize int) ([]Message,
 		allMsgs = allMsgs[:pageSize]
 	}
 
-	return allMsgs, nil
+	return allMsgs, lastBackwardLink, nil
+}
+
+type MessagePage struct {
+	Messages     []Message
+	BackwardLink string
+}
+
+// GetMessagesFromLink fetches a page of messages using a backwardLink URL directly.
+func (c *Client) GetMessagesFromLink(link string) (MessagePage, error) {
+	req, err := http.NewRequest(http.MethodGet, link, nil)
+	if err != nil {
+		return MessagePage{}, err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.WebToken)
+	req.Header.Set("Accept", "application/json, text/plain, */*")
+	req.Header.Set("behavioroverride", "redirectAs404")
+	req.Header.Set("x-ms-migration", "True")
+	req.Header.Set("x-ms-request-priority", "0")
+	req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64; rv:151.0) Gecko/20100101 Firefox/151.0")
+	req.Header.Set("Referer", "https://teams.microsoft.com/")
+	req.Header.Set("Origin", "https://teams.microsoft.com")
+
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return MessagePage{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return MessagePage{}, fmt.Errorf("loadMore error %d: %s", resp.StatusCode, string(body))
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return MessagePage{}, err
+	}
+	var res chatSvcResponse
+	if err := json.Unmarshal(body, &res); err != nil {
+		return MessagePage{}, err
+	}
+
+	var msgs []Message
+	for _, m := range res.Messages {
+		t, _ := time.Parse(time.RFC3339, m.OriginalArrivalTime)
+		name := m.ImDisplayName
+		if name == "" {
+			name = "User"
+		}
+		rootID := m.RootMessageID
+		if rootID == "" {
+			rootID = m.ID
+		}
+		isDeleted := false
+		if m.Properties != nil {
+			if _, ok := m.Properties["deletetime"]; ok {
+				isDeleted = true
+			}
+		}
+
+		var attachments []Attachment
+		if m.Properties != nil && m.Properties["files"] != nil {
+			if fStr, ok := m.Properties["files"].(string); ok {
+				var files []map[string]interface{}
+				if json.Unmarshal([]byte(fStr), &files) == nil {
+					for _, f := range files {
+						fname, _ := f["name"].(string)
+						var furl string
+						if u, ok := f["fileUrl"].(string); ok && u != "" {
+							furl = u
+						}
+						if furl != "" {
+							attachments = append(attachments, Attachment{
+								Name: fname,
+								URL:  furl,
+								Type: "file",
+							})
+						}
+					}
+				}
+			}
+		}
+
+		var reactions []Reaction
+		if m.AnnotationsSummary != nil {
+			for key, count := range m.AnnotationsSummary.Emotions {
+				if count > 0 {
+					reactions = append(reactions, Reaction{Key: key, Count: count})
+				}
+			}
+			sort.Slice(reactions, func(i, j int) bool {
+				return reactions[i].Count > reactions[j].Count
+			})
+		} else if m.Properties != nil && m.Properties["emotions"] != nil {
+			if emoList, ok := m.Properties["emotions"].([]interface{}); ok {
+				for _, e := range emoList {
+					if emoMap, ok := e.(map[string]interface{}); ok {
+						if key, ok := emoMap["key"].(string); ok {
+							if users, ok := emoMap["users"].([]interface{}); ok {
+								if len(users) > 0 {
+									reactions = append(reactions, Reaction{Key: key, Count: len(users)})
+								}
+							}
+						}
+					}
+				}
+				sort.Slice(reactions, func(i, j int) bool {
+					return reactions[i].Count > reactions[j].Count
+				})
+			} else if emoStr, ok := m.Properties["emotions"].(string); ok {
+				var emoList []struct {
+					Key   string        `json:"key"`
+					Users []interface{} `json:"users"`
+				}
+				if json.Unmarshal([]byte(emoStr), &emoList) == nil {
+					for _, e := range emoList {
+						if len(e.Users) > 0 {
+							reactions = append(reactions, Reaction{Key: e.Key, Count: len(e.Users)})
+						}
+					}
+					sort.Slice(reactions, func(i, j int) bool {
+						return reactions[i].Count > reactions[j].Count
+					})
+				}
+			}
+		}
+
+		msgs = append(msgs, Message{
+			ID:            m.ID,
+			RootMessageID: rootID,
+			Body:          cleanHTML(m.Content),
+			RawBody:       m.Content,
+			FromName:      name,
+			FromUserID:    m.FromUserId,
+			CreatedAt:     t,
+			MessageType:   m.MessageType,
+			Deleted:       isDeleted,
+			Attachments:   attachments,
+			Reactions:     reactions,
+		})
+	}
+	return MessagePage{Messages: msgs, BackwardLink: res.Metadata.BackwardLink}, nil
 }
 
 // SendMessage sends a text message to the specified channel using the internal API
@@ -452,7 +597,7 @@ func (c *Client) GetMessageReactions(channelID, messageID, selfID string) (map[s
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
-	
+
 	var res struct {
 		Properties struct {
 			Emotions []struct {
@@ -466,7 +611,7 @@ func (c *Client) GetMessageReactions(channelID, messageID, selfID string) (map[s
 	if err := json.Unmarshal(body, &res); err != nil {
 		return nil, err
 	}
-	
+
 	// map[reactionKey] = userAlreadyReacted
 	result := make(map[string]bool)
 	for _, e := range res.Properties.Emotions {

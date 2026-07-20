@@ -559,12 +559,12 @@ func loadChannelsCmd(client *graph.Client, teamID string) tea.Cmd {
 
 func loadMessagesCmd(client *graph.Client, teamID, channelID string, pageSize int) tea.Cmd {
 	return func() tea.Msg {
-		msgs, err := client.GetMessages(teamID, channelID, pageSize)
+		msgs, link, err := client.GetMessagesWithLink(teamID, channelID, pageSize)
 		if err != nil {
 			return messagesErrMsg{err: err, conversationID: channelID, partialMsgs: msgs}
 		}
 
-		return messagesMsg{msgs}
+		return messagesMsg{messages: msgs, backwardLink: link}
 	}
 }
 
@@ -576,6 +576,23 @@ type removeReactionMsg struct{ err error }
 
 type editMessageMsg struct{ err error }
 type deleteMessageMsg struct{ err error }
+
+type loadMoreMessagesMsg struct {
+	messages     []graph.Message
+	backwardLink string
+	err          error
+}
+
+func loadMoreMessagesCmd(client *graph.Client, backwardLink string) tea.Cmd {
+	return func() tea.Msg {
+		page, err := client.GetMessagesFromLink(backwardLink)
+		return loadMoreMessagesMsg{
+			messages:     page.Messages,
+			backwardLink: page.BackwardLink,
+			err:          err,
+		}
+	}
+}
 
 func editMessageCmd(client *graph.Client, channelID, messageID, content string) tea.Cmd {
 	return func() tea.Msg {
@@ -1395,7 +1412,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case messageSentMsg:
 		// Message sent successfully. Reload messages for the channel/chat
-		return m, loadMessagesCmd(m.client, "", m.activeConversationID(), 200)
+		m.messagesBackwardLink = ""
+			m.loadingMore = false
+			return m, loadMessagesCmd(m.client, "", m.activeConversationID(), 200)
 
 	case messageSendErrMsg:
 		m.viewport.SetContent(fmt.Sprintf("Error sending message: %v", msg.err))
@@ -1406,7 +1425,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.isReplyTyping = false
 		m.input.Reset()
 		// Reload messages to get the new reply
-		return m, loadMessagesCmd(m.client, "", m.activeConversationID(), 200)
+		m.messagesBackwardLink = ""
+			m.loadingMore = false
+			return m, loadMessagesCmd(m.client, "", m.activeConversationID(), 200)
 
 	case threadReplySendErrMsg:
 		m.isReplyTyping = false
@@ -1421,7 +1442,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.downloadStatusID++
 			return m, clearStatusAfter(m.downloadStatusID)
 		}
-		return m, loadMessagesCmd(m.client, "", m.activeConversationID(), 200)
+		m.messagesBackwardLink = ""
+			m.loadingMore = false
+			return m, loadMessagesCmd(m.client, "", m.activeConversationID(), 200)
 
 	case deleteMessageMsg:
 		m.showDeleteMsgPopup = false
@@ -1430,7 +1453,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.downloadStatusID++
 			return m, clearStatusAfter(m.downloadStatusID)
 		}
-		return m, loadMessagesCmd(m.client, "", m.activeConversationID(), 200)
+		m.messagesBackwardLink = ""
+			m.loadingMore = false
+			return m, loadMessagesCmd(m.client, "", m.activeConversationID(), 200)
 
 	case addReactionMsg:
 		if msg.err != nil {
@@ -1439,7 +1464,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, clearStatusAfter(m.downloadStatusID)
 		}
 		// Reload to see the updated reaction
-		return m, loadMessagesCmd(m.client, m.teams[m.selectedTeam].ID, m.activeConversationID(), 200)
+		m.messagesBackwardLink = ""
+			m.loadingMore = false
+			return m, loadMessagesCmd(m.client, m.teams[m.selectedTeam].ID, m.activeConversationID(), 200)
 
 	case removeReactionMsg:
 		if msg.err != nil {
@@ -1447,7 +1474,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.downloadStatusID++
 			return m, clearStatusAfter(m.downloadStatusID)
 		}
-		return m, loadMessagesCmd(m.client, m.teams[m.selectedTeam].ID, m.activeConversationID(), 200)
+		m.messagesBackwardLink = ""
+			m.loadingMore = false
+			return m, loadMessagesCmd(m.client, m.teams[m.selectedTeam].ID, m.activeConversationID(), 200)
 
 	case reactionsLoadedMsg:
 		m.loading = false
@@ -1469,6 +1498,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.showReactionPicker = true
 		m.reactionCursor = 0
+		return m, nil
+
+	case loadMoreMessagesMsg:
+		m.loadingMore = false
+		if msg.err != nil {
+			return m, nil
+		}
+		// Prepend older messages (append them because index 0 is newest)
+		m.messages = append(m.messages, msg.messages...)
+		m.messagesBackwardLink = msg.backwardLink
+
+		// Re-render preserving scroll position
+		yBefore := m.viewport.YOffset
+		var content string
+		if m.workspace == WorkspaceDMs {
+			content = formatMessagesDM(m.messages, m.viewport.Width, m.userName, m.selfID, m.messageCursor, m.cursorMode)
+		} else {
+			content = formatMessagesWithCursor(m.messages, m.viewport.Width, m.messageCursor, m.cursorMode)
+		}
+		m.viewport.SetContent(content)
+		m.viewport.SetYOffset(yBefore)
 		return m, nil
 
 	case filesErrMsg:
@@ -1603,7 +1653,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.loadedConvID == oldID {
 					m.loadedConvID = msg.id
 					m.loading = true
-					return m, loadMessagesCmd(m.client, "", msg.id, 200)
+					m.messagesBackwardLink = ""
+			m.loadingMore = false
+			return m, loadMessagesCmd(m.client, "", msg.id, 200)
 				}
 				break
 			}
@@ -1625,6 +1677,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case messagesMsg:
 		m.messages = msg.messages
+		m.messagesBackwardLink = msg.backwardLink
+		m.loadingMore = false
 		m.loading = false
 
 		if m.viewMode == ModeChat {
@@ -1661,7 +1715,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, pollChatsCmd(m.client))
 		// Refresh messages if a conversation is open and the user isn't typing
 		if m.loadedConvID != "" && m.viewMode == ModeChat && !m.isTyping && !m.focusLeft {
-			cmds = append(cmds, loadMessagesCmd(m.client, "", m.loadedConvID, 200))
+			m.messagesBackwardLink = ""
+					m.loadingMore = false
+					cmds = append(cmds, loadMessagesCmd(m.client, "", m.loadedConvID, 200))
 		}
 		// Re-schedule the next tick
 		cmds = append(cmds, refreshTickCmd())
@@ -1750,7 +1806,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				break
 			}
 		}
-		return m, loadMessagesCmd(m.client, msg.teamID, msg.threadID, 200)
+		m.messagesBackwardLink = ""
+			m.loadingMore = false
+			return m, loadMessagesCmd(m.client, msg.teamID, msg.threadID, 200)
 
 	case setPresenceMsg:
 		if msg.err != nil {
@@ -1810,7 +1868,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.focusLeft = false
 				m.viewMode = ModeChat
 				m.loading = true
-				return m, loadMessagesCmd(m.client, "", ch.ID, 200)
+				m.messagesBackwardLink = ""
+			m.loadingMore = false
+			return m, loadMessagesCmd(m.client, "", ch.ID, 200)
 			}
 		}
 		m.chats = append([]graph.Chat{msg.chat}, m.chats...)
@@ -1819,7 +1879,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.focusLeft = false
 		m.viewMode = ModeChat
 		m.loading = true
-		return m, loadMessagesCmd(m.client, "", msg.chat.ID, 200)
+		m.messagesBackwardLink = ""
+			m.loadingMore = false
+			return m, loadMessagesCmd(m.client, "", msg.chat.ID, 200)
 
 	case createDMErrMsg:
 		m.newDMErr = msg.err.Error()
@@ -2097,10 +2159,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.focusLeft = true
 			}
 		} else {
-			// Right panel: scroll viewport
-			m.viewport, cmd = m.viewport.Update(msg)
+			// Right panel: route to the active viewport
+			if m.showThread {
+				m.threadViewport, cmd = m.threadViewport.Update(msg)
+			} else {
+				m.viewport, cmd = m.viewport.Update(msg)
+			}
 			if cmd != nil {
 				cmds = append(cmds, cmd)
+			}
+			if m.viewport.AtTop() && m.messagesBackwardLink != "" && !m.loadingMore && m.viewMode == ModeChat && !m.showThread {
+				m.loadingMore = true
+				cmds = append(cmds, loadMoreMessagesCmd(m.client, m.messagesBackwardLink))
 			}
 			if msg.Type == tea.MouseLeft {
 				m.focusLeft = false
@@ -3142,7 +3212,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if !m.focusLeft && m.viewMode == ModeInfo {
 				m.viewMode = ModeChat
 				m.loading = true
-				return m, loadMessagesCmd(m.client, m.teams[m.selectedTeam].ID, m.channels[m.selectedChan].ID, 200)
+				m.messagesBackwardLink = ""
+			m.loadingMore = false
+			return m, loadMessagesCmd(m.client, m.teams[m.selectedTeam].ID, m.channels[m.selectedChan].ID, 200)
 			}
 			if !m.focusLeft {
 				m.focusLeft = true
@@ -3178,11 +3250,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						if m.viewMode == ModeChat {
 							m.loading = true
 							m.loadedConvID = m.chats[m.selectedChat].ID
-							cmds = append(cmds, loadMessagesCmd(m.client, "", m.loadedConvID, 200))
+							m.messagesBackwardLink = ""
+					m.loadingMore = false
+					cmds = append(cmds, loadMessagesCmd(m.client, "", m.loadedConvID, 200))
 						} else if m.viewMode == ModeFiles {
 							m.loadedConvID = m.chats[m.selectedChat].ID
 							m.loading = true
-							cmds = append(cmds, loadMessagesCmd(m.client, "", m.loadedConvID, 200))
+							m.messagesBackwardLink = ""
+					m.loadingMore = false
+					cmds = append(cmds, loadMessagesCmd(m.client, "", m.loadedConvID, 200))
 						}
 					}
 			} else if m.workspace == WorkspaceActivity {
@@ -3209,25 +3285,29 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.viewport.SetContent("")
 					}
 				}
-			} else {
-				if m.viewMode == ModeFiles {
-					if m.selectedFile > 0 {
-						m.selectedFile--
-						m.viewport.SetContent(renderFilesContent(&m))
-					}
-				} else if m.viewMode == ModeInfo {
-					if m.channelMemberCursor > 0 {
-						m.channelMemberCursor--
-						m.viewport.SetContent(renderInfoContent(&m))
+				} else {
+					if m.viewMode == ModeFiles {
+						if m.selectedFile > 0 {
+							m.selectedFile--
+							m.viewport.SetContent(renderFilesContent(&m))
+						}
+					} else if m.viewMode == ModeInfo {
+						if m.channelMemberCursor > 0 {
+							m.channelMemberCursor--
+							m.viewport.SetContent(renderInfoContent(&m))
+						} else {
+							m.viewport, cmd = m.viewport.Update(msg)
+							cmds = append(cmds, cmd)
+						}
 					} else {
 						m.viewport, cmd = m.viewport.Update(msg)
 						cmds = append(cmds, cmd)
+						if m.viewport.AtTop() && m.messagesBackwardLink != "" && !m.loadingMore && m.viewMode == ModeChat {
+							m.loadingMore = true
+							cmds = append(cmds, loadMoreMessagesCmd(m.client, m.messagesBackwardLink))
+						}
 					}
-				} else {
-					m.viewport, cmd = m.viewport.Update(msg)
-					cmds = append(cmds, cmd)
 				}
-			}
 
 		case "down", "j":
 			if m.focusLeft {
@@ -3237,11 +3317,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						if m.viewMode == ModeChat {
 							m.loading = true
 							m.loadedConvID = m.chats[m.selectedChat].ID
-							cmds = append(cmds, loadMessagesCmd(m.client, "", m.loadedConvID, 200))
+							m.messagesBackwardLink = ""
+					m.loadingMore = false
+					cmds = append(cmds, loadMessagesCmd(m.client, "", m.loadedConvID, 200))
 						} else if m.viewMode == ModeFiles {
 							m.loadedConvID = m.chats[m.selectedChat].ID
 							m.loading = true
-							cmds = append(cmds, loadMessagesCmd(m.client, "", m.loadedConvID, 200))
+							m.messagesBackwardLink = ""
+					m.loadingMore = false
+					cmds = append(cmds, loadMessagesCmd(m.client, "", m.loadedConvID, 200))
 						}
 					}
 			} else if m.workspace == WorkspaceActivity {
@@ -3303,6 +3387,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.viewMode == ModeInfo {
 					m.viewMode = ModeChat
 					m.loading = true
+					m.messagesBackwardLink = ""
+					m.loadingMore = false
 					cmds = append(cmds, loadMessagesCmd(m.client, m.teams[m.selectedTeam].ID, m.channels[m.selectedChan].ID, 200))
 				} else if m.viewMode == ModeFiles && len(m.folderStack) > 0 {
 					m.folderStack = m.folderStack[:len(m.folderStack)-1]
@@ -3380,7 +3466,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					} else {
 						m.viewMode = ModeChat
 						m.loading = true
-						cmds = append(cmds, loadMessagesCmd(m.client, m.teams[m.selectedTeam].ID, m.channels[m.selectedChan].ID, 200))
+						m.messagesBackwardLink = ""
+					m.loadingMore = false
+					cmds = append(cmds, loadMessagesCmd(m.client, m.teams[m.selectedTeam].ID, m.channels[m.selectedChan].ID, 200))
 					}
 				} else if m.workspace == WorkspaceDMs && len(m.chats) > 0 {
 					activeID := m.activeConversationID()
@@ -3390,7 +3478,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							m.loading = true
 							m.loadedConvID = activeID
 							m.viewMode = ModeChat // Must reset to ModeChat since we're requesting messages from scratch
-							cmds = append(cmds, loadMessagesCmd(m.client, "", activeID, 200))
+							m.messagesBackwardLink = ""
+					m.loadingMore = false
+					cmds = append(cmds, loadMessagesCmd(m.client, "", activeID, 200))
 						} else {
 							// Local aggregation: zero network, uses what's already in m.messages.
 							m.viewMode = ModeFiles
@@ -3405,7 +3495,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						if m.loadedConvID != activeID {
 							m.loading = true
 							m.loadedConvID = activeID
-							cmds = append(cmds, loadMessagesCmd(m.client, "", activeID, 200))
+							m.messagesBackwardLink = ""
+					m.loadingMore = false
+					cmds = append(cmds, loadMessagesCmd(m.client, "", activeID, 200))
 						} else {
 							var fresh string
 							msgsToRender := m.messages
@@ -3454,7 +3546,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.viewMode     = ModeChat
 						m.loadedConvID = n.SourceThread
 						m.loading      = true
-						cmds = append(cmds, loadMessagesCmd(m.client, teamID, n.SourceThread, 200))
+						m.messagesBackwardLink = ""
+					m.loadingMore = false
+					cmds = append(cmds, loadMessagesCmd(m.client, teamID, n.SourceThread, 200))
 					} else {
 						// Cache miss — async search across all teams
 						cmds = append(cmds, navigateToThreadCmd(m.client, m.teams, n.SourceThread))
@@ -3532,7 +3626,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.loading = true
 				m.folderStack = nil
 				// Load full history (1000 messages is the practical limit per chunk without hanging)
-				cmds = append(cmds, loadMessagesCmd(m.client, "", m.activeConversationID(), 1000))
+				m.messagesBackwardLink = ""
+					m.loadingMore = false
+					cmds = append(cmds, loadMessagesCmd(m.client, "", m.activeConversationID(), 1000))
 			}
 
 		case "X", "x":
@@ -3568,7 +3664,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.viewMode == ModeInfo {
 					m.viewMode = ModeChat
 					m.loading = true
-					return m, loadMessagesCmd(m.client, m.teams[m.selectedTeam].ID, m.channels[m.selectedChan].ID, 200)
+					m.messagesBackwardLink = ""
+			m.loadingMore = false
+			return m, loadMessagesCmd(m.client, m.teams[m.selectedTeam].ID, m.channels[m.selectedChan].ID, 200)
 				} else {
 					m.viewMode = ModeInfo
 					m.channelInfo = nil
@@ -3628,7 +3726,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				chatID := m.chats[m.selectedChat].ID
 				m.loadedConvID = chatID
 				delete(m.chatUnread, chatID) // Clear badge on open
-				cmds = append(cmds, loadMessagesCmd(m.client, "", chatID, 200))
+				m.messagesBackwardLink = ""
+					m.loadingMore = false
+					cmds = append(cmds, loadMessagesCmd(m.client, "", chatID, 200))
 			} else if m.focusLeft && m.workspace == WorkspaceTeams && m.focusList == 0 {
 				if len(m.teams) > 0 {
 					m.focusList = 1
@@ -3642,7 +3742,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.folderStack = nil
 				chanID := m.channels[m.selectedChan].ID
 				m.loadedConvID = chanID
-				cmds = append(cmds, loadMessagesCmd(m.client, m.teams[m.selectedTeam].ID, chanID, 200))
+				m.messagesBackwardLink = ""
+					m.loadingMore = false
+					cmds = append(cmds, loadMessagesCmd(m.client, m.teams[m.selectedTeam].ID, chanID, 200))
 				// Pre-load team members for mention resolution if not already loaded
 				if len(m.teamMembers) == 0 {
 					m.membersLoadSilent = true
