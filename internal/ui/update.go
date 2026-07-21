@@ -1779,8 +1779,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				content = formatMessagesWithCursor(msgsToRender, m.viewport.Width, m.messageCursor, m.cursorMode)
 			}
+			atBottom := m.viewport.AtBottom()
 			m.viewport.SetContent(content)
-			m.viewport.GotoBottom()
+			if atBottom {
+				m.viewport.GotoBottom()
+			}
 			
 			// Also update thread view if active
 				if m.showThread {
@@ -2625,7 +2628,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.messageCursor--
 				}
 				content := formatMessagesWithCursor(m.messages, m.viewport.Width, m.messageCursor, m.cursorMode)
+				// Scroll to cursor
+				cursorLine := 0
+				for i, line := range strings.Split(content, "\n") {
+					if strings.HasPrefix(line, "▶ ") {
+						cursorLine = i
+						break
+					}
+				}
 				m.viewport.SetContent(content)
+				visibleTop := m.viewport.YOffset
+				visibleBottom := m.viewport.YOffset + m.viewport.Height
+				if cursorLine < visibleTop+2 {
+					m.viewport.SetYOffset(cursorLine - 2)
+				} else if cursorLine > visibleBottom-3 {
+					m.viewport.SetYOffset(cursorLine - m.viewport.Height + 3)
+				}
 				return m, nil
 			case "up", "j":
 				rootMsgs := rootMessages(m.messages)
@@ -2633,7 +2651,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.messageCursor++
 				}
 				content := formatMessagesWithCursor(m.messages, m.viewport.Width, m.messageCursor, m.cursorMode)
+				// Scroll to cursor
+				cursorLine := 0
+				for i, line := range strings.Split(content, "\n") {
+					if strings.HasPrefix(line, "▶ ") {
+						cursorLine = i
+						break
+					}
+				}
 				m.viewport.SetContent(content)
+				visibleTop := m.viewport.YOffset
+				visibleBottom := m.viewport.YOffset + m.viewport.Height
+				if cursorLine < visibleTop+2 {
+					m.viewport.SetYOffset(cursorLine - 2)
+				} else if cursorLine > visibleBottom-3 {
+					m.viewport.SetYOffset(cursorLine - m.viewport.Height + 3)
+				}
 				return m, nil
 			case "enter":
 				rootMsgs := rootMessages(m.messages)
@@ -2667,14 +2700,42 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.messageCursor++
 				}
 				content := formatMessagesDM(m.messages, m.viewport.Width, m.userName, m.selfID, m.messageCursor, m.cursorMode)
+				cursorLine := 0
+				for i, line := range strings.Split(content, "\n") {
+					if strings.HasPrefix(line, "▶ ") {
+						cursorLine = i
+						break
+					}
+				}
 				m.viewport.SetContent(content)
+				visibleTop := m.viewport.YOffset
+				visibleBottom := m.viewport.YOffset + m.viewport.Height
+				if cursorLine < visibleTop+2 {
+					m.viewport.SetYOffset(cursorLine - 2)
+				} else if cursorLine > visibleBottom-3 {
+					m.viewport.SetYOffset(cursorLine - m.viewport.Height + 3)
+				}
 				return m, nil
 			case "down", "j":
 				if m.messageCursor > 0 {
 					m.messageCursor--
 				}
 				content := formatMessagesDM(m.messages, m.viewport.Width, m.userName, m.selfID, m.messageCursor, m.cursorMode)
+				cursorLine := 0
+				for i, line := range strings.Split(content, "\n") {
+					if strings.HasPrefix(line, "▶ ") {
+						cursorLine = i
+						break
+					}
+				}
 				m.viewport.SetContent(content)
+				visibleTop := m.viewport.YOffset
+				visibleBottom := m.viewport.YOffset + m.viewport.Height
+				if cursorLine < visibleTop+2 {
+					m.viewport.SetYOffset(cursorLine - 2)
+				} else if cursorLine > visibleBottom-3 {
+					m.viewport.SetYOffset(cursorLine - m.viewport.Height + 3)
+				}
 				return m, nil
 			case "e":
 				validMsgs := validDMMessages(m.messages)
