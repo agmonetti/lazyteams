@@ -247,6 +247,9 @@ type Model struct {
 	createChannelStep      int    // 0=name, 1=type
 	createChannelErr       string
 
+	// Show hidden teams
+	showHidden bool
+
 	// File management
 	showDeleteFilePopup   bool
 	showCreateFolderPopup bool

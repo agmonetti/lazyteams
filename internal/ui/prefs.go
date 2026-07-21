@@ -10,6 +10,7 @@ type Preferences struct {
 	// Maps UserID -> ChatID to support multiple accounts without cache collisions
 	SelfChatIDs map[string]string `json:"self_chat_ids"`
 	DownloadDir string            `json:"download_dir,omitempty"`
+	HiddenTeams []string          `json:"hidden_teams,omitempty"`
 }
 
 func prefsPath() string {

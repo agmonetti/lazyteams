@@ -142,10 +142,25 @@ func (m Model) View() string {
 		}
 	} else if m.workspace == WorkspaceTeams {
 		leftContent += titleStyle.Render("Teams") + "\n"
+		visibleTeams := make([]int, 0, len(m.teams))
 		for i, t := range m.teams {
+			isHidden := contains(m.prefs.HiddenTeams, t.ID)
+			if m.showHidden {
+				if !isHidden {
+					continue
+				}
+			} else {
+				if isHidden {
+					continue
+				}
+			}
+			visibleTeams = append(visibleTeams, i)
+		}
+		for vi, ri := range visibleTeams {
+			t := m.teams[ri]
 			cursor := "  "
 			style := normalItemStyle
-			if i == m.selectedTeam {
+			if ri == m.selectedTeam {
 				if m.focusLeft && m.focusList == 0 {
 					cursor = "▶ "
 					style = selectedItemStyle
@@ -153,7 +168,22 @@ func (m Model) View() string {
 					style = style.Copy().Foreground(lipgloss.Color("245"))
 				}
 			}
+			if m.showHidden {
+				style = style.Copy().Foreground(colorMuted)
+			}
+			_ = vi
 			leftContent += fmt.Sprintf("%s%s\n", cursor, style.Render(truncateText(t.DisplayName, leftOuterWidth-4)))
+		}
+		hiddenCount := 0
+		for _, t := range m.teams {
+			if contains(m.prefs.HiddenTeams, t.ID) {
+				hiddenCount++
+			}
+		}
+		if !m.showHidden && hiddenCount > 0 {
+			leftContent += fmt.Sprintf("  %s\n", helpStyle.Render(fmt.Sprintf("(A) manage hidden (%d)", hiddenCount)))
+		} else if m.showHidden {
+			leftContent += fmt.Sprintf("  %s\n", helpStyle.Render("(A) back to all teams"))
 		}
 
 		leftContent += "\n"
@@ -1417,4 +1447,13 @@ func truncateText(text string, maxWidth int) string {
 		runes = runes[:len(runes)-1]
 	}
 	return string(runes) + "…"
+}
+
+func contains(slice []string, s string) bool {
+	for _, v := range slice {
+		if v == s {
+			return true
+		}
+	}
+	return false
 }

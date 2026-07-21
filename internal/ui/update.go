@@ -3255,6 +3255,35 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.createTeamInput.Focus()
 			}
 
+		case "A":
+			if m.workspace == WorkspaceTeams && m.focusLeft && m.focusList == 0 {
+				m.showHidden = !m.showHidden
+				for i, t := range m.teams {
+					isHidden := contains(m.prefs.HiddenTeams, t.ID)
+					if m.showHidden && isHidden {
+						m.selectedTeam = i
+						break
+					}
+					if !m.showHidden && !isHidden {
+						m.selectedTeam = i
+						break
+					}
+				}
+				return m, loadChannelsCmd(m.client, m.teams[m.selectedTeam].ID)
+			}
+
+		case "H":
+			if m.workspace == WorkspaceTeams && m.focusLeft && m.focusList == 0 && m.selectedTeam < len(m.teams) {
+				teamID := m.teams[m.selectedTeam].ID
+				if contains(m.prefs.HiddenTeams, teamID) {
+					m.prefs.HiddenTeams = remove(m.prefs.HiddenTeams, teamID)
+				} else {
+					m.prefs.HiddenTeams = append(m.prefs.HiddenTeams, teamID)
+				}
+				savePrefs(m.prefs)
+				return m, nil
+			}
+
 		case "u":
 			if m.workspace == WorkspaceTeams && m.viewMode == ModeFiles && !m.focusLeft {
 				m.showDirPicker = true
@@ -3460,10 +3489,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.selectedAssign--
 					}
 				} else if m.focusList == 0 && len(m.teams) > 0 {
-					if m.selectedTeam > 0 {
-						m.selectedTeam--
+					prev := nextVisibleTeam(m.teams, m.prefs.HiddenTeams, m.selectedTeam, m.showHidden, -1)
+					if prev != m.selectedTeam {
+						m.selectedTeam = prev
 						m.loading = true
-						m.teamMembers = nil // invalidate members cache on team change
+						m.teamMembers = nil
 						cmds = append(cmds, loadChannelsCmd(m.client, m.teams[m.selectedTeam].ID))
 					}
 				} else if m.focusList == 1 && len(m.channels) > 0 {
@@ -3527,10 +3557,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.selectedAssign++
 					}
 				} else if m.focusList == 0 && len(m.teams) > 0 {
-					if m.selectedTeam < len(m.teams)-1 {
-						m.selectedTeam++
+					next := nextVisibleTeam(m.teams, m.prefs.HiddenTeams, m.selectedTeam, m.showHidden, +1)
+					if next != m.selectedTeam {
+						m.selectedTeam = next
 						m.loading = true
-						m.teamMembers = nil // invalidate members cache on team change
+						m.teamMembers = nil
 						cmds = append(cmds, loadChannelsCmd(m.client, m.teams[m.selectedTeam].ID))
 					}
 				} else if m.focusList == 1 && len(m.channels) > 0 {
@@ -4250,6 +4281,32 @@ func isSharePointURL(rawURL string) bool {
 }
 
 
+
+func nextVisibleTeam(teams []graph.Team, hiddenIDs []string, current int, showHidden bool, dir int) int {
+	total := len(teams)
+	next := current + dir
+	for next >= 0 && next < total {
+		isHidden := contains(hiddenIDs, teams[next].ID)
+		if showHidden && isHidden {
+			return next
+		}
+		if !showHidden && !isHidden {
+			return next
+		}
+		next += dir
+	}
+	return current
+}
+
+func remove(slice []string, s string) []string {
+	result := make([]string, 0, len(slice))
+	for _, v := range slice {
+		if v != s {
+			result = append(result, v)
+		}
+	}
+	return result
+}
 
 func markNotifReadCmd(client *graph.Client, msgID string) tea.Cmd {
     return func() tea.Msg {
