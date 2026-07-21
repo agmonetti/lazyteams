@@ -14,9 +14,42 @@ import (
 	"time"
 )
 
-var stripTags = regexp.MustCompile(`<[^>]*>`)
-var multipleSpaces = regexp.MustCompile(`[ \t]+`)
-var MentionSpan = regexp.MustCompile(`<span[^>]*itemtype="http://schema\.skype\.com/Mention"[^>]*>([^<]+)</span>`)
+var (
+	stripTags       = regexp.MustCompile(`<[^>]*>`)
+	multipleSpaces  = regexp.MustCompile(`[ \t]+`)
+	MentionSpan     = regexp.MustCompile(`<span[^>]*itemtype="http://schema\.skype\.com/Mention"[^>]*>([^<]+)</span>`)
+	boldRe          = regexp.MustCompile(`(?i)<(b|strong)(\s+[^>]*)?>`)
+	boldCloseRe     = regexp.MustCompile(`(?i)</(b|strong)\s*>`)
+	italicRe        = regexp.MustCompile(`(?i)<(i|em)(\s+[^>]*)?>`)
+	italicCloseRe   = regexp.MustCompile(`(?i)</(i|em)\s*>`)
+	strikeRe        = regexp.MustCompile(`(?i)<(s|strike|del)(\s+[^>]*)?>`)
+	strikeCloseRe   = regexp.MustCompile(`(?i)</(s|strike|del)\s*>`)
+	linkRe          = regexp.MustCompile(`(?i)<a\s+[^>]*href="([^"]+)"[^>]*>([^<]+)</a>`)
+	codeRe          = regexp.MustCompile(`(?i)<code(\s+[^>]*)?>`)
+	codeCloseRe     = regexp.MustCompile(`(?i)</code\s*>`)
+	preRe           = regexp.MustCompile(`(?i)<pre(\s+[^>]*)?>`)
+	preCloseRe      = regexp.MustCompile(`(?i)</pre\s*>`)
+	ulRe            = regexp.MustCompile(`(?i)<ul(\s+[^>]*)?>`)
+	ulCloseRe       = regexp.MustCompile(`(?i)</ul\s*>`)
+	olRe            = regexp.MustCompile(`(?i)<ol(\s+[^>]*)?>`)
+	olCloseRe       = regexp.MustCompile(`(?i)</ol\s*>`)
+	liRe            = regexp.MustCompile(`(?i)<li(\s+[^>]*)?>`)
+	liCloseRe       = regexp.MustCompile(`(?i)</li\s*>`)
+	brRe            = regexp.MustCompile(`(?i)<br\s*/?>`)
+	pCloseRe        = regexp.MustCompile(`(?i)</p\s*>`)
+	divCloseRe      = regexp.MustCompile(`(?i)</div\s*>`)
+	blockquoteRe    = regexp.MustCompile(`(?i)<blockquote(\s+[^>]*)?>`)
+	blockquoteCloseRe = regexp.MustCompile(`(?i)</blockquote\s*>`)
+	headingRe       [6]*regexp.Regexp
+	headingCloseRe  [6]*regexp.Regexp
+)
+
+func init() {
+	for i := 1; i <= 6; i++ {
+		headingRe[i-1] = regexp.MustCompile(fmt.Sprintf(`(?i)<h%d(\s+[^>]*)?>`, i))
+		headingCloseRe[i-1] = regexp.MustCompile(fmt.Sprintf(`(?i)</h%d\s*>`, i))
+	}
+}
 
 type ChatSvcError struct {
 	StatusCode int
@@ -27,53 +60,129 @@ func (e *ChatSvcError) Error() string {
 	return fmt.Sprintf("chatsvc error %d: %s", e.StatusCode, e.Message)
 }
 
-func cleanHTML(content string) string {
-	// 0. Re-inject the @ symbol and markers for mentions before stripping tags
-	content = MentionSpan.ReplaceAllStringFunc(content, func(match string) string {
-		sub := MentionSpan.FindStringSubmatch(match)
-		if len(sub) < 2 {
-			return match
+func cleanHTML(s string) string {
+	// DEBUG TEMPORAL: Guardar HTML crudo si contiene un texto clave de la tabla
+	if strings.Contains(s, "Grupo 2") || strings.Contains(s, "Toschi") {
+		_ = os.WriteFile("/tmp/teams_table_debug.html", []byte(s), 0644)
+	}
+
+	// Step 1: Mentions → sentinel
+	s = MentionSpan.ReplaceAllStringFunc(s, func(m string) string {
+		sub := MentionSpan.FindStringSubmatch(m)
+		if len(sub) > 1 {
+			return "\x1E@" + sub[1] + "\x1F"
 		}
-		// Use control characters to delimit the exact mention
-		return "\x1E@" + sub[1] + "\x1F"
+		return m
 	})
 
-	// 1. Remove literal newlines and tabs from HTML code
-	content = strings.ReplaceAll(content, "\n", " ")
-	content = strings.ReplaceAll(content, "\r", " ")
-	content = strings.ReplaceAll(content, "\t", " ")
+	// Step 2: normalize whitespace
+	s = strings.NewReplacer("\n", " ", "\r", " ", "\t", " ").Replace(s)
 
-	// 2. Define breakpoints (visual blocks)
-	content = strings.ReplaceAll(content, "</tr>", "\n")
-	content = strings.ReplaceAll(content, "</td>", " ")
-	content = strings.ReplaceAll(content, "</li>", "\n")
-	content = strings.ReplaceAll(content, "<li>", "• ")
-	content = strings.ReplaceAll(content, "<br>", "\n")
-	content = strings.ReplaceAll(content, "<br/>", "\n")
-	content = strings.ReplaceAll(content, "<br />", "\n")
-	content = strings.ReplaceAll(content, "</p>", "\n")
-	content = strings.ReplaceAll(content, "</div>", "\n")
+	// Step 3: semantic HTML → Markdown
+	// Headings
+	for i := 1; i <= 6; i++ {
+		prefix := "\n" + strings.Repeat("#", i) + " "
+		s = headingRe[i-1].ReplaceAllString(s, prefix)
+		s = headingCloseRe[i-1].ReplaceAllString(s, "\n")
+	}
 
-	// 3. Strip remaining tags
-	content = stripTags.ReplaceAllString(content, "")
+	// Bold, italic, strikethrough
+	s = boldRe.ReplaceAllString(s, "**")
+	s = boldCloseRe.ReplaceAllString(s, "**")
+	s = italicRe.ReplaceAllString(s, "*")
+	s = italicCloseRe.ReplaceAllString(s, "*")
+	s = strikeRe.ReplaceAllString(s, "~~")
+	s = strikeCloseRe.ReplaceAllString(s, "~~")
 
-	// 4. Decode HTML entities (converts &quot; to ")
-	content = html.UnescapeString(content)
+	// Links
+	s = linkRe.ReplaceAllString(s, "[$2]($1)")
 
-	// 5. Collapse horizontal whitespace
-	content = multipleSpaces.ReplaceAllString(content, " ")
+	// Code
+	s = codeRe.ReplaceAllString(s, "`")
+	s = codeCloseRe.ReplaceAllString(s, "`")
+	s = preRe.ReplaceAllString(s, "\n```\n")
+	s = preCloseRe.ReplaceAllString(s, "\n```\n")
 
-	// 6. Trim empty lines and leading/trailing whitespace from each line
-	lines := strings.Split(content, "\n")
-	var out []string
-	for _, l := range lines {
-		trimmed := strings.TrimSpace(l)
-		if trimmed != "" {
-			out = append(out, trimmed)
+	// Lists
+	s = ulRe.ReplaceAllString(s, "\n")
+	s = ulCloseRe.ReplaceAllString(s, "\n")
+	s = olRe.ReplaceAllString(s, "\n")
+	s = olCloseRe.ReplaceAllString(s, "\n")
+	s = liRe.ReplaceAllString(s, "\n- ")
+	s = liCloseRe.ReplaceAllString(s, "")
+
+	// Blockquote
+	s = blockquoteRe.ReplaceAllString(s, "\n> ")
+	s = blockquoteCloseRe.ReplaceAllString(s, "\n")
+
+	// Tables → bullet lists
+	s = strings.ReplaceAll(s, "<table", "\n<table")
+	s = strings.ReplaceAll(s, "</table>", "\n")
+	s = strings.ReplaceAll(s, "<tbody>", "\n")
+	s = strings.ReplaceAll(s, "</tbody>", "\n")
+	s = strings.ReplaceAll(s, "<tr>", "\n- ")
+	s = strings.ReplaceAll(s, "</tr>", "")
+	s = strings.ReplaceAll(s, "<td>", "")
+	s = strings.ReplaceAll(s, "</td>", "")
+	s = strings.ReplaceAll(s, "<th>", "")
+	s = strings.ReplaceAll(s, "</th>", "")
+
+	// Block separators
+	s = brRe.ReplaceAllString(s, "\n")
+	s = pCloseRe.ReplaceAllString(s, "\n")
+	s = divCloseRe.ReplaceAllString(s, "\n")
+
+	// Step 4: strip remaining tags
+	s = stripTags.ReplaceAllString(s, "")
+
+	// Fix Markdown spacing for bold, italic, strikethrough
+	fixMarkdownSpacing := func(marker string, content string) string {
+		re := regexp.MustCompile(regexp.QuoteMeta(marker) + `(.*?)` + regexp.QuoteMeta(marker))
+		return re.ReplaceAllStringFunc(content, func(match string) string {
+			inner := match[len(marker) : len(match)-len(marker)]
+			leftSpace, rightSpace := "", ""
+			if strings.HasPrefix(inner, " ") {
+				leftSpace = " "
+				inner = strings.TrimLeft(inner, " ")
+			}
+			if strings.HasSuffix(inner, " ") {
+				rightSpace = " "
+				inner = strings.TrimRight(inner, " ")
+			}
+			if inner == "" {
+				return leftSpace + rightSpace
+			}
+			return leftSpace + marker + inner + marker + rightSpace
+		})
+	}
+	s = fixMarkdownSpacing("**", s)
+	s = fixMarkdownSpacing("*", s)
+	s = fixMarkdownSpacing("~~", s)
+
+	// Step 5: unescape HTML entities
+	s = html.UnescapeString(s)
+
+	// Step 6: collapse horizontal whitespace
+	s = multipleSpaces.ReplaceAllString(s, " ")
+
+	// Step 7: trim lines, preserve single blank lines for Markdown structure
+	lines := strings.Split(s, "\n")
+	var result []string
+	prevBlank := false
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			if !prevBlank {
+				result = append(result, "")
+			}
+			prevBlank = true
+		} else {
+			result = append(result, line)
+			prevBlank = false
 		}
 	}
 
-	return strings.Join(out, "\n")
+	return strings.TrimSpace(strings.Join(result, "\n"))
 }
 
 const baseURL = "https://graph.microsoft.com/v1.0"
