@@ -91,6 +91,9 @@ func (m Model) View() string {
 		return ""
 	}
 	panelOuterHeight := m.height - 6
+	if panelOuterHeight < 2 {
+		panelOuterHeight = 2
+	}
 
 	// Width(n) adds 2 cols of border per panel; 1 col of margin for Kitty.
 	available       := m.width - 5

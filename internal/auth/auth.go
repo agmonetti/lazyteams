@@ -9,13 +9,14 @@ import (
 	"strings"
 )
 
-// loadTokensFile loads the tokens file into the environment if it exists.
-// Existing environment variables take precedence over the file.
-func loadTokensFile() {
+// loadTokensFile reads the tokens file into a map.
+// Environment variables still take precedence when set explicitly.
+func loadTokensFile() map[string]string {
+	result := make(map[string]string)
 	path := filepath.Join(os.Getenv("HOME"), ".config", "teamstui", "tokens.env")
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return // file doesn't exist, continue with env vars
+		return result
 	}
 
 	for _, line := range strings.Split(string(data), "\n") {
@@ -30,23 +31,29 @@ func loadTokensFile() {
 		}
 		key := strings.TrimSpace(parts[0])
 		val := strings.Trim(strings.TrimSpace(parts[1]), `"`)
-		if os.Getenv(key) == "" {
-			os.Setenv(key, val)
-		}
+		result[key] = val
 	}
+	return result
 }
 
 func GetTokens() (string, string, string, string, string, string, string, string, error) {
-	loadTokensFile()
+	env := loadTokensFile()
 
-	graphToken := os.Getenv("MS_GRAPH_TOKEN")
-	webToken := os.Getenv("TEAMS_WEB_TOKEN")
-	notifToken := os.Getenv("TEAMS_NOTIF_TOKEN")
-	eduToken := os.Getenv("EDU_TOKEN")
-	cookie := os.Getenv("TEAMS_COOKIE")
-	eduCookie := os.Getenv("EDU_COOKIE")
-	spacesToken := os.Getenv("TEAMS_SPACES_TOKEN")
-	fabricToken := os.Getenv("TEAMS_FABRIC_TOKEN")
+	get := func(key string) string {
+		if v := os.Getenv(key); v != "" {
+			return v
+		}
+		return env[key]
+	}
+
+	graphToken := get("MS_GRAPH_TOKEN")
+	webToken := get("TEAMS_WEB_TOKEN")
+	notifToken := get("TEAMS_NOTIF_TOKEN")
+	eduToken := get("EDU_TOKEN")
+	cookie := get("TEAMS_COOKIE")
+	eduCookie := get("EDU_COOKIE")
+	spacesToken := get("TEAMS_SPACES_TOKEN")
+	fabricToken := get("TEAMS_FABRIC_TOKEN")
 
 	if graphToken == "" || webToken == "" {
 		return "", "", "", "", "", "", "", "", errors.New(

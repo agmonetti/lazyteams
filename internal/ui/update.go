@@ -1159,6 +1159,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						}
 						return m, nil
 					case "enter", "tab":
+						if m.mentionCursor >= len(m.mentionSuggestions) {
+							m.showMentionPopup = false
+							m.mentionSuggestions = nil
+							m.mentionCursor = 0
+							return m, nil
+						}
 						selected := m.mentionSuggestions[m.mentionCursor]
 						// Reemplazar desde el @ hasta el final con el nombre completo
 						v := m.input.Value()
@@ -1171,6 +1177,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.mentionCursor = 0
 						if m.ready {
 							rightInnerHeight := m.height - 6 - 2
+							if rightInnerHeight < 1 {
+								rightInnerHeight = 1
+							}
 							inputHeight := strings.Count(m.input.View(), "\n") + 1
 							newVpHeight := rightInnerHeight - 4 - inputHeight
 							if newVpHeight < 5 {
@@ -1992,6 +2001,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.workspace == WorkspaceTeams && m.viewMode == ModeFiles {
 				m.downloadStatusID++
 				delete(m.folderCache, "root:"+m.channels[m.selectedChan].ID)
+				if len(m.folderStack) == 0 {
+					return m, nil
+				}
 				return m, tea.Batch(
 					reloadCurrentFolderCmd(m.client, m.teams[m.selectedTeam].ID, m.folderStack[len(m.folderStack)-1]),
 					clearStatusAfter(m.downloadStatusID),
@@ -2021,6 +2033,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.downloadStatusID++
 		// Invalidate root cache and reload from server to confirm
 		delete(m.folderCache, "root:"+m.channels[m.selectedChan].ID)
+		if len(m.folderStack) == 0 {
+			return m, nil
+		}
 		return m, tea.Batch(
 			reloadCurrentFolderCmd(m.client, m.teams[m.selectedTeam].ID, m.folderStack[len(m.folderStack)-1]),
 			clearStatusAfter(m.downloadStatusID),
@@ -2392,6 +2407,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						}
 						return m, nil
 					case "enter", "tab":
+						if m.mentionCursor >= len(m.mentionSuggestions) {
+							m.showMentionPopup = false
+							m.mentionSuggestions = nil
+							m.mentionCursor = 0
+							return m, nil
+						}
 						selected := m.mentionSuggestions[m.mentionCursor]
 						v := m.input.Value()
 						newVal := v[:m.mentionAtPos] + "@" + selected.DisplayName + " "
@@ -3201,6 +3222,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.createFolderErr = "Folder name cannot be empty."
 					return m, nil
 				}
+				if len(m.folderStack) == 0 {
+					return m, nil
+				}
 				parentID := m.folderStack[len(m.folderStack)-1].ID
 				m.showCreateFolderPopup = false
 				m.createFolderErr = ""
@@ -3688,6 +3712,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							cmds = append(cmds, loadFilesCmd(m.client, m.teams[m.selectedTeam].ID, m.channels[m.selectedChan].DisplayName, m.channels[m.selectedChan].ID))
 						}
 					} else {
+						if len(m.folderStack) == 0 {
+							return m, nil
+						}
 						parent := m.folderStack[len(m.folderStack)-1]
 						m.currentFilesDriveID = parent.DriveID
 						// Check cache

@@ -61,11 +61,6 @@ func (e *ChatSvcError) Error() string {
 }
 
 func cleanHTML(s string) string {
-	// DEBUG TEMPORAL: Guardar HTML crudo si contiene un texto clave de la tabla
-	if strings.Contains(s, "Grupo 2") || strings.Contains(s, "Toschi") {
-		_ = os.WriteFile("/tmp/teams_table_debug.html", []byte(s), 0644)
-	}
-
 	// Step 1: Mentions → sentinel
 	s = MentionSpan.ReplaceAllStringFunc(s, func(m string) string {
 		sub := MentionSpan.FindStringSubmatch(m)
