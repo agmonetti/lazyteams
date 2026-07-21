@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -488,9 +489,9 @@ func (m Model) View() string {
 		popup := popupStyle.Render(content)
 		rightPanel = lipgloss.Place(lipgloss.Width(rightPanel), lipgloss.Height(rightPanel), lipgloss.Center, lipgloss.Center, popup)
 	} else if m.showReactionPicker {
-		reactionEmojis := map[string]string{
-			"like": "👍", "heart": "❤️", "laugh": "😂",
-			"surprised": "😮", "sad": "😢", "angry": "😡",
+		reactionEmojis := map[string]string{}
+		for _, k := range m.reactionOptions {
+			reactionEmojis[k] = reactionEmoji(k)
 		}
 		var content string
 		content += titleStyle.Render("Add reaction") + "\n\n"
@@ -955,15 +956,63 @@ func (m Model) footerText() string {
 
 func reactionEmoji(key string) string {
 	switch key {
-	case "like":           return "👍"
-	case "heart":          return "❤️"
-	case "laugh":          return "😂"
-	case "surprised":      return "😮"
-	case "sad":            return "😢"
-	case "angry":          return "😡"
-	case "yes-tone2":      return "👍🏽"
-	case "heartlightblue": return "💙"
-	default:               return "●"
+	// Standard
+	case "like", "yes-tone0":      return "👍"
+	case "heart":                   return "❤️"
+	case "laugh":                   return "😂"
+	case "surprised":               return "😮"
+	case "sad":                     return "😢"
+	case "angry":                   return "😡"
+	// Skin tone variants
+	case "yes-tone1":               return "👍🏻"
+	case "yes-tone2":               return "👍🏼"
+	case "yes-tone3":               return "👍🏽"
+	case "yes-tone4":               return "👍🏾"
+	case "yes-tone5":               return "👍🏿"
+	// Extra
+	case "heartlightblue":          return "💙"
+
+	// Expressions
+	case "speechless":              return "😶"
+	case "fire":                    return "🔥"
+	case "faceinclouds":            return "😶‍🌫️"
+	case "think":                   return "🤔"
+	case "rofl":                    return "🤣"
+	case "fingerscrossed":          return "🤞"
+	case "cool":                    return "😎"
+	case "lipssealed":              return "🤐"
+	case "angryface":               return "😠"
+	case "sweat":                   return "😓"
+	case "diagonalmouth":           return "😑"
+
+	// Gestures
+	case "no", "no-tone0":          return "🙅"
+	case "no-tone1":                return "🙅🏻"
+	case "no-tone2":                return "🙅🏼"
+	case "no-tone3":                return "🙅🏽"
+	case "no-tone4":                return "🙅🏾"
+	case "no-tone5":                return "🙅🏿"
+	case "clappinghands", "clappinghands-tone0": return "👏"
+	case "clappinghands-tone1":     return "👏🏻"
+	case "clappinghands-tone2":     return "👏🏼"
+	case "clappinghands-tone3":     return "👏🏽"
+	case "clappinghands-tone4":     return "👏🏾"
+	case "clappinghands-tone5":     return "👏🏿"
+	case "follow":                  return "👀"
+
+	// Objects / symbols
+	case "soccerball":              return "⚽"
+	case "1f389_partypopper":       return "🎉"
+	case "1f410_goat":              return "🐐"
+
+	default:
+		parts := strings.SplitN(key, "_", 2)
+		if len(parts) >= 1 {
+			if cp, err := strconv.ParseInt(parts[0], 16, 32); err == nil {
+				return string(rune(cp))
+			}
+		}
+		return "●"
 	}
 }
 

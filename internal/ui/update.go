@@ -918,6 +918,13 @@ func formatMessagesWithCursor(messages []graph.Message, width, cursor int, curso
 			var reactionStr string
 			for _, r := range msg.Reactions {
 				emoji := reactionEmoji(r.Key)
+				if emoji == "●" {
+					f, _ := os.OpenFile("/tmp/reaction_debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+					if f != nil {
+						f.WriteString(fmt.Sprintf("key=%-30s count=%d\n", r.Key, r.Count))
+						f.Close()
+					}
+				}
 				if r.Count > 1 {
 					reactionStr += fmt.Sprintf("%s %d  ", emoji, r.Count)
 				} else {
@@ -1057,8 +1064,8 @@ func formatMessagesDM(messages []graph.Message, width int, selfName, selfID stri
 
 		timeStr := msg.CreatedAt.Local().Format("02/01 15:04")
 		body := strings.TrimSpace(msg.Body)
-		isSelf := msg.FromName == selfName || msg.FromName == "User" || 
-			(selfID != "" && strings.HasSuffix(msg.FromUserID, selfID))
+		isSelf := (selfID != "" && strings.HasSuffix(msg.FromUserID, selfID)) ||
+			(selfID == "" && (msg.FromName == "User" || msg.FromName == selfName))
 		
 		if isSelf {
 			tsRaw := metaStyle.Render(timeStr)
@@ -2579,7 +2586,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				} else if m.threadCursor-1 < len(replies) {
 					targetMsg = &replies[m.threadCursor-1]
 				}
-				if targetMsg != nil && (targetMsg.FromName == "User" || targetMsg.FromName == m.userName || (m.selfID != "" && strings.HasSuffix(targetMsg.FromUserID, m.selfID))) {
+				if targetMsg != nil && ((m.selfID != "" && strings.HasSuffix(targetMsg.FromUserID, m.selfID)) ||
+							(m.selfID == "" && (targetMsg.FromName == "User" || targetMsg.FromName == m.userName))) {
 					m.editMessageID = targetMsg.ID
 					m.editOriginalBody = targetMsg.RawBody
 					m.editInput.SetValue(cleanHTMLForEdit(targetMsg.RawBody))
@@ -2595,7 +2603,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				} else if m.threadCursor-1 < len(replies) {
 					targetMsg = &replies[m.threadCursor-1]
 				}
-				if targetMsg != nil && (targetMsg.FromName == "User" || targetMsg.FromName == m.userName || (m.selfID != "" && strings.HasSuffix(targetMsg.FromUserID, m.selfID))) {
+				if targetMsg != nil && ((m.selfID != "" && strings.HasSuffix(targetMsg.FromUserID, m.selfID)) ||
+							(m.selfID == "" && (targetMsg.FromName == "User" || targetMsg.FromName == m.userName))) {
 					m.deleteMsgID = targetMsg.ID
 					m.showDeleteMsgPopup = true
 				}
@@ -2625,7 +2634,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				rootMsgs := rootMessages(m.messages)
 				if m.messageCursor < len(rootMsgs) {
 					selected := rootMsgs[m.messageCursor]
-					if selected.FromName == "User" || selected.FromName == m.userName || (m.selfID != "" && strings.HasSuffix(selected.FromUserID, m.selfID)) {
+					if (m.selfID != "" && strings.HasSuffix(selected.FromUserID, m.selfID)) ||
+								(m.selfID == "" && (selected.FromName == "User" || selected.FromName == m.userName)) {
 						m.editMessageID = selected.ID
 						m.editOriginalBody = selected.RawBody
 						m.editInput.SetValue(cleanHTMLForEdit(selected.RawBody))
@@ -2638,7 +2648,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				rootMsgs := rootMessages(m.messages)
 				if m.messageCursor < len(rootMsgs) {
 					selected := rootMsgs[m.messageCursor]
-					if selected.FromName == "User" || selected.FromName == m.userName || (m.selfID != "" && strings.HasSuffix(selected.FromUserID, m.selfID)) {
+					if (m.selfID != "" && strings.HasSuffix(selected.FromUserID, m.selfID)) ||
+								(m.selfID == "" && (selected.FromName == "User" || selected.FromName == m.userName)) {
 						m.deleteMsgID = selected.ID
 						m.showDeleteMsgPopup = true
 					}
@@ -2771,7 +2782,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				validMsgs := validDMMessages(m.messages)
 				if m.messageCursor < len(validMsgs) {
 					selected := validMsgs[m.messageCursor]
-					if selected.FromName == "User" || selected.FromName == m.userName || (m.selfID != "" && strings.HasSuffix(selected.FromUserID, m.selfID)) {
+					if (m.selfID != "" && strings.HasSuffix(selected.FromUserID, m.selfID)) ||
+								(m.selfID == "" && (selected.FromName == "User" || selected.FromName == m.userName)) {
 						m.editMessageID = selected.ID
 						m.editOriginalBody = selected.RawBody
 						m.editInput.SetValue(cleanHTMLForEdit(selected.RawBody))
@@ -2784,7 +2796,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				validMsgs := validDMMessages(m.messages)
 				if m.messageCursor < len(validMsgs) {
 					selected := validMsgs[m.messageCursor]
-					if selected.FromName == "User" || selected.FromName == m.userName || (m.selfID != "" && strings.HasSuffix(selected.FromUserID, m.selfID)) {
+					if (m.selfID != "" && strings.HasSuffix(selected.FromUserID, m.selfID)) ||
+								(m.selfID == "" && (selected.FromName == "User" || selected.FromName == m.userName)) {
 						m.deleteMsgID = selected.ID
 						m.showDeleteMsgPopup = true
 					}
