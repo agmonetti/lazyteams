@@ -8,9 +8,10 @@ import (
 
 type Preferences struct {
 	// Maps UserID -> ChatID to support multiple accounts without cache collisions
-	SelfChatIDs map[string]string `json:"self_chat_ids"`
-	DownloadDir string            `json:"download_dir,omitempty"`
-	HiddenTeams []string          `json:"hidden_teams,omitempty"`
+	SelfChatIDs     map[string]string   `json:"self_chat_ids"`
+	DownloadDir     string              `json:"download_dir,omitempty"`
+	HiddenTeams     []string            `json:"hidden_teams,omitempty"`
+	HiddenChannels  map[string][]string `json:"hidden_channels"` // teamID → channelID
 }
 
 func prefsPath() string {
@@ -30,6 +31,9 @@ func loadPrefs() Preferences {
 	// Ensure initialization in case the JSON was empty or malformed
 	if p.SelfChatIDs == nil {
 		p.SelfChatIDs = make(map[string]string)
+	}
+	if p.HiddenChannels == nil {
+		p.HiddenChannels = make(map[string][]string)
 	}
 	if p.DownloadDir == "" {
 		home, _ := os.UserHomeDir()

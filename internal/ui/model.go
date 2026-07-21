@@ -249,6 +249,8 @@ type Model struct {
 
 	// Show hidden teams
 	showHidden bool
+	// Show hidden channels
+	showHiddenChannels bool
 
 	// File management
 	showDeleteFilePopup   bool

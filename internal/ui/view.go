@@ -200,11 +200,27 @@ func (m Model) View() string {
 		} else if len(m.channels) == 0 {
 			leftContent += "  (no channels)\n"
 		} else {
-			// No sliding window — leftVp handles scrolling
+			teamID := m.teams[m.selectedTeam].ID
+			hidden := m.prefs.HiddenChannels[teamID]
+			visibleChannels := make([]int, 0, len(m.channels))
 			for i, c := range m.channels {
+				isHidden := contains(hidden, c.ID)
+				if m.showHiddenChannels {
+					if !isHidden {
+						continue
+					}
+				} else {
+					if isHidden {
+						continue
+					}
+				}
+				visibleChannels = append(visibleChannels, i)
+			}
+			for vi, ri := range visibleChannels {
+				c := m.channels[ri]
 				cursor := "  "
 				style := normalItemStyle
-				if i == m.selectedChan {
+				if ri == m.selectedChan {
 					if m.focusLeft && m.focusList == 1 {
 						cursor = "▶ "
 						style = selectedItemStyle
@@ -212,11 +228,26 @@ func (m Model) View() string {
 						style = style.Copy().Foreground(lipgloss.Color("245"))
 					}
 				}
+				if m.showHiddenChannels {
+					style = style.Copy().Foreground(colorMuted)
+				}
 				lock := ""
 				if strings.ToLower(c.MembershipType) == "private" {
 					lock = lipgloss.NewStyle().Foreground(colorMuted).Render(" ")
 				}
+				_ = vi
 				leftContent += fmt.Sprintf("%s%s\n", cursor, style.Render(truncateText(c.DisplayName, leftOuterWidth-6))+lock)
+			}
+			hiddenCount := 0
+			for _, c := range m.channels {
+				if contains(hidden, c.ID) {
+					hiddenCount++
+				}
+			}
+			if !m.showHiddenChannels && hiddenCount > 0 {
+				leftContent += fmt.Sprintf("  %s\n", helpStyle.Render(fmt.Sprintf("(A) manage hidden channels (%d)", hiddenCount)))
+			} else if m.showHiddenChannels {
+				leftContent += fmt.Sprintf("  %s\n", helpStyle.Render("(A) back to all channels"))
 			}
 		}
 	} else if m.workspace == WorkspaceActivity {
