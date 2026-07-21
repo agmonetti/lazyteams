@@ -31,8 +31,8 @@ TUI client for Microsoft Teams. Runs in the terminal — no Electron, no browser
 
 - **4 Workspaces**: Teams and channels, DMs, Activity/Notifications, Education Assignments
 - **Team Management**: Create and delete teams and channels directly from the TUI
-- **Messages**: Read and send messages (RichText/Html), auto-refresh every 15s, clickable links (OSC 8)
-- **Files**: Recursive Drive browser, multi-selection, file preview, chunked file upload, customizable download directory
+- **Messages**: Read and send messages (RichText/Html, @mentions), infinite scroll pagination, auto-refresh every 3s, clickable links (OSC 8)
+- **Files**: Recursive Drive browser, multi-selection, file preview, folder creation, file deletion, chunked file upload, customizable download directory
 - **Direct Messages**: Create new 1:1 chats via user search, auto-discovery of "Personal notes" chat
 - **Presence**: Read and change your status (Available, Busy, DoNotDisturb, etc.)
 - **Notifications**: Mark as read, filter by type/read state, navigate to source channel
