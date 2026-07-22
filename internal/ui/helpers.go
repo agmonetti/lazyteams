@@ -1,0 +1,301 @@
+package ui
+
+import (
+	"fmt"
+	"io"
+	"os/exec"
+	"runtime"
+	"sort"
+	"strings"
+	"teamsTUI/internal/graph"
+	"teamsTUI/internal/teams"
+	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+)
+
+func copyToClipboard(text string) error {
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "linux":
+		if _, err := exec.LookPath("wl-copy"); err == nil {
+			cmd = exec.Command("wl-copy")
+		} else {
+			cmd = exec.Command("xclip", "-selection", "clipboard")
+		}
+	case "darwin":
+		cmd = exec.Command("pbcopy")
+	case "windows":
+		cmd = exec.Command("clip")
+	}
+	if cmd == nil {
+		return fmt.Errorf("no clipboard utility found")
+	}
+	cmd.Stdin = strings.NewReader(text)
+	return cmd.Run()
+}
+
+func makeClickableLink(text, url string) string {
+	return fmt.Sprintf("\x1b]8;;%s\x1b\\%s\x1b]8;;\x1b\\", url, text)
+}
+
+func openBrowser(url string) {
+	var err error
+	switch runtime.GOOS {
+	case "linux":
+		err = exec.Command("xdg-open", url).Start()
+	case "windows":
+		err = exec.Command("rundll32", "url.dll,FileProtocolHandler", url).Start()
+	case "darwin":
+		err = exec.Command("open", url).Start()
+	}
+	if err != nil {
+	}
+}
+
+func isTextFile(name string) bool {
+	lower := strings.ToLower(name)
+	textExts := []string{".txt", ".md", ".json", ".csv", ".xml", ".html", ".css", ".js", ".go", ".py", ".rs", ".log", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".conf", ".sh", ".bash", ".sql", ".r", ".java", ".c", ".cpp", ".h", ".hpp", ".ts", ".tsx", ".jsx"}
+	for _, ext := range textExts {
+		if strings.HasSuffix(lower, ext) {
+			return true
+		}
+	}
+	return false
+}
+
+func previewFileCmd(client *graph.Client, item graph.DriveItem, driveID, teamID string) tea.Cmd {
+	return func() tea.Msg {
+		if !isTextFile(item.Name) {
+			url := item.WebUrl
+			openBrowser(url)
+			return previewResultMsg{
+				openBrowser: true,
+				status:      fmt.Sprintf("Opening %s in browser...", item.Name),
+			}
+		}
+
+		var body io.ReadCloser
+		var err error
+		if item.ID != "" {
+			if driveID != "" {
+				body, err = client.DownloadRemoteItem(driveID, item.ID)
+			} else {
+				body, err = client.DownloadItem(teamID, item.ID)
+			}
+		} else if item.WebUrl != "" {
+			resolved, resolveErr := client.ResolveSharedItem(item.WebUrl)
+			if resolveErr == nil && resolved != nil && resolved.ID != "" {
+				resolvedDriveID := ""
+				if resolved.RemoteItem != nil {
+					resolvedDriveID = resolved.RemoteItem.ParentReference.DriveID
+				}
+				if resolvedDriveID != "" {
+					body, err = client.DownloadRemoteItem(resolvedDriveID, resolved.ID)
+				} else {
+					body, err = client.DownloadItem(teamID, resolved.ID)
+				}
+			} else {
+				err = resolveErr
+			}
+		}
+		if err != nil {
+			return previewResultMsg{err: err}
+		}
+		defer body.Close()
+
+		limitedReader := io.LimitReader(body, 500*1024)
+		data, err := io.ReadAll(limitedReader)
+		if err != nil {
+			return previewResultMsg{err: err}
+		}
+
+		return previewResultMsg{content: string(data), fileName: item.Name}
+	}
+}
+
+func renderFilesContent(m *Model) string {
+	if len(m.files) == 0 {
+		return "  This folder is empty."
+	}
+	var b strings.Builder
+	for i, f := range m.files {
+		cursor := "  "
+		style := normalItemStyle
+		if i == m.selectedFile {
+			cursor = "▶ "
+			style = selectedItemStyle
+		}
+
+		checkbox := "  "
+		if m.selectedFiles[i] {
+			checkbox = lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Render("✓ ")
+		}
+
+		icon := teams.GetFileIcon(f)
+		link := f.DownloadUrl
+		if link == "" {
+			link = f.WebUrl
+		}
+
+		meta := ""
+		if f.LastModifiedDateTime != "" {
+			if t, err := time.Parse(time.RFC3339, f.LastModifiedDateTime); err == nil {
+				age := t.Local().Format("02 Jan 2006")
+				who := f.LastModifiedBy.User.DisplayName
+				if who != "" {
+					if len(who) > 15 {
+						who = who[:15]
+					}
+					meta = metaStyle.Render(age + " · " + who)
+				} else {
+					meta = metaStyle.Render(age)
+				}
+			}
+		}
+
+		prefix := checkbox + icon + " "
+		prefixWidth := lipgloss.Width(prefix)
+		metaWidth := lipgloss.Width(meta)
+		availableWidth := m.viewport.Width - lipgloss.Width(cursor)
+		nameMax := availableWidth - prefixWidth - metaWidth
+		if nameMax < 10 {
+			nameMax = 10
+		}
+		name := truncateText(f.Name, nameMax)
+		padLen := availableWidth - prefixWidth - lipgloss.Width(name) - metaWidth
+		if padLen < 1 {
+			padLen = 1
+		}
+		pad := strings.Repeat(" ", padLen)
+
+		namePart := style.Render(prefix + name)
+		line := namePart + pad + meta
+		clickableLine := makeClickableLink(line, link)
+		b.WriteString(cursor + clickableLine + "\n")
+	}
+
+	if m.workspace == WorkspaceDMs {
+		b.WriteString("\n\n  " + helpStyle.Render("(Showing recent attachments. Press 'C' to load full history)"))
+	}
+
+	if m.downloadStatus != "" {
+		b.WriteString("\n\n  " + lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Render(m.downloadStatus))
+	}
+
+	return b.String()
+}
+
+func resolveMentions(text string, nameToMRI map[string]string) []graph.MentionedUser {
+	var mentions []graph.MentionedUser
+	seen := make(map[string]bool)
+	itemID := 0
+
+	names := make([]string, 0, len(nameToMRI))
+	for name := range nameToMRI {
+		names = append(names, name)
+	}
+	sort.Slice(names, func(i, j int) bool {
+		return len(names[i]) > len(names[j])
+	})
+
+	for _, name := range names {
+		token := "@" + name
+		if strings.Contains(text, token) && !seen[name] {
+			seen[name] = true
+			mentions = append(mentions, graph.MentionedUser{
+				ItemID:      itemID,
+				MRI:         nameToMRI[name],
+				DisplayName: name,
+			})
+			itemID++
+		}
+	}
+	return mentions
+}
+
+func (m *Model) buildMemberIndex() map[string]string {
+	index := make(map[string]string)
+	for _, tm := range m.teamMembers {
+		if tm.DisplayName != "" && tm.ID != "" {
+			index[tm.DisplayName] = "8:orgid:" + tm.ID
+		}
+	}
+	if m.workspace == WorkspaceDMs && m.selectedChat < len(m.chats) {
+		for _, member := range m.chats[m.selectedChat].Members {
+			if member.DisplayName != "" && member.UserID != "" {
+				index[member.DisplayName] = "8:orgid:" + member.UserID
+			}
+		}
+	}
+	return index
+}
+
+func (m *Model) filterMessages(msgs []graph.Message, query string) []graph.Message {
+	if query == "" {
+		return msgs
+	}
+	query = strings.ToLower(query)
+	var filtered []graph.Message
+	for _, msg := range msgs {
+		if strings.Contains(strings.ToLower(msg.Body), query) || strings.Contains(strings.ToLower(msg.FromName), query) {
+			filtered = append(filtered, msg)
+		}
+	}
+	return filtered
+}
+
+func isSharePointURL(rawURL string) bool {
+	lower := strings.ToLower(rawURL)
+	return strings.Contains(lower, "sharepoint.com") || strings.Contains(lower, "onedrive.live.com")
+}
+
+func nextVisibleTeam(teams []graph.Team, hiddenIDs []string, current int, showHidden bool, dir int) int {
+	total := len(teams)
+	next := current + dir
+	for next >= 0 && next < total {
+		isHidden := contains(hiddenIDs, teams[next].ID)
+		if showHidden && isHidden {
+			return next
+		}
+		if !showHidden && !isHidden {
+			return next
+		}
+		next += dir
+	}
+	return current
+}
+
+func nextVisibleChannel(channels []graph.Channel, hiddenIDs []string, current int, showHidden bool, dir int) int {
+	total := len(channels)
+	next := current + dir
+	for next >= 0 && next < total {
+		isHidden := contains(hiddenIDs, channels[next].ID)
+		if showHidden && isHidden {
+			return next
+		}
+		if !showHidden && !isHidden {
+			return next
+		}
+		next += dir
+	}
+	return current
+}
+
+func remove(slice []string, s string) []string {
+	result := make([]string, 0, len(slice))
+	for _, v := range slice {
+		if v != s {
+			result = append(result, v)
+		}
+	}
+	return result
+}
+
+func markNotifReadCmd(client *graph.Client, msgID string) tea.Cmd {
+	return func() tea.Msg {
+		err := client.MarkNotificationRead(msgID)
+		return markNotifReadMsg{err}
+	}
+}
