@@ -299,3 +299,24 @@ func markNotifReadCmd(client *graph.Client, msgID string) tea.Cmd {
 		return markNotifReadMsg{err}
 	}
 }
+
+func pluralS(n int) string {
+	if n == 1 {
+		return ""
+	}
+	return "s"
+}
+
+func chatPriority(ch graph.Chat, selfChatID string) int {
+	if selfChatID != "" && ch.ID == selfChatID {
+		return 0
+	}
+	switch ch.ChatType {
+	case "oneOnOne":
+		return 1
+	case "group":
+		return 2
+	default:
+		return 3
+	}
+}

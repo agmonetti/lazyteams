@@ -191,7 +191,12 @@ type Client struct {
 	EduCookie   string
 	SpacesToken string
 	FabricToken string
+	SelfID      string
 	HTTPClient  *http.Client
+}
+
+func (c *Client) GetSelfID() string {
+	return c.SelfID
 }
 
 func NewClient(graphToken, webToken, notifToken, eduToken, cookie, eduCookie, spacesToken, fabricToken string) *Client {

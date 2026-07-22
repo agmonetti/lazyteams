@@ -128,4 +128,7 @@ var (
 			Border(lipgloss.NormalBorder(), false, false, true, false).
 			PaddingBottom(0).
 			PaddingRight(1)
+
+	unreadDotStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("39"))
 )

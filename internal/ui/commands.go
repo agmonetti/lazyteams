@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"teamsTUI/internal/graph"
 	"time"
@@ -597,5 +598,43 @@ func loadFolderCmd(client *graph.Client, teamID string, node FolderNode) tea.Cmd
 			return filesErrMsg{err}
 		}
 		return filesMsg{files: files, folderID: node.ID}
+	}
+}
+
+type markAsReadMsg struct{ err error }
+
+func markAsReadCmd(client *graph.Client, conversationID string, lastMsg graph.Message) tea.Cmd {
+	return func() tea.Msg {
+		err := client.MarkConversationAsRead(conversationID, lastMsg)
+		return markAsReadMsg{err}
+	}
+}
+
+type unreadStatusMsg struct {
+	chatID    string
+	hasUnread bool
+}
+
+func checkUnreadCmd(client *graph.Client, chat graph.Chat) tea.Cmd {
+	return func() tea.Msg {
+		if chat.LastMessagePreview == nil {
+			return nil
+		}
+		lastMsgID := chat.LastMessagePreview.ID
+		if lastMsgID == "" {
+			return nil
+		}
+		lastTs, err := strconv.ParseInt(lastMsgID, 10, 64)
+		if err != nil {
+			return nil
+		}
+		lastReadTs, err := client.GetConsumptionHorizon(chat.ID)
+		if err != nil || lastReadTs == 0 {
+			return nil
+		}
+		return unreadStatusMsg{
+			chatID:    chat.ID,
+			hasUnread: lastTs > lastReadTs,
+		}
 	}
 }

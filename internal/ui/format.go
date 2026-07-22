@@ -100,7 +100,9 @@ func validDMMessages(msgs []graph.Message) []graph.Message {
 		if m.MessageType != "ThreadActivity/MemberJoined" &&
 			m.MessageType != "ThreadActivity/MemberLeft" &&
 			m.MessageType != "ThreadActivity/TopicUpdate" &&
-			m.MessageType != "ThreadActivity/AddMember" {
+			m.MessageType != "ThreadActivity/AddMember" &&
+			m.MessageType != "ThreadActivity/DeleteMember" &&
+			m.MessageType != "ThreadActivity/DeleteUser" {
 			result = append(result, m)
 		}
 	}

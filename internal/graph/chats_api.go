@@ -3,8 +3,10 @@ package graph
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 )
 
@@ -17,6 +19,7 @@ type Chat struct {
 }
 
 type ChatMessagePreview struct {
+	ID   string `json:"id"`
 	From *struct {
 		User *struct {
 			ID          string `json:"id"`
@@ -103,6 +106,47 @@ func (c *Client) GetChats() ([]Chat, error) {
 		return nil, fmt.Errorf("error parsing chats: %w", err)
 	}
 	return res.Value, nil
+}
+
+func (c *Client) GetConsumptionHorizon(convID string) (int64, error) {
+	url := fmt.Sprintf("https://teams.microsoft.com/api/chatsvc/amer/v1/threads/%s/consumptionhorizons", convID)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return 0, err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.WebToken)
+	req.Header.Set("Accept", "application/json")
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != 200 {
+		return 0, fmt.Errorf("consumption horizon error %d", resp.StatusCode)
+	}
+	var res struct {
+		ConsumptionHorizons []struct {
+			ID                 string `json:"id"`
+			ConsumptionHorizon string `json:"consumptionHorizon"`
+		} `json:"consumptionHorizons"`
+	}
+	if err := json.Unmarshal(body, &res); err != nil {
+		return 0, err
+	}
+	selfMRI := "8:orgid:" + c.SelfID
+	for _, h := range res.ConsumptionHorizons {
+		if h.ID == selfMRI {
+			parts := strings.SplitN(h.ConsumptionHorizon, ";", 2)
+			if len(parts) > 0 {
+				ts, err := strconv.ParseInt(parts[0], 10, 64)
+				if err == nil {
+					return ts, nil
+				}
+			}
+		}
+	}
+	return 0, nil
 }
 
 type UserSearchResult struct {

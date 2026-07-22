@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"fmt"
+	"sort"
 	"strings"
 	"teamsTUI/internal/teams"
 
@@ -12,6 +14,8 @@ func (m Model) handleMessagesMsg(msg messagesMsg) (tea.Model, tea.Cmd) {
 	m.messagesBackwardLink = msg.backwardLink
 	m.loadingMore = false
 	m.loading = false
+
+	var cmds []tea.Cmd
 
 	if m.viewMode == ModeChat {
 		var content string
@@ -31,11 +35,16 @@ func (m Model) handleMessagesMsg(msg messagesMsg) (tea.Model, tea.Cmd) {
 			m.viewport.GotoBottom()
 		}
 
-		// Also update thread view if active
 		if m.showThread {
 			replies := repliesFor(m.messages, m.threadParentID)
 			threadContent := formatThread(m.threadParentMsg, replies, m.threadViewport.Width, m.userName, m.threadCursor, true)
 			m.threadViewport.SetContent(threadContent)
+		}
+
+		// Mark conversation as read (fire-and-forget)
+		if len(m.messages) > 0 {
+			lastMsg := m.messages[0] // messages are newest-first
+			cmds = append(cmds, markAsReadCmd(m.client, m.loadedConvID, lastMsg))
 		}
 	} else if m.viewMode == ModeFiles {
 		m.files = teams.AggregateChatAttachments(m.messages)
@@ -43,12 +52,21 @@ func (m Model) handleMessagesMsg(msg messagesMsg) (tea.Model, tea.Cmd) {
 		m.viewport.SetContent(renderFilesContent(&m))
 		m.viewport.GotoTop()
 	}
-	return m, nil
+	return m, tea.Batch(cmds...)
 }
 
 func (m Model) handleChatsMsg(msg chatsMsg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 	m.chats = msg.chats
+	// Sort: personal notes first, then oneOnOne, then group, then meeting
+	selfChatID := ""
+	if m.selfID != "" {
+		selfChatID = fmt.Sprintf("19:%s_%s@unq.gbl.spaces", m.selfID, m.selfID)
+	}
+	sort.SliceStable(m.chats, func(i, j int) bool {
+		a, b := m.chats[i], m.chats[j]
+		return chatPriority(a, selfChatID) < chatPriority(b, selfChatID)
+	})
 	m.chatsLoaded = true
 	m.loading = false
 	m.selectedChat = 0
@@ -74,10 +92,18 @@ func (m Model) handleChatsMsg(msg chatsMsg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, pollPresenceCmd(m.client, ids))
 	}
 
+	// Fire unread checks for oneOnOne chats
+	for _, ch := range m.chats {
+		if ch.ChatType == "oneOnOne" {
+			cmds = append(cmds, checkUnreadCmd(m.client, ch))
+		}
+	}
+
 	// Chain async self-discovery, passing the cache if available
 	if m.selfID != "" {
 		cachedID := m.prefs.SelfChatIDs[m.selfID]
-		return m, discoverSelfChatCmd(m.client, m.selfID, cachedID)
+		cmds = append(cmds, discoverSelfChatCmd(m.client, m.selfID, cachedID))
+		return m, tea.Batch(cmds...)
 	}
 	return m, tea.Batch(cmds...)
 }

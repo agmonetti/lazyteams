@@ -360,6 +360,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case meMsg:
 		m.selfID = msg.id
+		m.client.SelfID = msg.id
 		return m, nil
 
 	case meErrMsg:
@@ -861,6 +862,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.showDirPicker = false
 		return m, nil
 	    
+	case markAsReadMsg:
+		return m, nil
+
 	case tea.MouseMsg:
 		if msg.X < (m.width-5)/3 {
 			// Left panel: use wheel to navigate the list
@@ -890,6 +894,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, tea.Batch(cmds...)
+
+	case unreadStatusMsg:
+		if msg.hasUnread {
+			m.chatUnread[msg.chatID] = true
+		}
+		return m, nil
 
 	case tea.KeyMsg:
 		return m.handleKeyMsg(msg)

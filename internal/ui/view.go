@@ -113,7 +113,21 @@ func (m Model) View() string {
 		if len(m.chats) == 0 {
 			leftContent += "  (no chats)\n"
 		} else {
+			var lastSection string
+			sectionHeader := func(section string) {
+				if section != lastSection {
+					leftContent += metaStyle.Render("── " + section + " ──") + "\n"
+					lastSection = section
+				}
+			}
 			for i, ch := range m.chats {
+				switch ch.ChatType {
+				case "oneOnOne":
+					sectionHeader("Direct Messages")
+				default:
+					sectionHeader("Group Chats")
+				}
+
 				cursor := "  "
 				style := normalItemStyle
 				if i == m.selectedChat {
@@ -126,7 +140,6 @@ func (m Model) View() string {
 				}
 				name := ch.DisplayName(m.selfID)
 
-				// Presence: find the member that isn't me
 				presenceDot := ""
 				for _, u := range ch.Members {
 					if u.UserID != m.selfID {
@@ -137,11 +150,11 @@ func (m Model) View() string {
 					}
 				}
 
+				badge := ""
 				if m.chatUnread[ch.ID] && i != m.selectedChat {
-					name = "● " + name
-					style = style.Copy().Foreground(lipgloss.Color("11")) // yellow for unread
+					badge = unreadDotStyle.Render(" ●")
 				}
-				leftContent += fmt.Sprintf("%s%s%s\n", cursor, style.Render(name), presenceDot)
+				leftContent += fmt.Sprintf("%s%s%s%s\n", cursor, style.Render(name), badge, presenceDot)
 			}
 		}
 	} else if m.workspace == WorkspaceTeams {
@@ -794,7 +807,7 @@ func (m Model) View() string {
 	// Combine panels
 	ui := lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, rightPanel)
 
-	// Top status bar: name + own presence, always visible and right-aligned
+	// Top status bar: unread counts on the left, name + presence on the right
 	if m.ready {
 		name := m.userName
 		if name == "" {
@@ -806,26 +819,75 @@ func (m Model) View() string {
 		}
 		statusDot := presenceSymbol(myStatus)
 		statusLabel := splashSubStyle.Render(fmt.Sprintf("(%s)", myStatus))
-		userInfo := fmt.Sprintf("%s %s %s", splashSubStyle.Render(name), statusDot, statusLabel)
-		topBar := lipgloss.NewStyle().Width(m.width - 1).Align(lipgloss.Right).PaddingRight(2).Render(userInfo)
+		userInfo := splashSubStyle.Render(name) + " " + statusDot + " " + statusLabel
+
+		// Build left-side banner — priority: token errors > creating > notification summary
+		var leftBanner string
+
 		if m.tokenRenewing {
-			renewBanner := lipgloss.NewStyle().
+			leftBanner = lipgloss.NewStyle().
 				Foreground(colorYellow).Bold(true).
 				Render("⟳ Renewing tokens...")
-			topBar = renewBanner + "  " + topBar
 		} else if m.tokenRenewErr != "" {
-			errBanner := lipgloss.NewStyle().
+			leftBanner = lipgloss.NewStyle().
 				Foreground(colorRed).Bold(true).
 				Render("⚠ Token renewal failed — run ./msTTui-auth")
-			topBar = errBanner + "  " + topBar
-		}
-		if m.teamCreating {
-			creatingBanner := lipgloss.NewStyle().
+		} else if m.teamCreating {
+			leftBanner = lipgloss.NewStyle().
 				Foreground(colorMuted).
 				Render("⟳ Creating team...")
-			topBar = creatingBanner + "  " + topBar
+		} else {
+			// Notification summary
+			var parts []string
+
+			unreadDMs := 0
+			for _, v := range m.chatUnread {
+				if v {
+					unreadDMs++
+				}
+			}
+			if unreadDMs > 0 {
+				parts = append(parts, lipgloss.NewStyle().
+					Foreground(colorRed).Bold(true).
+					Render(fmt.Sprintf("● (%d) unread DM%s", unreadDMs, pluralS(unreadDMs))))
+			}
+
+			unreadNotifs := 0
+			for _, n := range m.notifications {
+				if !n.IsRead {
+					unreadNotifs++
+				}
+			}
+			if unreadNotifs > 0 {
+				parts = append(parts, lipgloss.NewStyle().
+					Foreground(colorRed).Bold(true).
+					Render(fmt.Sprintf("(%d) activity notification%s", unreadNotifs, pluralS(unreadNotifs))))
+			}
+
+			if len(parts) > 0 {
+				leftBanner = strings.Join(parts, splashSubStyle.Render("  ·  "))
+			}
 		}
-		ui = lipgloss.JoinVertical(lipgloss.Left, topBar, ui)
+
+		if leftBanner != "" {
+			leftBanner = lipgloss.NewStyle().PaddingLeft(2).Render(leftBanner)
+		}
+		availableW := m.width - 1 - lipgloss.Width(userInfo) - 4
+		if leftBanner != "" && availableW > 10 {
+			topBar := fmt.Sprintf("%s%s%s",
+				leftBanner,
+				strings.Repeat(" ", availableW-lipgloss.Width(leftBanner)),
+				userInfo)
+			topBar = lipgloss.NewStyle().Width(m.width - 1).PaddingRight(2).Render(topBar)
+			ui = lipgloss.JoinVertical(lipgloss.Left, topBar, ui)
+		} else {
+			// Fall back to right-aligned userInfo only
+			topBar := lipgloss.NewStyle().Width(m.width - 1).Align(lipgloss.Right).PaddingRight(2).Render(userInfo)
+			if leftBanner != "" {
+				topBar = leftBanner + "  " + topBar
+			}
+			ui = lipgloss.JoinVertical(lipgloss.Left, topBar, ui)
+		}
 	}
 
 	// Contextual footer
@@ -924,12 +986,6 @@ func (m Model) footerText() string {
 	dim := lipgloss.NewStyle().Foreground(colorMuted)
 
 	workspaceHint := dim.Render("[1-4] Workspace")
-	if m.notifLoaded {
-		if count := m.unreadCount(); count > 0 {
-			badge := lipgloss.NewStyle().Foreground(colorRed).Bold(true).Render(fmt.Sprintf("(%d)", count))
-			workspaceHint = dim.Render("[1-4] Workspace ") + badge
-		}
-	}
 	switch {
 	case m.showReactionPicker:
 		return dim.Render(" [↑/↓] Navigate  [Enter] React  [Esc] Cancel")

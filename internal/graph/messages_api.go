@@ -605,6 +605,35 @@ func (c *Client) GetMessageReactions(channelID, messageID, selfID string) (map[s
 	return result, nil
 }
 
+func (c *Client) MarkConversationAsRead(conversationID string, lastMsg Message) error {
+	ts := lastMsg.CreatedAt.UnixMilli()
+	nowTs := time.Now().UnixMilli()
+	horizon := fmt.Sprintf("%d;%d;%d", ts, nowTs, ts)
+
+	payload := fmt.Sprintf(`{"consumptionhorizon":"%s"}`, horizon)
+
+	url := fmt.Sprintf("https://teams.microsoft.com/api/chatsvc/amer/v1/users/ME/conversations/%s/properties?name=consumptionhorizon",
+		conversationID)
+
+	req, err := http.NewRequest("PUT", url, strings.NewReader(payload))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.WebToken)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == 200 || resp.StatusCode == 204 {
+		return nil
+	}
+	body, _ := io.ReadAll(resp.Body)
+	return fmt.Errorf("mark as read error %d: %s", resp.StatusCode, string(body))
+}
+
 func (c *Client) EditMessage(channelID, messageID, content string) error {
 	url := fmt.Sprintf("https://teams.microsoft.com/api/chatsvc/amer/v1/users/ME/conversations/%s/messages/%s", channelID, messageID)
 	payload := map[string]interface{}{
