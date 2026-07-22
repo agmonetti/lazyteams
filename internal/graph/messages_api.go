@@ -58,6 +58,47 @@ type chatSvcResponse struct {
 	} `json:"_metadata"`
 }
 
+// parseReactions extracts reactions from the "emotions" key in properties.
+// The emotions can be either an []interface{} or a JSON string.
+func parseReactions(properties map[string]interface{}) []Reaction {
+	if properties == nil || properties["emotions"] == nil {
+		return nil
+	}
+
+	var reactions []Reaction
+
+	if emoList, ok := properties["emotions"].([]interface{}); ok {
+		for _, e := range emoList {
+			if emoMap, ok := e.(map[string]interface{}); ok {
+				if key, ok := emoMap["key"].(string); ok {
+					if users, ok := emoMap["users"].([]interface{}); ok {
+						if len(users) > 0 {
+							reactions = append(reactions, Reaction{Key: key, Count: len(users)})
+						}
+					}
+				}
+			}
+		}
+	} else if emoStr, ok := properties["emotions"].(string); ok {
+		var emoList []struct {
+			Key   string        `json:"key"`
+			Users []interface{} `json:"users"`
+		}
+		if json.Unmarshal([]byte(emoStr), &emoList) == nil {
+			for _, e := range emoList {
+				if len(e.Users) > 0 {
+					reactions = append(reactions, Reaction{Key: e.Key, Count: len(e.Users)})
+				}
+			}
+		}
+	}
+
+	sort.Slice(reactions, func(i, j int) bool {
+		return reactions[i].Count > reactions[j].Count
+	})
+	return reactions
+}
+
 // GetMessages fetches messages from a channel using the internal API (ChatSvc)
 func (c *Client) GetMessagesWithLink(teamID, channelID string, pageSize int) ([]Message, string, error) {
 	var allMsgs []Message
@@ -191,52 +232,19 @@ func (c *Client) GetMessagesWithLink(teamID, channelID string, pageSize int) ([]
 				rootID = m.ID
 			}
 
-			var reactions []Reaction
-			if m.AnnotationsSummary != nil {
-				for key, count := range m.AnnotationsSummary.Emotions {
-					if count > 0 {
-						reactions = append(reactions, Reaction{Key: key, Count: count})
-					}
-				}
-				// Ordenar por count descendente
-				sort.Slice(reactions, func(i, j int) bool {
-					return reactions[i].Count > reactions[j].Count
-				})
-			} else if m.Properties != nil && m.Properties["emotions"] != nil {
-				// Fallback to extract from properties (used in DMs)
-				if emoList, ok := m.Properties["emotions"].([]interface{}); ok {
-					for _, e := range emoList {
-						if emoMap, ok := e.(map[string]interface{}); ok {
-							if key, ok := emoMap["key"].(string); ok {
-								if users, ok := emoMap["users"].([]interface{}); ok {
-									if len(users) > 0 {
-										reactions = append(reactions, Reaction{Key: key, Count: len(users)})
-									}
-								}
-							}
-						}
-					}
-					// Ordenar por count descendente
-					sort.Slice(reactions, func(i, j int) bool {
-						return reactions[i].Count > reactions[j].Count
-					})
-				} else if emoStr, ok := m.Properties["emotions"].(string); ok {
-					var emoList []struct {
-						Key   string        `json:"key"`
-						Users []interface{} `json:"users"`
-					}
-					if json.Unmarshal([]byte(emoStr), &emoList) == nil {
-						for _, e := range emoList {
-							if len(e.Users) > 0 {
-								reactions = append(reactions, Reaction{Key: e.Key, Count: len(e.Users)})
-							}
-						}
-						sort.Slice(reactions, func(i, j int) bool {
-							return reactions[i].Count > reactions[j].Count
-						})
-					}
+		var reactions []Reaction
+		if m.AnnotationsSummary != nil {
+			for key, count := range m.AnnotationsSummary.Emotions {
+				if count > 0 {
+					reactions = append(reactions, Reaction{Key: key, Count: count})
 				}
 			}
+			sort.Slice(reactions, func(i, j int) bool {
+				return reactions[i].Count > reactions[j].Count
+			})
+		} else {
+			reactions = parseReactions(m.Properties)
+		}
 
 			isDeleted := false
 			if m.Properties != nil {
@@ -368,38 +376,8 @@ func (c *Client) GetMessagesFromLink(link string) (MessagePage, error) {
 			sort.Slice(reactions, func(i, j int) bool {
 				return reactions[i].Count > reactions[j].Count
 			})
-		} else if m.Properties != nil && m.Properties["emotions"] != nil {
-			if emoList, ok := m.Properties["emotions"].([]interface{}); ok {
-				for _, e := range emoList {
-					if emoMap, ok := e.(map[string]interface{}); ok {
-						if key, ok := emoMap["key"].(string); ok {
-							if users, ok := emoMap["users"].([]interface{}); ok {
-								if len(users) > 0 {
-									reactions = append(reactions, Reaction{Key: key, Count: len(users)})
-								}
-							}
-						}
-					}
-				}
-				sort.Slice(reactions, func(i, j int) bool {
-					return reactions[i].Count > reactions[j].Count
-				})
-			} else if emoStr, ok := m.Properties["emotions"].(string); ok {
-				var emoList []struct {
-					Key   string        `json:"key"`
-					Users []interface{} `json:"users"`
-				}
-				if json.Unmarshal([]byte(emoStr), &emoList) == nil {
-					for _, e := range emoList {
-						if len(e.Users) > 0 {
-							reactions = append(reactions, Reaction{Key: e.Key, Count: len(e.Users)})
-						}
-					}
-					sort.Slice(reactions, func(i, j int) bool {
-						return reactions[i].Count > reactions[j].Count
-					})
-				}
-			}
+		} else {
+			reactions = parseReactions(m.Properties)
 		}
 
 		msgs = append(msgs, Message{
