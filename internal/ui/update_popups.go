@@ -59,8 +59,8 @@ func (m Model) handleReactionPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
 		}
 	case "enter":
 		m.showReactionPicker = false
+		m.reactionPending = false
 		key := m.reactionOptions[m.reactionCursor]
-		// Search across all messages, not just roots
 		var targetMsg *graph.Message
 		for i := range m.messages {
 			if m.messages[i].ID == m.reactionTargetID {
@@ -73,6 +73,24 @@ func (m Model) handleReactionPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
 			for _, r := range targetMsg.Reactions {
 				if r.Key == key && r.UserReacted {
 					alreadyReacted = true
+					break
+				}
+			}
+			// Optimistic update
+			for i := range m.messages {
+				if m.messages[i].ID == m.reactionTargetID {
+					for j := range m.messages[i].Reactions {
+						if m.messages[i].Reactions[j].Key == key {
+							if alreadyReacted {
+								m.messages[i].Reactions[j].UserReacted = false
+								m.messages[i].Reactions[j].Count--
+							} else {
+								m.messages[i].Reactions[j].UserReacted = true
+								m.messages[i].Reactions[j].Count++
+							}
+							break
+						}
+					}
 					break
 				}
 			}
@@ -309,6 +327,10 @@ func (m Model) handleCursorModeTeams(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) 
 		m.viewport.SetContent(content)
 		return m, nil, true
 	case "e":
+		if m.reactionPending {
+			return m, nil, true
+		}
+		m.reactionPending = true
 		rootMsgs := rootMessages(m.messages)
 		if m.messageCursor < len(rootMsgs) {
 			m.reactionTargetID = rootMsgs[m.messageCursor].ID
@@ -457,6 +479,10 @@ func (m Model) handleCursorModeDMs(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
 		}
 		return m, nil, true
 	case "e":
+		if m.reactionPending {
+			return m, nil, true
+		}
+		m.reactionPending = true
 		validMsgs := validDMMessages(m.messages)
 		if m.messageCursor < len(validMsgs) {
 			target := validMsgs[m.messageCursor]

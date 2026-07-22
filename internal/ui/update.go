@@ -253,25 +253,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, loadMessagesCmd(m.client, "", m.activeConversationID(), 200)
 
 	case addReactionMsg:
+		m.reactionPending = false
 		if msg.err != nil {
 			m.downloadStatus = fmt.Sprintf("✗ %v", msg.err)
 			m.downloadStatusID++
-			return m, clearStatusAfter(m.downloadStatusID)
+			return m, tea.Batch(
+				loadMessagesCmd(m.client, m.teams[m.selectedTeam].ID, m.activeConversationID(), 200),
+				clearStatusAfter(m.downloadStatusID),
+			)
 		}
-		// Reload to see the updated reaction
-		m.messagesBackwardLink = ""
-			m.loadingMore = false
-			return m, loadMessagesCmd(m.client, m.teams[m.selectedTeam].ID, m.activeConversationID(), 200)
+		return m, nil
 
 	case removeReactionMsg:
+		m.reactionPending = false
 		if msg.err != nil {
 			m.downloadStatus = fmt.Sprintf("✗ %v", msg.err)
 			m.downloadStatusID++
-			return m, clearStatusAfter(m.downloadStatusID)
+			return m, tea.Batch(
+				loadMessagesCmd(m.client, m.teams[m.selectedTeam].ID, m.activeConversationID(), 200),
+				clearStatusAfter(m.downloadStatusID),
+			)
 		}
-		m.messagesBackwardLink = ""
-			m.loadingMore = false
-			return m, loadMessagesCmd(m.client, m.teams[m.selectedTeam].ID, m.activeConversationID(), 200)
+		return m, nil
 
 	case reactionsLoadedMsg:
 		m.loading = false
@@ -280,10 +283,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.downloadStatusID++
 			return m, clearStatusAfter(m.downloadStatusID)
 		}
-		// Apply UserReacted to the specific message
 		for i, message := range m.messages {
 			if message.ID == msg.messageID {
-				for j, r := range message.Reactions {
+				// Reset all first, then apply fresh state
+				for j := range m.messages[i].Reactions {
+					m.messages[i].Reactions[j].UserReacted = false
+				}
+				for j, r := range m.messages[i].Reactions {
 					if msg.reactions[r.Key] {
 						m.messages[i].Reactions[j].UserReacted = true
 					}

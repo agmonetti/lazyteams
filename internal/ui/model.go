@@ -148,6 +148,7 @@ type Model struct {
 	reactionCursor     int
 	reactionTargetID   string
 	reactionOptions    []string // keys
+	reactionPending    bool
 
 	// Edit message
 	showEditPopup    bool
