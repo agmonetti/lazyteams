@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"teamsTUI/internal/graph"
 	"time"
@@ -617,24 +616,13 @@ type unreadStatusMsg struct {
 
 func checkUnreadCmd(client *graph.Client, chat graph.Chat) tea.Cmd {
 	return func() tea.Msg {
-		if chat.LastMessagePreview == nil {
-			return nil
-		}
-		lastMsgID := chat.LastMessagePreview.ID
-		if lastMsgID == "" {
-			return nil
-		}
-		lastTs, err := strconv.ParseInt(lastMsgID, 10, 64)
-		if err != nil {
-			return nil
-		}
-		lastReadTs, err := client.GetConsumptionHorizon(chat.ID)
-		if err != nil || lastReadTs == 0 {
+		result, err := client.GetConsumptionHorizon(chat.ID)
+		if err != nil || result.ChatVersion == 0 {
 			return nil
 		}
 		return unreadStatusMsg{
 			chatID:    chat.ID,
-			hasUnread: lastTs > lastReadTs,
+			hasUnread: result.ChatVersion > result.LastReadTs,
 		}
 	}
 }

@@ -869,25 +869,38 @@ func (m Model) View() string {
 			}
 		}
 
-		if leftBanner != "" {
-			leftBanner = lipgloss.NewStyle().PaddingLeft(2).Render(leftBanner)
-		}
-		availableW := m.width - 1 - lipgloss.Width(userInfo) - 4
+		userInfoW := lipgloss.Width(userInfo)
+		availableW := m.width - 1 - userInfoW - 4
+
+		var topBar string
 		if leftBanner != "" && availableW > 10 {
-			topBar := fmt.Sprintf("%s%s%s",
-				leftBanner,
-				strings.Repeat(" ", availableW-lipgloss.Width(leftBanner)),
-				userInfo)
-			topBar = lipgloss.NewStyle().Width(m.width - 1).PaddingRight(2).Render(topBar)
-			ui = lipgloss.JoinVertical(lipgloss.Left, topBar, ui)
-		} else {
-			// Fall back to right-aligned userInfo only
-			topBar := lipgloss.NewStyle().Width(m.width - 1).Align(lipgloss.Right).PaddingRight(2).Render(userInfo)
-			if leftBanner != "" {
-				topBar = leftBanner + "  " + topBar
+			bannerW := lipgloss.Width(leftBanner)
+			padding := availableW - bannerW
+			if padding < 0 {
+				padding = 0
 			}
-			ui = lipgloss.JoinVertical(lipgloss.Left, topBar, ui)
+			topBar = lipgloss.NewStyle().PaddingLeft(2).Render(leftBanner) +
+				strings.Repeat(" ", padding) +
+				lipgloss.NewStyle().PaddingRight(2).Render(userInfo)
+		} else {
+			topBar = lipgloss.NewStyle().
+				Width(m.width - 1).
+				Align(lipgloss.Right).
+				PaddingRight(2).
+				Render(userInfo)
 		}
+
+		ui = lipgloss.JoinVertical(lipgloss.Left, topBar, ui)
+	}
+
+	if m.showHelp {
+		helpContent := renderHelpMenu()
+		popup := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("#0078D4")).
+			Padding(1, 2).
+			Render(helpContent)
+		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, popup, lipgloss.WithWhitespaceChars(" "))
 	}
 
 	// Contextual footer
@@ -903,16 +916,6 @@ func (m Model) View() string {
 		footerLine += "\n" + lipgloss.NewStyle().Foreground(lipgloss.Color("203")).Render("Presence error: " + m.presenceError)
 	}
 	ui = lipgloss.JoinVertical(lipgloss.Left, ui, footerLine)
-
-	if m.showHelp {
-		helpContent := renderHelpMenu()
-		popup := lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("#0078D4")).
-			Padding(1, 4).
-			Render(helpContent)
-		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, popup)
-	}
 
 	return ui
 }

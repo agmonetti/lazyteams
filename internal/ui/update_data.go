@@ -92,11 +92,9 @@ func (m Model) handleChatsMsg(msg chatsMsg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, pollPresenceCmd(m.client, ids))
 	}
 
-	// Fire unread checks for oneOnOne chats
+	// Fire unread checks for all chats
 	for _, ch := range m.chats {
-		if ch.ChatType == "oneOnOne" {
-			cmds = append(cmds, checkUnreadCmd(m.client, ch))
-		}
+		cmds = append(cmds, checkUnreadCmd(m.client, ch))
 	}
 
 	// Chain async self-discovery, passing the cache if available

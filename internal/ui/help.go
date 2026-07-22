@@ -88,7 +88,7 @@ func renderHelpMenu() string {
 	// Helper to format a category
 	renderCategory := func(cat HelpCategory) string {
 		var out strings.Builder
-		out.WriteString(b.Render(cat.Title) + "\n\n")
+		out.WriteString(b.Render(cat.Title) + "\n")
 		for _, s := range cat.Shortcuts {
 			// Pad the key to align descriptions nicely.
 			// Using lipgloss.Width to account for multi-byte runes like ↑ and ↓.
@@ -114,9 +114,15 @@ func renderHelpMenu() string {
 	for i, cat := range HelpData {
 		rendered := renderCategory(cat)
 		if i < half {
-			col1Sections = append(col1Sections, rendered, "\n")
+			col1Sections = append(col1Sections, rendered)
+			if i < half-1 {
+				col1Sections = append(col1Sections, "\n")
+			}
 		} else {
-			col2Sections = append(col2Sections, rendered, "\n")
+			col2Sections = append(col2Sections, rendered)
+			if i < len(HelpData)-1 {
+				col2Sections = append(col2Sections, "\n")
+			}
 		}
 	}
 
@@ -125,5 +131,5 @@ func renderHelpMenu() string {
 
 	table := lipgloss.JoinHorizontal(lipgloss.Top, col1, "    ", col2)
 
-	return titleStyle.Render(" Cheat Sheet ") + "\n\n" + table + "\n\n" + dim.Render(" Press [Esc] or [?] to close")
+	return titleStyle.Render(" Cheat Sheet ") + "\n\n" + table + "\n" + dim.Render(" Press [Esc] or [?] to close")
 }

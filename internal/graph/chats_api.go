@@ -108,22 +108,27 @@ func (c *Client) GetChats() ([]Chat, error) {
 	return res.Value, nil
 }
 
-func (c *Client) GetConsumptionHorizon(convID string) (int64, error) {
+type ConsumptionHorizonResult struct {
+	LastReadTs  int64
+	ChatVersion int64
+}
+
+func (c *Client) GetConsumptionHorizon(convID string) (ConsumptionHorizonResult, error) {
 	url := fmt.Sprintf("https://teams.microsoft.com/api/chatsvc/amer/v1/threads/%s/consumptionhorizons", convID)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		return 0, err
+		return ConsumptionHorizonResult{}, err
 	}
 	req.Header.Set("Authorization", "Bearer "+c.WebToken)
 	req.Header.Set("Accept", "application/json")
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
-		return 0, err
+		return ConsumptionHorizonResult{}, err
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != 200 {
-		return 0, fmt.Errorf("consumption horizon error %d", resp.StatusCode)
+		return ConsumptionHorizonResult{}, fmt.Errorf("consumption horizon error %d", resp.StatusCode)
 	}
 	var res struct {
 		ConsumptionHorizons []struct {
@@ -132,21 +137,35 @@ func (c *Client) GetConsumptionHorizon(convID string) (int64, error) {
 		} `json:"consumptionHorizons"`
 	}
 	if err := json.Unmarshal(body, &res); err != nil {
-		return 0, err
+		return ConsumptionHorizonResult{}, err
 	}
+
 	selfMRI := "8:orgid:" + c.SelfID
+	var myLastRead int64
+	var otherLastRead int64
+
 	for _, h := range res.ConsumptionHorizons {
+		parts := strings.SplitN(h.ConsumptionHorizon, ";", 2)
+		if len(parts) == 0 {
+			continue
+		}
+		ts, err := strconv.ParseInt(parts[0], 10, 64)
+		if err != nil {
+			continue
+		}
 		if h.ID == selfMRI {
-			parts := strings.SplitN(h.ConsumptionHorizon, ";", 2)
-			if len(parts) > 0 {
-				ts, err := strconv.ParseInt(parts[0], 10, 64)
-				if err == nil {
-					return ts, nil
-				}
+			myLastRead = ts
+		} else {
+			if ts > otherLastRead {
+				otherLastRead = ts
 			}
 		}
 	}
-	return 0, nil
+
+	return ConsumptionHorizonResult{
+		LastReadTs:  myLastRead,
+		ChatVersion: otherLastRead,
+	}, nil
 }
 
 type UserSearchResult struct {

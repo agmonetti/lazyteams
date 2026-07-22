@@ -361,7 +361,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case meMsg:
 		m.selfID = msg.id
 		m.client.SelfID = msg.id
-		return m, nil
+		var cmds []tea.Cmd
+		for _, ch := range m.chats {
+			cmds = append(cmds, checkUnreadCmd(m.client, ch))
+		}
+		return m, tea.Batch(cmds...)
 
 	case meErrMsg:
 		// Don't block the app: without selfID, 1:1 chats will simply
