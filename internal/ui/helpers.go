@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"io"
+	"net/url"
 	"os/exec"
 	"runtime"
 	"sort"
@@ -65,11 +66,29 @@ func isTextFile(name string) bool {
 	return false
 }
 
+// buildSharePointViewerURL converts a raw SharePoint file URL into
+// an Office Online viewer URL that works even for read-only files.
+func buildSharePointViewerURL(webURL string) string {
+	// Extract base (scheme + host) and path
+	u, err := url.Parse(webURL)
+	if err != nil {
+		return webURL
+	}
+	// Insert /:b:/r before the path to activate the Office Online viewer
+	viewerPath := "/:b:/r" + u.Path
+	u.Path = viewerPath
+	q := u.Query()
+	q.Set("csf", "1")
+	q.Set("web", "1")
+	u.RawQuery = q.Encode()
+	return u.String()
+}
+
 func previewFileCmd(client *graph.Client, item graph.DriveItem, driveID, teamID string) tea.Cmd {
 	return func() tea.Msg {
 		if !isTextFile(item.Name) {
-			url := item.WebUrl
-			openBrowser(url)
+			viewerURL := buildSharePointViewerURL(item.WebUrl)
+			openBrowser(viewerURL)
 			return previewResultMsg{
 				openBrowser: true,
 				status:      fmt.Sprintf("Opening %s in browser...", item.Name),
@@ -101,6 +120,14 @@ func previewFileCmd(client *graph.Client, item graph.DriveItem, driveID, teamID 
 			}
 		}
 		if err != nil {
+			if item.WebUrl != "" {
+				viewerURL := buildSharePointViewerURL(item.WebUrl)
+				openBrowser(viewerURL)
+				return previewResultMsg{
+					openBrowser: true,
+					status:      fmt.Sprintf("No download access — opening %s in browser...", item.Name),
+				}
+			}
 			return previewResultMsg{err: err}
 		}
 		defer body.Close()
