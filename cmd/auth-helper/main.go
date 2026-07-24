@@ -600,7 +600,7 @@ func fullRenewal(pw *playwright.Playwright, page playwright.Page, ctx playwright
 		// Step 1 (8s): navigate to a channel to trigger graph + webToken
 		if elapsed > 8*time.Second && (!hasGraph || !hasWeb) {
 			globalSpin.SetLabel("Navigating to a channel to trigger web tokens...")
-			page.Goto("https://teams.microsoft.com/v2/#/school/threads/19:8b5f7c67-e6ca-4718-b743-c3f9d8c6829f@thread.v2",
+			page.Goto("https://teams.microsoft.com/v2/#/teams/",
 				playwright.PageGotoOptions{Timeout: playwright.Float(15000)},
 			)
 		}
