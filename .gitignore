@@ -2,7 +2,7 @@ tokens.json
 # Binaries
 msTTui
 msTTui-auth
-auth-helper
+/auth-helper
 teamsTUI
 main
 *.exe
@@ -12,7 +12,7 @@ debug_mensajes.json
 debug_api.go
 debug*.log
 debug*.json
-cmd/
+cmd/debug-*/
 
 # Environment
 .env
