@@ -109,52 +109,95 @@ func (m Model) View() string {
 	leftContent := ""
 
 	if m.workspace == WorkspaceDMs {
-		leftContent += titleStyle.Render("Chats") + "\n"
+		leftContent += titleStyle.Render("Chats") + "\n\n"
+
 		if len(m.chats) == 0 {
 			leftContent += "  (no chats)\n"
 		} else {
-			var lastSection string
-			sectionHeader := func(section string) {
-				if section != lastSection {
-					leftContent += metaStyle.Render("── " + section + " ──") + "\n"
-					lastSection = section
+			var dmChats, groupChats []int
+			for i, ch := range m.chats {
+				if ch.ChatType == "oneOnOne" {
+					dmChats = append(dmChats, i)
+				} else {
+					groupChats = append(groupChats, i)
 				}
 			}
-			for i, ch := range m.chats {
-				switch ch.ChatType {
-				case "oneOnOne":
-					sectionHeader("Direct Messages")
-				default:
-					sectionHeader("Group Chats")
-				}
 
-				cursor := "  "
-				style := normalItemStyle
-				if i == m.selectedChat {
-					if m.focusLeft {
-						cursor = "▶ "
-						style = selectedItemStyle
-					} else {
-						style = style.Copy().Foreground(lipgloss.Color("245"))
-					}
-				}
-				name := ch.DisplayName(m.selfID)
+			dmArrow := "▼"
+			if m.dmSectionCollapsed {
+				dmArrow = "▶"
+			}
+			dmHeaderStyle := metaStyle
+			if m.cursorOnDMHeader && m.focusLeft {
+				dmHeaderStyle = selectedItemStyle
+			}
+			leftContent += dmHeaderStyle.Render(dmArrow+" Direct Messages") + "\n"
 
-				presenceDot := ""
-				for _, u := range ch.Members {
-					if u.UserID != m.selfID {
-						if avail, ok := m.presence[u.UserID]; ok {
-							presenceDot = " " + presenceSymbol(avail)
+			if !m.dmSectionCollapsed {
+				for _, i := range dmChats {
+					ch := m.chats[i]
+					cursor := "  "
+					style := normalItemStyle
+					if !m.cursorOnDMHeader && !m.cursorOnGroupHeader && i == m.selectedChat {
+						if m.focusLeft {
+							cursor = "▶ "
+							style = selectedItemStyle
+						} else {
+							style = style.Copy().Foreground(lipgloss.Color("245"))
 						}
-						break
+					}
+					badge := ""
+					if m.chatUnread[ch.ID] {
+						badge = unreadDotStyle.Render(" ●")
+					}
+					name := ch.DisplayName(m.selfID)
+					presence := ""
+					for _, mem := range ch.Members {
+						if mem.UserID != m.selfID {
+							if p, ok := m.presence[mem.UserID]; ok {
+								presence = " " + presenceSymbol(p)
+							}
+						}
+					}
+					line := style.Render(name+presence) + badge
+					leftContent += cursor + line + "\n"
+				}
+			}
+
+			if len(groupChats) > 0 {
+				leftContent += "\n"
+				groupArrow := "▼"
+				if m.groupSectionCollapsed {
+					groupArrow = "▶"
+				}
+				groupHeaderStyle := metaStyle
+				if m.cursorOnGroupHeader && m.focusLeft {
+					groupHeaderStyle = selectedItemStyle
+				}
+				leftContent += groupHeaderStyle.Render(groupArrow+" Group Chats") + "\n"
+
+				if !m.groupSectionCollapsed {
+					for _, i := range groupChats {
+						ch := m.chats[i]
+						cursor := "  "
+						style := normalItemStyle
+						if !m.cursorOnDMHeader && !m.cursorOnGroupHeader && i == m.selectedChat {
+							if m.focusLeft {
+								cursor = "▶ "
+								style = selectedItemStyle
+							} else {
+								style = style.Copy().Foreground(lipgloss.Color("245"))
+							}
+						}
+						badge := ""
+						if m.chatUnread[ch.ID] {
+							badge = unreadDotStyle.Render(" ●")
+						}
+						name := ch.DisplayName(m.selfID)
+						line := style.Render(name) + badge
+						leftContent += cursor + line + "\n"
 					}
 				}
-
-				badge := ""
-				if m.chatUnread[ch.ID] && i != m.selectedChat {
-					badge = unreadDotStyle.Render(" ●")
-				}
-				leftContent += fmt.Sprintf("%s%s%s%s\n", cursor, style.Render(name), badge, presenceDot)
 			}
 		}
 	} else if m.workspace == WorkspaceTeams {

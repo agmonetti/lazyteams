@@ -10,8 +10,10 @@ type Preferences struct {
 	// Maps UserID -> ChatID to support multiple accounts without cache collisions
 	SelfChatIDs     map[string]string   `json:"self_chat_ids"`
 	DownloadDir     string              `json:"download_dir,omitempty"`
-	HiddenTeams     []string            `json:"hidden_teams,omitempty"`
-	HiddenChannels  map[string][]string `json:"hidden_channels"` // teamID → channelID
+	HiddenTeams           []string            `json:"hidden_teams,omitempty"`
+	HiddenChannels        map[string][]string `json:"hidden_channels"` // teamID → channelID
+	DMSectionCollapsed    bool                `json:"dmSectionCollapsed"`
+	GroupSectionCollapsed bool                `json:"groupSectionCollapsed"`
 }
 
 func prefsPath() string {
@@ -40,6 +42,11 @@ func loadPrefs() Preferences {
 		p.DownloadDir = filepath.Join(home, "Downloads")
 	}
 	return p
+}
+
+func loadPrefsIntoModel(m *Model, prefs Preferences) {
+	m.dmSectionCollapsed = prefs.DMSectionCollapsed
+	m.groupSectionCollapsed = prefs.GroupSectionCollapsed
 }
 
 func savePrefs(p Preferences) error {

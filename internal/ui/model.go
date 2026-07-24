@@ -212,8 +212,12 @@ type Model struct {
 	assignFilter     ActivityFilter
 
 	// DM polling
-	chatUnread map[string]bool  // chatID → has unread messages
-	presence   map[string]string // userID → Availability (Available, Busy, Away, Offline, etc.)
+	chatUnread              map[string]bool   // chatID → has unread messages
+	presence                map[string]string  // userID → Availability (Available, Busy, Away, Offline, etc.)
+	dmSectionCollapsed      bool
+	groupSectionCollapsed   bool
+	cursorOnDMHeader        bool
+	cursorOnGroupHeader     bool
 
 	// File preview
 	previewing     bool   // true while showing file preview

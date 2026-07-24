@@ -145,8 +145,8 @@ func renderFilesContent(m *Model) string {
 				age := t.Local().Format("02 Jan 2006")
 				who := f.LastModifiedBy.User.DisplayName
 				if who != "" {
-					if len(who) > 15 {
-						who = who[:15]
+					if len(who) > 25 {
+						who = who[:25]
 					}
 					meta = metaStyle.Render(age + " · " + who)
 				} else {
@@ -158,7 +158,7 @@ func renderFilesContent(m *Model) string {
 		prefix := checkbox + icon + " "
 		prefixWidth := lipgloss.Width(prefix)
 		metaWidth := lipgloss.Width(meta)
-		availableWidth := m.viewport.Width - lipgloss.Width(cursor)
+		availableWidth := m.viewport.Width - lipgloss.Width(cursor) - 2
 		nameMax := availableWidth - prefixWidth - metaWidth
 		if nameMax < 10 {
 			nameMax = 10
@@ -319,4 +319,59 @@ func chatPriority(ch graph.Chat, selfChatID string) int {
 	default:
 		return 3
 	}
+}
+
+func dmChatIndices(chats []graph.Chat) []int {
+	var result []int
+	for i, ch := range chats {
+		if ch.ChatType == "oneOnOne" {
+			result = append(result, i)
+		}
+	}
+	return result
+}
+
+func groupChatIndices(chats []graph.Chat) []int {
+	var result []int
+	for i, ch := range chats {
+		if ch.ChatType != "oneOnOne" {
+			result = append(result, i)
+		}
+	}
+	return result
+}
+
+func visibleChatIndices(chats []graph.Chat, dmCollapsed, groupCollapsed bool) []int {
+	var result []int
+	for i, ch := range chats {
+		if ch.ChatType == "oneOnOne" && !dmCollapsed {
+			result = append(result, i)
+		} else if ch.ChatType != "oneOnOne" && !groupCollapsed {
+			result = append(result, i)
+		}
+	}
+	return result
+}
+
+func isInDMs(chats []graph.Chat, idx int) bool {
+	if idx < 0 || idx >= len(chats) {
+		return false
+	}
+	return chats[idx].ChatType == "oneOnOne"
+}
+
+func isInGroup(chats []graph.Chat, idx int) bool {
+	if idx < 0 || idx >= len(chats) {
+		return false
+	}
+	return chats[idx].ChatType != "oneOnOne"
+}
+
+func indexOf(slice []int, val int) int {
+	for i, v := range slice {
+		if v == val {
+			return i
+		}
+	}
+	return -1
 }

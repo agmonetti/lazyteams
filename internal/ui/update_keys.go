@@ -227,14 +227,18 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "tab":
 		m.focusLeft = !m.focusLeft
 
-	case "1":
-		m.workspace = WorkspaceTeams
-		m.focusLeft = true
-		m.focusList = 0
+		case "1":
+			m.workspace = WorkspaceTeams
+			m.focusLeft = true
+			m.focusList = 0
+			m.cursorOnDMHeader = false
+			m.cursorOnGroupHeader = false
 
-	case "2":
-		m.workspace = WorkspaceDMs
-		m.focusLeft = true
+		case "2":
+			m.workspace = WorkspaceDMs
+			m.focusLeft = true
+			m.cursorOnDMHeader = false
+			m.cursorOnGroupHeader = false
 		if !m.chatsLoaded {
 			m.loading = true
 			cmds = append(cmds, loadChatsCmd(m.client))
@@ -260,18 +264,22 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-	case "3":
-		m.workspace = WorkspaceActivity
-		m.focusLeft = true
-		if !m.notifLoaded {
-			m.loading = true
-			m.selectedNotif = 0
-			cmds = append(cmds, loadNotificationsCmd(m.client))
-		}
+		case "3":
+			m.workspace = WorkspaceActivity
+			m.focusLeft = true
+			m.cursorOnDMHeader = false
+			m.cursorOnGroupHeader = false
+			if !m.notifLoaded {
+				m.loading = true
+				m.selectedNotif = 0
+				cmds = append(cmds, loadNotificationsCmd(m.client))
+			}
 
-	case "4":
-		m.workspace = WorkspaceAssignments
-		m.focusLeft = true
+		case "4":
+			m.workspace = WorkspaceAssignments
+			m.focusLeft = true
+			m.cursorOnDMHeader = false
+			m.cursorOnGroupHeader = false
 		if !m.assignLoaded {
 			m.loading = true
 			m.selectedAssign = 0
@@ -334,21 +342,42 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "up", "k":
 		if m.focusLeft {
 			if m.workspace == WorkspaceDMs {
-				if len(m.chats) > 0 && m.selectedChat > 0 {
-					m.selectedChat--
-					if m.viewMode == ModeChat {
-						m.loading = true
-						m.loadedConvID = m.chats[m.selectedChat].ID
-						m.messagesBackwardLink = ""
-						m.loadingMore = false
-						cmds = append(cmds, loadMessagesCmd(m.client, "", m.loadedConvID, 200))
-					} else if m.viewMode == ModeFiles {
-						m.loadedConvID = m.chats[m.selectedChat].ID
-						m.loading = true
-						m.messagesBackwardLink = ""
-						m.loadingMore = false
-						cmds = append(cmds, loadMessagesCmd(m.client, "", m.loadedConvID, 200))
+				if m.cursorOnGroupHeader {
+					m.cursorOnGroupHeader = false
+					dmChats := dmChatIndices(m.chats)
+					if !m.dmSectionCollapsed && len(dmChats) > 0 {
+						m.selectedChat = dmChats[len(dmChats)-1]
+					} else {
+						m.cursorOnDMHeader = true
 					}
+				} else if m.cursorOnDMHeader {
+					// Already at top, do nothing
+				} else {
+					dmChats := dmChatIndices(m.chats)
+					groupChats := groupChatIndices(m.chats)
+					allVisible := visibleChatIndices(m.chats, m.dmSectionCollapsed, m.groupSectionCollapsed)
+					pos := indexOf(allVisible, m.selectedChat)
+					if pos > 0 {
+						m.selectedChat = allVisible[pos-1]
+						if m.viewMode == ModeChat {
+							m.loading = true
+							m.loadedConvID = m.chats[m.selectedChat].ID
+							m.messagesBackwardLink = ""
+							m.loadingMore = false
+							cmds = append(cmds, loadMessagesCmd(m.client, "", m.loadedConvID, 200))
+						} else if m.viewMode == ModeFiles {
+							m.loadedConvID = m.chats[m.selectedChat].ID
+							m.loading = true
+							m.messagesBackwardLink = ""
+							m.loadingMore = false
+							cmds = append(cmds, loadMessagesCmd(m.client, "", m.loadedConvID, 200))
+						}
+					} else if isInGroup(m.chats, m.selectedChat) {
+						m.cursorOnGroupHeader = true
+					} else if len(dmChats) > 0 && m.selectedChat == dmChats[0] {
+						m.cursorOnDMHeader = true
+					}
+					_ = groupChats
 				}
 			} else if m.workspace == WorkspaceActivity {
 				if len(m.notifications) > 0 && m.selectedNotif > 0 {
@@ -404,20 +433,72 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "down", "j":
 		if m.focusLeft {
 			if m.workspace == WorkspaceDMs {
-				if len(m.chats) > 0 && m.selectedChat < len(m.chats)-1 {
-					m.selectedChat++
-					if m.viewMode == ModeChat {
-						m.loading = true
-						m.loadedConvID = m.chats[m.selectedChat].ID
-						m.messagesBackwardLink = ""
-						m.loadingMore = false
-						cmds = append(cmds, loadMessagesCmd(m.client, "", m.loadedConvID, 200))
-					} else if m.viewMode == ModeFiles {
-						m.loadedConvID = m.chats[m.selectedChat].ID
-						m.loading = true
-						m.messagesBackwardLink = ""
-						m.loadingMore = false
-						cmds = append(cmds, loadMessagesCmd(m.client, "", m.loadedConvID, 200))
+				if m.cursorOnDMHeader {
+					m.cursorOnDMHeader = false
+					dmChats := dmChatIndices(m.chats)
+					if !m.dmSectionCollapsed && len(dmChats) > 0 {
+						m.selectedChat = dmChats[0]
+						if m.viewMode == ModeChat {
+							m.loading = true
+							m.loadedConvID = m.chats[m.selectedChat].ID
+							m.messagesBackwardLink = ""
+							m.loadingMore = false
+							cmds = append(cmds, loadMessagesCmd(m.client, "", m.loadedConvID, 200))
+						} else if m.viewMode == ModeFiles {
+							m.loadedConvID = m.chats[m.selectedChat].ID
+							m.loading = true
+							m.messagesBackwardLink = ""
+							m.loadingMore = false
+							cmds = append(cmds, loadMessagesCmd(m.client, "", m.loadedConvID, 200))
+						}
+					} else {
+						groupChats := groupChatIndices(m.chats)
+						if len(groupChats) > 0 {
+							m.cursorOnGroupHeader = true
+						}
+					}
+				} else if m.cursorOnGroupHeader {
+					m.cursorOnGroupHeader = false
+					groupChats := groupChatIndices(m.chats)
+					if !m.groupSectionCollapsed && len(groupChats) > 0 {
+						m.selectedChat = groupChats[0]
+						if m.viewMode == ModeChat {
+							m.loading = true
+							m.loadedConvID = m.chats[m.selectedChat].ID
+							m.messagesBackwardLink = ""
+							m.loadingMore = false
+							cmds = append(cmds, loadMessagesCmd(m.client, "", m.loadedConvID, 200))
+						} else if m.viewMode == ModeFiles {
+							m.loadedConvID = m.chats[m.selectedChat].ID
+							m.loading = true
+							m.messagesBackwardLink = ""
+							m.loadingMore = false
+							cmds = append(cmds, loadMessagesCmd(m.client, "", m.loadedConvID, 200))
+						}
+					}
+				} else {
+					allVisible := visibleChatIndices(m.chats, m.dmSectionCollapsed, m.groupSectionCollapsed)
+					pos1 := indexOf(allVisible, m.selectedChat)
+					if pos1 < len(allVisible)-1 {
+						m.selectedChat = allVisible[pos1+1]
+						if m.viewMode == ModeChat {
+							m.loading = true
+							m.loadedConvID = m.chats[m.selectedChat].ID
+							m.messagesBackwardLink = ""
+							m.loadingMore = false
+							cmds = append(cmds, loadMessagesCmd(m.client, "", m.loadedConvID, 200))
+						} else if m.viewMode == ModeFiles {
+							m.loadedConvID = m.chats[m.selectedChat].ID
+							m.loading = true
+							m.messagesBackwardLink = ""
+							m.loadingMore = false
+							cmds = append(cmds, loadMessagesCmd(m.client, "", m.loadedConvID, 200))
+						}
+					} else if isInDMs(m.chats, m.selectedChat) {
+						groupChats := groupChatIndices(m.chats)
+						if len(groupChats) > 0 {
+							m.cursorOnGroupHeader = true
+						}
 					}
 				}
 			} else if m.workspace == WorkspaceActivity {
@@ -794,6 +875,18 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case "enter":
+		if m.cursorOnDMHeader {
+			m.dmSectionCollapsed = !m.dmSectionCollapsed
+			m.prefs.DMSectionCollapsed = m.dmSectionCollapsed
+			savePrefs(m.prefs)
+			return m, nil
+		}
+		if m.cursorOnGroupHeader {
+			m.groupSectionCollapsed = !m.groupSectionCollapsed
+			m.prefs.GroupSectionCollapsed = m.groupSectionCollapsed
+			savePrefs(m.prefs)
+			return m, nil
+		}
 		if m.focusLeft && m.workspace == WorkspaceActivity && len(m.notifications) > 0 {
 			n := &m.notifications[m.selectedNotif]
 			if !n.IsRead {
