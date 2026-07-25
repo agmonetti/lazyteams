@@ -1,8 +1,10 @@
 package ui
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -333,6 +335,18 @@ func loadAssignmentsCmd(client *graph.Client) tea.Cmd {
 	}
 }
 
+func loadAssignmentDetailCmd(client *graph.Client, classID, assignmentID string) tea.Cmd {
+	return func() tea.Msg {
+		refFiles, myFiles, err := client.FetchAssignmentFiles(classID, assignmentID)
+		return assignmentDetailMsg{
+			assignmentID: assignmentID,
+			refFiles:     refFiles,
+			myFiles:      myFiles,
+			err:          err,
+		}
+	}
+}
+
 func navigateToThreadCmd(client *graph.Client, teams []graph.Team, threadID string) tea.Cmd {
 	return func() tea.Msg {
 		for _, team := range teams {
@@ -354,6 +368,45 @@ func navigateToThreadCmd(client *graph.Client, teams []graph.Team, threadID stri
 	}
 }
 
+func openAssignmentFileCmd(client *graph.Client, file graph.AssignmentFile) tea.Cmd {
+	return func() tea.Msg {
+		req, _ := http.NewRequest("GET", file.FileUrl, nil)
+		req.Header.Set("Authorization", "Bearer "+client.GraphToken)
+		resp, err := client.HTTPClient.Do(req)
+		if err != nil {
+			return nil
+		}
+		defer resp.Body.Close()
+		var item struct {
+			WebUrl string `json:"webUrl"`
+		}
+		json.NewDecoder(resp.Body).Decode(&item)
+		if item.WebUrl != "" {
+			openBrowser(buildSharePointViewerURL(item.WebUrl))
+			return downloadDoneMsg{results: []string{"⟳ " + file.Name + ": opened in browser"}}
+		}
+		return downloadDoneMsg{results: []string{"✗ " + file.Name + ": could not resolve URL"}}
+	}
+}
+
+func getUniquePath(baseDir, name string) string {
+	destPath := filepath.Join(baseDir, name)
+	if _, err := os.Stat(destPath); os.IsNotExist(err) {
+		return destPath
+	}
+
+	ext := filepath.Ext(name)
+	base := strings.TrimSuffix(name, ext)
+
+	for i := 1; ; i++ {
+		newName := fmt.Sprintf("%s (%d)%s", base, i, ext)
+		newPath := filepath.Join(baseDir, newName)
+		if _, err := os.Stat(newPath); os.IsNotExist(err) {
+			return newPath
+		}
+	}
+}
+
 func downloadFilesCmd(client *graph.Client, teamID, driveID string, items []graph.DriveItem, destDir string) tea.Cmd {
 	return func() tea.Msg {
 		if destDir == "" {
@@ -367,7 +420,9 @@ func downloadFilesCmd(client *graph.Client, teamID, driveID string, items []grap
 			var body io.ReadCloser
 			var err error
 
-			if item.ID != "" {
+			if strings.HasPrefix(item.WebUrl, "https://graph.microsoft.com") {
+				body, err = client.DownloadGraphItem(item.WebUrl)
+			} else if item.ID != "" {
 				if driveID != "" {
 					body, err = client.DownloadRemoteItem(driveID, item.ID)
 				} else {
@@ -415,7 +470,7 @@ func downloadFilesCmd(client *graph.Client, teamID, driveID string, items []grap
 				continue
 			}
 
-			destPath := filepath.Join(destDir, item.Name)
+			destPath := getUniquePath(destDir, item.Name)
 			out, ferr := os.Create(destPath)
 			if ferr != nil {
 				body.Close()

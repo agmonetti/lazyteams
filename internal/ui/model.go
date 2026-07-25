@@ -46,6 +46,14 @@ type notificationsErrMsg struct {
 type assignmentsMsg struct {
 	items []graph.Assignment
 }
+
+type assignmentDetailMsg struct {
+	assignmentID string
+	refFiles     []graph.AssignmentFile
+	myFiles      []graph.AssignmentFile
+	err          error
+}
+
 type assignmentsErrMsg struct {
 	err error
 }
@@ -208,6 +216,7 @@ type Model struct {
 	assignments      []graph.Assignment
 	assignLoaded     bool
 	selectedAssign   int
+	assignFileCursor int
 	assignErr        error
 	assignFilter     ActivityFilter
 
@@ -363,6 +372,7 @@ func New(client *graph.Client, userName string) Model {
 		createChannelType: "Standard",
 		addMemberInput: addMemberInput,
 		addChannelMemberInput: addChannelMemberInput,
+		assignFilter: FilterUpcoming,
 		prefs:        loadPrefs(),
 		chatUnread:   make(map[string]bool),
 		presence:     make(map[string]string),

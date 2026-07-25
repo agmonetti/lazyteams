@@ -469,6 +469,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.assignLoaded = true
 		return m, nil
 
+	case assignmentDetailMsg:
+		if msg.err == nil {
+			for i, a := range m.assignments {
+				if a.ID == msg.assignmentID {
+					m.assignments[i].RefFiles = msg.refFiles
+					m.assignments[i].MyFiles = msg.myFiles
+					break
+				}
+			}
+		}
+		return m, nil
+
 	case navigateToThreadMsg:
 		for _, ch := range msg.channels {
 			m.channelToTeam[ch.ID] = msg.teamID

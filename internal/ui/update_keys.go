@@ -340,6 +340,12 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case "up", "k":
+		if m.workspace == WorkspaceAssignments && !m.focusLeft {
+			if m.assignFileCursor > 0 {
+				m.assignFileCursor--
+			}
+			return m, nil
+		}
 		if m.focusLeft {
 			if m.workspace == WorkspaceDMs {
 				if m.cursorOnGroupHeader {
@@ -431,6 +437,17 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case "down", "j":
+		if m.workspace == WorkspaceAssignments && !m.focusLeft {
+			filtered := filteredAssignments(m)
+			if m.selectedAssign >= 0 && m.selectedAssign < len(filtered) {
+				a := filtered[m.selectedAssign]
+				total := len(a.RefFiles) + len(a.MyFiles)
+				if total > 0 && m.assignFileCursor < total-1 {
+					m.assignFileCursor++
+				}
+			}
+			return m, nil
+		}
 		if m.focusLeft {
 			if m.workspace == WorkspaceDMs {
 				if m.cursorOnDMHeader {
@@ -555,10 +572,12 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.selectedNotif = 0
 			}
 		} else if m.focusLeft && m.workspace == WorkspaceAssignments {
-			if m.assignFilter > FilterAll {
-				m.assignFilter--
-				m.selectedAssign = 0
+			if m.assignFilter == FilterCompleted {
+				m.assignFilter = FilterOverdue
+			} else if m.assignFilter == FilterOverdue {
+				m.assignFilter = FilterUpcoming
 			}
+			m.selectedAssign = 0
 		} else if !m.focusLeft {
 			if m.viewMode == ModeInfo {
 				m.viewMode = ModeChat
@@ -613,10 +632,12 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.selectedNotif = 0
 			}
 		} else if m.focusLeft && m.workspace == WorkspaceAssignments {
-			if m.assignFilter < FilterCompleted {
-				m.assignFilter++
-				m.selectedAssign = 0
+			if m.assignFilter == FilterUpcoming {
+				m.assignFilter = FilterOverdue
+			} else if m.assignFilter == FilterOverdue {
+				m.assignFilter = FilterCompleted
 			}
+			m.selectedAssign = 0
 		} else if m.focusLeft && m.workspace == WorkspaceTeams {
 			m.focusList = 1
 		}
@@ -695,6 +716,19 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case "o":
+		if m.workspace == WorkspaceAssignments && !m.focusLeft {
+			filtered := filteredAssignments(m)
+			if len(filtered) > 0 && m.selectedAssign >= 0 && m.selectedAssign < len(filtered) {
+				a := filtered[m.selectedAssign]
+				f := getAssignFile(a, m.assignFileCursor)
+				if f != nil {
+					targets := []graph.DriveItem{{Name: f.Name, WebUrl: f.FileUrl}}
+					m.downloadTargets = targets
+					m.confirmingDownload = true
+				}
+			}
+			return m, nil
+		}
 		// In WorkspaceActivity, right panel: navigate to notification's channel
 		if m.workspace == WorkspaceActivity && !m.focusLeft {
 			if m.selectedNotif < len(m.notifications) {
@@ -896,6 +930,22 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.focusLeft = false
 		} else if m.focusLeft && m.workspace == WorkspaceAssignments {
 			m.focusLeft = false
+			m.assignFileCursor = 0
+			filtered := filteredAssignments(m)
+			if len(filtered) > 0 && m.selectedAssign >= 0 && m.selectedAssign < len(filtered) {
+				a := filtered[m.selectedAssign]
+				cmds = append(cmds, loadAssignmentDetailCmd(m.client, a.ClassID, a.ID))
+			}
+		} else if !m.focusLeft && m.workspace == WorkspaceAssignments {
+			filtered := filteredAssignments(m)
+			if len(filtered) > 0 && m.selectedAssign >= 0 && m.selectedAssign < len(filtered) {
+				a := filtered[m.selectedAssign]
+				f := getAssignFile(a, m.assignFileCursor)
+				if f != nil {
+					return m, openAssignmentFileCmd(m.client, *f)
+				}
+			}
+			return m, nil
 		} else if m.focusLeft && m.workspace == WorkspaceDMs && len(m.chats) > 0 {
 			m.loading = true
 			m.focusLeft = false

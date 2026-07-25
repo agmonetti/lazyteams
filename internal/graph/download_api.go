@@ -19,6 +19,11 @@ func (c *Client) DownloadRemoteItem(driveID, itemID string) (io.ReadCloser, erro
 	return c.downloadContent(endpoint)
 }
 
+// DownloadGraphItem downloads a file using a full Graph item URL.
+func (c *Client) DownloadGraphItem(itemURL string) (io.ReadCloser, error) {
+	return c.downloadContent(itemURL + "/content")
+}
+
 // encodeShareURL encodes a URL into the "shareId" format that Graph expects
 // for the /shares/{id}/driveItem endpoint.
 func encodeShareURL(rawURL string) string {

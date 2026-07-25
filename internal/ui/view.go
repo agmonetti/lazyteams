@@ -1056,6 +1056,9 @@ func (m Model) footerText() string {
 	case m.confirmingDownload:
 		return dim.Render(" [Enter/y] Download   [e] Change folder   [Esc/n] Cancel")
 	case m.workspace == WorkspaceAssignments:
+		if !m.focusLeft {
+			return dim.Render(" [j/k] Navigate files  [Enter] Open  [o] Download  [Esc] Back  [?] Help  [q] Quit")
+		}
 		return dim.Render(" ") + workspaceHint + dim.Render("  [←/→] Filter  [↑/↓] Navigate  [Enter] View  [?] Help  [q] Quit")
 	case m.workspace == WorkspaceActivity:
 		if !m.focusLeft {
@@ -1509,24 +1512,20 @@ func containsPastDate(preview string, now time.Time) bool {
 }
 
 func filteredAssignments(m Model) []graph.Assignment {
-	if m.assignFilter == FilterAll {
-		return m.assignments
-	}
 	now := time.Now()
-	weekFromNow := now.Add(7 * 24 * time.Hour)
 	var result []graph.Assignment
 	for _, a := range m.assignments {
 		switch m.assignFilter {
 		case FilterUpcoming:
-			if !a.DueDateTime.IsZero() && a.DueDateTime.After(now) && a.DueDateTime.Before(weekFromNow) {
+			if a.SubmissionStatus == "working" && (a.DueDateTime.IsZero() || a.DueDateTime.After(now)) {
 				result = append(result, a)
 			}
 		case FilterOverdue:
-			if !a.DueDateTime.IsZero() && a.DueDateTime.Before(now) && !a.IsCompleted {
+			if a.SubmissionStatus == "working" && !a.DueDateTime.IsZero() && a.DueDateTime.Before(now) {
 				result = append(result, a)
 			}
 		case FilterCompleted:
-			if a.IsCompleted {
+			if a.SubmissionStatus == "submitted" || a.SubmissionStatus == "returned" || a.SubmissionStatus == "reassigned" {
 				result = append(result, a)
 			}
 		}
@@ -1537,9 +1536,8 @@ func filteredAssignments(m Model) []graph.Assignment {
 func renderAssignList(m Model) string {
 	if m.assignErr != nil {
 		var b strings.Builder
-		b.WriteString(titleStyle.Render("Assignments") + "\n\n")
-		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Render("Education Assignments API blocked") + "\n\n")
-		b.WriteString(helpStyle.Render("Microsoft WAF blocks access\nfrom native clients without a browser session.\n\nUse the Assignments tab in teams.microsoft.com\nto view your assignments."))
+		b.WriteString(titleStyle.Render("Assignments Error") + "\n\n")
+		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Render(m.assignErr.Error()) + "\n\n")
 		return b.String()
 	}
 
@@ -1547,13 +1545,20 @@ func renderAssignList(m Model) string {
 		return helpStyle.Render("Loading assignments...")
 	}
 
-	filterNames := []string{"All", "Upcoming", "Overdue", "Completed"}
+	tabsInfo := []struct {
+		name   string
+		filter ActivityFilter
+	}{
+		{"Upcoming", FilterUpcoming},
+		{"Past due", FilterOverdue},
+		{"Completed", FilterCompleted},
+	}
 	var tabs []string
-	for i, name := range filterNames {
-		if ActivityFilter(i) == m.assignFilter {
-			tabs = append(tabs, activeTabStyle.Render("[ "+name+" ]"))
+	for _, t := range tabsInfo {
+		if t.filter == m.assignFilter {
+			tabs = append(tabs, activeTabStyle.Render("[ "+t.name+" ]"))
 		} else {
-			tabs = append(tabs, inactiveTabStyle.Render("[ "+name+" ]"))
+			tabs = append(tabs, inactiveTabStyle.Render("[ "+t.name+" ]"))
 		}
 	}
 	header := strings.Join(tabs, " ") + "\n"
@@ -1563,6 +1568,7 @@ func renderAssignList(m Model) string {
 		return header + "\n" + helpStyle.Render("No assignments in this category.")
 	}
 
+	now := time.Now()
 	var lines []string
 	for i, a := range filtered {
 		cursor := "  "
@@ -1576,13 +1582,25 @@ func renderAssignList(m Model) string {
 			}
 		}
 
-		label := graph.AssignmentStatusLabel(a.Status)
+		label := graph.AssignmentStatusLabel(a)
 		due := "No due date"
 		if !a.DueDateTime.IsZero() {
 			due = a.DueDateTime.Local().Format("02/01 15:04")
 		}
-		line := fmt.Sprintf("%s%s %s\n   %s",
+
+		statusIcon := ""
+		switch a.SubmissionStatus {
+		case "submitted", "returned":
+			statusIcon = lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Render("✓ ")
+		case "working":
+			if !a.DueDateTime.IsZero() && a.DueDateTime.Before(now) {
+				statusIcon = lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Render("! ")
+			}
+		}
+
+		line := fmt.Sprintf("%s%s%s %s\n   %s",
 			cursor,
+			statusIcon,
 			label,
 			style.Render(truncate(a.DisplayName, 28)),
 			metaStyle.Render(due),
@@ -1606,12 +1624,59 @@ func renderAssignDetail(m Model) string {
 	}
 
 	var b strings.Builder
-	b.WriteString(titleStyle.Render(graph.AssignmentStatusLabel(a.Status) + " Assignment"))
+	b.WriteString(titleStyle.Render(graph.AssignmentStatusLabel(a) + " Assignment"))
 	b.WriteString("\n\n")
-	b.WriteString(selectedItemStyle.Render("Name:     ") + a.DisplayName + "\n")
-	b.WriteString(selectedItemStyle.Render("Class:    ") + a.ClassID + "\n")
-	b.WriteString(selectedItemStyle.Render("Due:      ") + due + "\n")
-	b.WriteString(selectedItemStyle.Render("Status:   ") + a.Status + "\n")
+	b.WriteString(selectedItemStyle.Render("Name:   ") + a.DisplayName + "\n")
+	b.WriteString(selectedItemStyle.Render("Due:    ") + due + "\n")
+	b.WriteString(selectedItemStyle.Render("Status: ") + a.Status + "\n")
+
+	// Estado de entrega
+	if a.AnySubmittedState && !a.SubmittedDateTime.IsZero() {
+		b.WriteString(selectedItemStyle.Render("Turned in: ") +
+			lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Render("✓ ") +
+			a.SubmittedDateTime.Local().Format("02/01/2006 15:04") + "\n")
+	}
+
+	if a.Instructions != "" {
+		b.WriteString("\n")
+		b.WriteString(selectedItemStyle.Render("Instructions:") + "\n")
+		b.WriteString(a.Instructions + "\n")
+	}
+
+	// Archivos adjuntos del profesor
+	if len(a.RefFiles) > 0 {
+		b.WriteString("\n" + selectedItemStyle.Render("Reference materials:") + "\n")
+		for i, f := range a.RefFiles {
+			cursor := "  "
+			if !m.focusLeft && m.assignFileCursor == i {
+				cursor = "▶ "
+			}
+			b.WriteString(cursor + makeClickableLink(f.Name, buildSharePointViewerURL(f.FileUrl)) + "\n")
+		}
+	}
+
+	// Mis archivos entregados
+	if len(a.MyFiles) > 0 {
+		b.WriteString("\n" + selectedItemStyle.Render("My work:") + "\n")
+		for i, f := range a.MyFiles {
+			cursor := "  "
+			if !m.focusLeft && m.assignFileCursor == len(a.RefFiles)+i {
+				cursor = "▶ "
+			}
+			b.WriteString(cursor + makeClickableLink(f.Name, buildSharePointViewerURL(f.FileUrl)) + "\n")
+		}
+	}
+
+	if a.WebUrl != "" {
+		b.WriteString("\n")
+		b.WriteString(helpStyle.Render("Open in browser: "))
+		b.WriteString(makeClickableLink("Teams", a.WebUrl) + "\n")
+	}
+
+	if m.downloadStatus != "" {
+		b.WriteString("\n")
+		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Render(m.downloadStatus) + "\n")
+	}
 
 	if !m.focusLeft {
 		b.WriteString("\n")

@@ -66,6 +66,17 @@ func isTextFile(name string) bool {
 	return false
 }
 
+func getAssignFile(a graph.Assignment, cursor int) *graph.AssignmentFile {
+	if cursor < len(a.RefFiles) {
+		return &a.RefFiles[cursor]
+	}
+	idx := cursor - len(a.RefFiles)
+	if idx < len(a.MyFiles) {
+		return &a.MyFiles[idx]
+	}
+	return nil
+}
+
 // buildSharePointViewerURL converts a raw SharePoint file URL into
 // an Office Online viewer URL that works even for read-only files.
 func buildSharePointViewerURL(webURL string) string {
