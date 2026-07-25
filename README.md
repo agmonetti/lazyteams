@@ -1,4 +1,4 @@
-# ms-teams-TUI
+# lazyteams (formerly ms-teams-TUI)
 
 <p align="center">
   <img src="assets/banner.svg" alt="ms-teams-TUI" width="900">
@@ -8,50 +8,66 @@
   A fast, keyboard-driven Microsoft Teams client for the terminal.
 </p>
 
-TUI client for Microsoft Teams. Runs in the terminal — no Electron, no browser.
+TUI client for Microsoft Teams. Runs entirely in the terminal — no Electron, no browser.
 
-**~3,500 lines of Go.** Clean Architecture + Elm Architecture (Bubble Tea). Single static binary.
+**Clean Architecture + Elm Architecture (Bubble Tea)**. Single static binary.
 
 ```
 ╔══════════════════════╦════════════════════════════════════════════════════════╗
 ║ Chats                ║            TEAMS-TUI                                   ║
 ║                      ║                                                        ║
-║ ► Personal notes     ║  Microsoft Teams Terminal UI                           ║
-║   PRIVATE CHAT 1     ║  v1.0.0-beta                                           ║
-║   PRIVATE CHAT 2     ║                                                        ║
-║   PRIVATE CHAT 3     ║  [↑/↓] Navigate teams · [Enter]                        ║
-║   ...                ║                                                        ║
+║ ▼ Direct Messages    ║  Microsoft Teams Terminal UI                           ║
+║ ▶ Personal notes     ║  v1.0.0-beta                                           ║
+║   PRIVATE CHAT 1     ║                                                        ║
+║   PRIVATE CHAT 2     ║  [↑/↓] Navigate chats · [Enter]                        ║
+║                      ║                                                        ║
+║ ▼ Group Chats        ║                                                        ║
+║   GROUP CHAT 1       ║                                                        ║
 ║                      ║                                                        ║
 ╠══════════════════════╩════════════════════════════════════════════════════════╣
-║ [1] Teams  [2] DMs  [3] Activity  [4] Assignments  [p] Status  [q] Quit       ║
+║ [1-4] Workspace  [↑/↓] Navigate  [Enter] Open  [n] New DM  [p] Status  [q] Quit 
 ╚═══════════════════════════════════════════════════════════════════════════════╝
 ```
 
 ## Features
 
-- **4 Workspaces**: Teams and channels, DMs, Activity/Notifications, Education Assignments
-- **Global UI**: Top status bar with global unread summary, full-screen help menu (`?`), and customizable pane layout
-- **Team Management**: Create, delete, hide (`H`), or view hidden (`A`) teams and channels directly from the TUI
-- **Messages**: Read and send messages, infinite scroll pagination, native Markdown rendering (Glamour), message editing/deletion, reactions, threads/replies, and local chat search (`/`)
-- **Files**: Recursive Drive browser, multi-selection, file preview, folder creation, file deletion, chunked file upload, customizable download directory
-- **Direct Messages**: Create new 1:1 chats via user search, auto-discovery of "Personal notes" chat (prioritized at the top), categorized by 1:1 vs Groups
-- **Presence**: Read and change your status (Available, Busy, DoNotDisturb, etc.)
-- **Notifications**: Mark as read, filter by type/read state, navigate to source channel
+- **4 Workspaces**: Teams and Channels (1), DMs and Group Chats (2), Activity/Notifications (3), Education Assignments (4).
+- **Global UI**: Top status bar with global unread summary, customizable pane layout, and a full-screen interactive Cheat Sheet (`?`).
+- **Chat & Messaging**: 
+  - Send, read, **edit**, and **delete** messages.
+  - **Thread view** with inline replies (Cursor mode).
+  - Native **Markdown rendering** (Glamour) translating Teams HTML (tables, bold, lists).
+  - Infinite scroll pagination.
+  - **@Mentions** with real-time autocomplete popup.
+  - **Reactions** picker (emoji support) and real-time read receipts (Consumption Horizons).
+  - Live chat search replacing the input bar (`/`).
+- **Files Management**: 
+  - Recursive Drive browser with chunked uploads and multi-file downloads.
+  - Create folders (`F`), delete files/folders (`Del`), and an interactive local directory picker.
+  - Inline TUI preview for text files.
+  - Intelligent fallback to **Office Online Viewer** for PDFs and Docs.
+- **Team & Channel Management**: 
+  - Create and delete Teams (`N`, `D`) and Channels (`C`, `X`).
+  - **Member Management**: Add or remove members from Teams and **Private Channels** (bypassing public API limitations using internal Fabric APIs).
+  - Hide/unhide specific teams and channels (`H`, `A`) to declutter your workspace.
+- **Direct Messages**: Create new 1:1 chats via user search, auto-discovery of "Personal notes" chat (always prioritized at the top), and collapsible sections (DMs vs Groups).
+- **Education Assignments**: View instructions, download professor reference materials, see your submitted work, and track statuses (Pending, Overdue, Turned In, Returned).
+- **Presence**: Read and change your availability status (Available, Busy, DoNotDisturb, etc.).
 
 ## Requirements
 
 - Go 1.24+
 - Microsoft Teams account (university or enterprise)
-- Linux (tested on Arch). Playwright needs Firefox (for the auth helper).
+- Linux/macOS. Playwright requires Firefox for the `auth-helper`.
 
 ## Quick Start
 
 ```bash
-# Build
+# Build the TUI and the Auth Helper
 go build -o msTTui .
 go build -o msTTui-auth ./cmd/auth-helper/
 
-# Capture tokens (first time, ~90s)
+# Capture tokens (first time, interactive)
 ./msTTui-auth
 
 # Run
@@ -60,17 +76,18 @@ go build -o msTTui-auth ./cmd/auth-helper/
 
 ## Tokens
 
-msTTui needs 7 tokens to connect to the Teams APIs. The `msTTui-auth` helper captures them automatically via Playwright (Firefox) in ~90 seconds:
+The client requires 8 distinct tokens/cookies to talk to the many internal APIs that power Microsoft Teams. The `msTTui-auth` helper captures them automatically via a headless (and partially visible) Playwright Firefox session:
 
 | Token | Expiration | Usage |
 |-------|-----------|-----|
-| `MS_GRAPH_TOKEN` | ~1h | Chats, teams, channels, presence, files |
-| `TEAMS_WEB_TOKEN` | ~24h | Read/write messages (ChatSvc) |
-| `TEAMS_NOTIF_TOKEN` | ~24h | Push notifications |
-| `EDU_TOKEN` | ~1h | Education Assignments |
-| `EDU_COOKIE` | ~24h | Education Assignments auth |
-| `TEAMS_SPACES_TOKEN` | ~24h | Team and channel creation/deletion |
-| `TEAMS_COOKIE` | ~24h | Session authentication |
+| `MS_GRAPH_TOKEN` | ~1h | Chats, teams, channels, presence, files, user search |
+| `TEAMS_WEB_TOKEN` | ~24h | Read/write messages, reactions, read receipts (ChatSvc) |
+| `TEAMS_NOTIF_TOKEN` | ~24h | Push notifications activity |
+| `EDU_TOKEN` | ~1h | Education Assignments API |
+| `EDU_COOKIE` | ~24h | Education Assignments WAF bypass |
+| `TEAMS_SPACES_TOKEN` | ~24h | Team and standard channel creation/deletion |
+| `TEAMS_FABRIC_TOKEN` | ~24h | Private channel member management (JWE write-scope) |
+| `TEAMS_COOKIE` | ~24h | General session authentication |
 
 Tokens are saved to `~/.config/teamstui/tokens.env`. The TUI automatically renews most expired tokens in the background via the auth helper.
 
@@ -80,46 +97,28 @@ Tokens are saved to `~/.config/teamstui/tokens.env`. The TUI automatically renew
 msTTui/
 ├── main.go                          # Entry point
 ├── cmd/
-│   ├── auth-helper/                 # Playwright auth helper (captures 7 tokens)
-│   ├── debug-assignments/           # Debug tool for Education API
-│   └── debug-endpoints/             # Debug tool for endpoints
+│   ├── auth-helper/                 # Playwright auth helper
+│   └── debug-*/                     # Assorted debug tools
 └── internal/
-    ├── auth/                        # Tokens (reading + JWT parsing)
-    ├── graph/                       # HTTP client for Microsoft Graph API
-    │   ├── client.go                # Client, doReq(), cleanHTML()
-    │   ├── teams_api.go             # Teams and channels
-    │   ├── chats_api.go             # Chats, self-chat auto-discovery
-    │   ├── messages_api.go          # Read/write messages (ChatSvc)
-    │   ├── files_api.go             # Drive browser, remote items
-    │   ├── presence_api.go          # Get/Set/Clear presence
-    │   ├── assignments_api.go       # Education Assignments (blocked by WAF)
-    │   ├── activity_api.go          # Notifications via ChatSvc
-    │   └── download_api.go          # File downloads
-    ├── teams/teams.go               # Attachment aggregation, file icons
-    └── ui/                          # TUI (Elm Architecture with Bubble Tea)
+    ├── auth/                        # Token loader + JWT parsing
+    ├── graph/                       # Graph, ChatSvc, Spaces, Fabric APIs
+    ├── teams/                       # Business logic (file icons, attachment logic)
+    └── ui/                          # Bubble Tea TUI
+        ├── model.go                 # State definition
+        ├── view.go                  # Rendering logic (Layouts, Panels)
+        ├── update.go                # Main state machine
+        ├── update_keys.go           # Keybinding routing
+        ├── update_popups.go         # Floating windows logic
+        ├── update_data.go           # Network/API response handling
+        ├── update_insert.go         # Textarea input logic
+        ├── helpers.go               # Pure utility functions
         └── components/
             └── directorypicker/     # Reusable filesystem browser component
 ```
 
-**Clean Architecture**: `ui` never makes HTTP calls. All networking goes through `graph` and `teams` via `tea.Cmd` (async).
-
-## Documentation
-
-**[Full documentation](https://ms-teams-tui.agmonetti.workers.dev/)** — Keyboard shortcuts, configuration, limitations, development guide, and more.
-
-## Security
-
-- Tokens stored in plaintext (`~/.config/teamstui/tokens.env`)
-- ChatSvc API is undocumented/private — Microsoft could break it at any time
-- Playwright browser session stores cookies on disk
-
 ## Disclaimer
 
 Educational tool. Operates on already-authenticated Microsoft Teams sessions. Does not distribute proprietary Microsoft binaries. *Not affiliated with Microsoft Corporation.*
-
-## Contributing
-
-Contributions are welcome! Please read our [Contributing Guidelines](CONTRIBUTING.md) and our [Code of Conduct](CODE_OF_CONDUCT.md) before submitting Pull Requests.
 
 ## License
 

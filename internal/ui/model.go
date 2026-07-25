@@ -169,11 +169,11 @@ type Model struct {
 	deleteMsgID        string
 
 	// Mention autocomplete
-	mentionQuery       string             // texto después del @ activo, e.g. "mon"
-	mentionSuggestions []graph.TeamMember // lista filtrada
-	mentionCursor      int                // índice seleccionado en el popup
+	mentionQuery       string             // text after the active @, e.g. "mon"
+	mentionSuggestions []graph.TeamMember // filtered list
+	mentionCursor      int                // selected index in the popup
 	showMentionPopup   bool
-	mentionAtPos       int                // posición del @ en el valor del textarea
+	mentionAtPos       int                // position of the @ in the textarea value
 
 	// Pagination
 	messagesBackwardLink string // URL for loading older messages

@@ -436,7 +436,7 @@ func renewWebNotif(page playwright.Page, ctx playwright.BrowserContext, captured
 			break
 		}
 
-		// Si tenemos web pero no notif, disparar fetch manual
+		// If we have web but not notif, trigger manual fetch
 		captured.mu.Lock()
 		webTok := captured.webToken
 		captured.mu.Unlock()
@@ -738,10 +738,15 @@ func fullRenewal(pw *playwright.Playwright, page playwright.Page, ctx playwright
 			}
 			visiblePage.SetViewportSize(1280, 800)
 
-			// Navigate to Graph Explorer
-		visiblePage.Goto("https://developer.microsoft.com/en-us/graph/graph-explorer",
-			playwright.PageGotoOptions{Timeout: playwright.Float(20000)},
-		)
+			// Navigate to explicit auth URL with prompt=select_account for Graph API scopes
+			visiblePage.Goto("https://login.microsoftonline.com/common/oauth2/v2.0/authorize"+
+				"?client_id=de8bc8b5-d9f9-48b1-a8ad-b748da725064"+
+				"&response_type=token"+
+				"&redirect_uri=https://developer.microsoft.com/graph/graph-explorer"+
+				"&scope=User.Read+User.ReadBasic.All+Presence.Read.All+Presence.ReadWrite+Chat.ReadWrite+Team.ReadWrite.All+Channel.ReadWrite.All+GroupMember.Read.All+Group.ReadWrite.All+Files.ReadWrite.All+Sites.Read.All+offline_access"+
+				"&prompt=select_account",
+				playwright.PageGotoOptions{Timeout: playwright.Float(20000)},
+			)
 
 			// Wait for token
 			graphDeadline := time.Now().Add(60 * time.Second)
@@ -755,7 +760,7 @@ func fullRenewal(pw *playwright.Playwright, page playwright.Page, ctx playwright
 				}
 			}
 
-			// No cerrar visibleCtx — reutilizarlo para fabric token
+			// Do not close visibleCtx — reuse it for fabric token
 			if captured.fabricToken == "" {
 				fmt.Println()
 				printBox([]string{
@@ -773,7 +778,7 @@ func fullRenewal(pw *playwright.Playwright, page playwright.Page, ctx playwright
 				globalSpin = newSpinner("Capturing fabric token...")
 				globalSpin.Start()
 			
-				// Re-registrar interceptor en el contexto ya abierto
+				// Re-register interceptor in the already opened context
 				visibleCtx.On("request", func(req playwright.Request) {
 					authHeader := ""
 					for k, v := range req.Headers() {
@@ -796,12 +801,12 @@ func fullRenewal(pw *playwright.Playwright, page playwright.Page, ctx playwright
 					}
 				})
 			
-				// Navegar a Teams en el mismo browser
+				// Navigate to Teams in the same browser
 				visiblePage.Goto("https://teams.microsoft.com/v2/",
 					playwright.PageGotoOptions{Timeout: playwright.Float(20000)},
 				)
 			
-				// Canal para skip
+				// Channel for skip
 				skipCh := make(chan struct{}, 1)
 				go func() {
 					var dummy string
@@ -1093,7 +1098,7 @@ func manualFabricTokenCapture(pw *playwright.Playwright, sessionDir string, capt
 	visiblePage.SetViewportSize(1280, 800)
 	visiblePage.Goto("https://teams.microsoft.com/v2/", playwright.PageGotoOptions{Timeout: playwright.Float(20000)})
 
-	// Canal para skip
+	// Channel for skip
 	skipCh := make(chan struct{}, 1)
 	go func() {
 		var dummy string
