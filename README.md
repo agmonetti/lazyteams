@@ -92,7 +92,7 @@ Tokens are saved to `~/.config/teamstui/tokens.env`. The TUI automatically renew
 ## Architecture
 
 ```
-msTTui/
+lazyteams/
 ├── main.go                          # Entry point
 ├── cmd/
 │   ├── auth-helper/                 # Playwright auth helper
@@ -103,6 +103,7 @@ msTTui/
     ├── teams/                       # Business logic (file icons, attachment logic)
     └── ui/                          # Bubble Tea TUI
         ├── model.go                 # State definition
+        ├── types.go                 # Shared type definitions
         ├── view.go                  # Rendering logic (Layouts, Panels)
         ├── update.go                # Main state machine
         ├── update_keys.go           # Keybinding routing
@@ -110,6 +111,11 @@ msTTui/
         ├── update_data.go           # Network/API response handling
         ├── update_insert.go         # Textarea input logic
         ├── helpers.go               # Pure utility functions
+        ├── commands.go              # tea.Cmd constructors (API calls)
+        ├── format.go                # Message formatting
+        ├── help.go                  # Cheat sheet renderer
+        ├── styles.go                # Lipgloss color/style definitions
+        ├── prefs.go                 # Persistent preferences
         └── components/
             └── directorypicker/     # Reusable filesystem browser component
 ```
