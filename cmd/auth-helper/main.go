@@ -26,6 +26,20 @@ type tokens struct {
 
 var globalSpin *spinner
 
+func printBox(lines []string) {
+	width := 47
+	fmt.Println("  ┌" + strings.Repeat("─", width) + "┐")
+	for _, line := range lines {
+		runes := []rune(line)
+		padding := width - len(runes) - 1
+		if padding < 0 {
+			padding = 0
+		}
+		fmt.Printf("  │ %s%s│\n", line, strings.Repeat(" ", padding))
+	}
+	fmt.Println("  └" + strings.Repeat("─", width) + "┘")
+}
+
 func notifyTokenCaptured(name string) {
 	if globalSpin != nil {
 		fmt.Printf("\r\033[K  ✓  %-25s\n", name)
@@ -597,13 +611,6 @@ func fullRenewal(pw *playwright.Playwright, page playwright.Page, ctx playwright
 			break // Exit loop early, go straight to Graph Explorer
 		}
 
-		// Step 1 (8s): navigate to a channel to trigger graph + webToken
-		if elapsed > 8*time.Second && (!hasGraph || !hasWeb) {
-			globalSpin.SetLabel("Navigating to a channel to trigger web tokens...")
-			page.Goto("https://teams.microsoft.com/v2/#/teams/",
-				playwright.PageGotoOptions{Timeout: playwright.Float(15000)},
-			)
-		}
 
 		// Step 2 (20s): trigger TEAMS_NOTIF_TOKEN
 		if elapsed > 20*time.Second && !hasNotif {
@@ -632,14 +639,17 @@ func fullRenewal(pw *playwright.Playwright, page playwright.Page, ctx playwright
 		if elapsed > 40*time.Second && !hasEdu {
 			globalSpin.SetLabel("Navigating to Assignments...")
 			page.Goto("https://teams.microsoft.com/v2/",
-				playwright.PageGotoOptions{Timeout: playwright.Float(15000)},
+				playwright.PageGotoOptions{
+					Timeout:   playwright.Float(15000),
+					WaitUntil: playwright.WaitUntilStateNetworkidle,
+				},
 			)
-			time.Sleep(3 * time.Second)
+			time.Sleep(5 * time.Second)
 
 			page.Locator(`[role="navigation"] span:text-is("Assignments")`).First().Click(
-				playwright.LocatorClickOptions{Timeout: playwright.Float(3000)},
+				playwright.LocatorClickOptions{Timeout: playwright.Float(5000)},
 			)
-			time.Sleep(3 * time.Second)
+			time.Sleep(5 * time.Second)
 		}
 
 		// Step 4 (55s): try to extract EDU_TOKEN from JS
@@ -675,10 +685,10 @@ func fullRenewal(pw *playwright.Playwright, page playwright.Page, ctx playwright
 		}
 		
 		fmt.Println()
-		fmt.Println("  ┌─────────────────────────────────────────────┐")
-		fmt.Println("  │  Action required: MS_GRAPH_TOKEN            │")
-		fmt.Println("  │  Opening browser — sign in to Graph Explorer│")
-		fmt.Println("  └─────────────────────────────────────────────┘")
+		printBox([]string{
+			"Action required: MS_GRAPH_TOKEN",
+			"Opening browser — sign in to Graph Explorer",
+		})
 		fmt.Println()
 
 		// Close headless context and reopen visible
@@ -747,20 +757,21 @@ func fullRenewal(pw *playwright.Playwright, page playwright.Page, ctx playwright
 
 			// No cerrar visibleCtx — reutilizarlo para fabric token
 			if captured.fabricToken == "" {
+				fmt.Println()
+				printBox([]string{
+					"Action required: TEAMS_FABRIC_TOKEN",
+					"1. Go to any Private Channel",
+					"2. Open the 'Members' panel",
+					"3. Click 'Add member', search any user,",
+					"   and confirm adding them",
+					"(The request fires on confirm, not on click)",
+					"4. Browser stays open 10s so you can",
+					"   remove the user you just added",
+					"Press [Enter] in this terminal to skip.",
+				})
+				
 				globalSpin = newSpinner("Capturing fabric token...")
 				globalSpin.Start()
-			
-				fmt.Println()
-				fmt.Println("  ┌─────────────────────────────────────────────┐")
-				fmt.Println("  │  Action required: TEAMS_FABRIC_TOKEN        │")
-				fmt.Println("  │  1. Go to any Private Channel               │")
-				fmt.Println("  │  2. Open the 'Members' panel                │")
-				fmt.Println("  │  3. Click 'Add member', search any user,    │")
-				fmt.Println("  │     and confirm adding them                 │")
-				fmt.Println("  │  (The request fires on confirm, not on click)│")
-				fmt.Println("  │  4. Browser stays open 10s so you can       │")
-				fmt.Println("  │     remove the user you just added          │")
-				fmt.Println("  └─────────────────────────────────────────────┘")
 			
 				// Re-registrar interceptor en el contexto ya abierto
 				visibleCtx.On("request", func(req playwright.Request) {
@@ -790,15 +801,35 @@ func fullRenewal(pw *playwright.Playwright, page playwright.Page, ctx playwright
 					playwright.PageGotoOptions{Timeout: playwright.Float(20000)},
 				)
 			
+				// Canal para skip
+				skipCh := make(chan struct{}, 1)
+				go func() {
+					var dummy string
+					fmt.Scanln(&dummy)
+					close(skipCh)
+				}()
+
 				// Esperar hasta 2 minutos
 				deadline := time.Now().Add(120 * time.Second)
 				for time.Now().Before(deadline) {
+					select {
+					case <-skipCh:
+						fmt.Println("\n  · TEAMS_FABRIC_TOKEN — skipped by user")
+						visibleCtx.Close()
+						return
+					default:
+					}
+
 					time.Sleep(1 * time.Second)
 					captured.mu.Lock()
 					hasFabric := captured.fabricToken != ""
 					captured.mu.Unlock()
 					if hasFabric {
-						fmt.Println("  │  Token captured! Browser closes in 10s...   │")
+						if globalSpin != nil {
+							globalSpin.Stop("")
+							globalSpin = nil
+						}
+						fmt.Println("  ✓ Token captured! Browser closes in 10s...")
 						time.Sleep(10 * time.Second)
 						break
 					}
@@ -994,19 +1025,25 @@ func tryExtractEduTokenFromJS(page playwright.Page, captured *tokens) {
 // Step: try to extract FabricToken from browser storage
 
 func manualFabricTokenCapture(pw *playwright.Playwright, sessionDir string, captured *tokens) {
+	if globalSpin != nil {
+		globalSpin.Stop("")
+		globalSpin = nil
+	}
+
 	fmt.Println()
-	fmt.Println("  ┌─────────────────────────────────────────────┐")
-	fmt.Println("  │  Action required: TEAMS_FABRIC_TOKEN        │")
-	fmt.Println("  │  Opening browser for manual capture.        │")
-	fmt.Println("  │  1. Go to any Private Channel               │")
-	fmt.Println("  │  2. Open the 'Members' panel                │")
-	fmt.Println("  │  3. Click 'Add member', search any user,    │")
-	fmt.Println("  │     and confirm adding them                 │")
-	fmt.Println("  │  (The request fires on confirm, not on click)│")
-	fmt.Println("  │  4. Browser stays open 10s so you can       │")
-	fmt.Println("  │     remove the user you just added          │")
-	fmt.Println("  │  The script is watching the network...      │")
-	fmt.Println("  └─────────────────────────────────────────────┘")
+	printBox([]string{
+		"Action required: TEAMS_FABRIC_TOKEN",
+		"Opening browser for manual capture.",
+		"1. Go to any Private Channel",
+		"2. Open the 'Members' panel",
+		"3. Click 'Add member', search any user,",
+		"   and confirm adding them",
+		"(The request fires on confirm, not on click)",
+		"4. Browser stays open 10s so you can",
+		"   remove the user you just added",
+		"Press [Enter] in this terminal to skip.",
+		"The script is watching the network...",
+	})
 	fmt.Println()
 
 	visibleCtx, err := pw.Firefox.LaunchPersistentContext(
@@ -1056,22 +1093,41 @@ func manualFabricTokenCapture(pw *playwright.Playwright, sessionDir string, capt
 	visiblePage.SetViewportSize(1280, 800)
 	visiblePage.Goto("https://teams.microsoft.com/v2/", playwright.PageGotoOptions{Timeout: playwright.Float(20000)})
 
+	// Canal para skip
+	skipCh := make(chan struct{}, 1)
+	go func() {
+		var dummy string
+		fmt.Scanln(&dummy)
+		close(skipCh)
+	}()
+
 	// Wait up to 2 minutes for the user to do the action
 	deadline := time.Now().Add(120 * time.Second)
 	for time.Now().Before(deadline) {
+		select {
+		case <-skipCh:
+			fmt.Println("\n  · TEAMS_FABRIC_TOKEN — skipped by user")
+			return
+		default:
+		}
+		
 		time.Sleep(1 * time.Second)
 		captured.mu.Lock()
 		hasFabric := captured.fabricToken != ""
 		captured.mu.Unlock()
 		
 		if hasFabric {
-			fmt.Println("  │  Token captured! Browser closes in 10s...   │")
+			if globalSpin != nil {
+				globalSpin.Stop("")
+				globalSpin = nil
+			}
+			fmt.Println("  ✓ Token captured! Browser closes in 10s...")
 			time.Sleep(10 * time.Second) // wait before closing browser
 			return
 		}
 	}
 	
-	fmt.Println("  · TEAMS_FABRIC_TOKEN — timed out waiting for manual action")
+	fmt.Println("\n  · TEAMS_FABRIC_TOKEN — timed out waiting for manual action")
 }
 
 func extractNameFromToken(token string) string {
