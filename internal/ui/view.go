@@ -1630,7 +1630,7 @@ func renderAssignDetail(m Model) string {
 	b.WriteString(selectedItemStyle.Render("Due:    ") + due + "\n")
 	b.WriteString(selectedItemStyle.Render("Status: ") + a.Status + "\n")
 
-	// Estado de entrega
+	// Submission status
 	if a.AnySubmittedState && !a.SubmittedDateTime.IsZero() {
 		b.WriteString(selectedItemStyle.Render("Turned in: ") +
 			lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Render("✓ ") +
@@ -1643,7 +1643,7 @@ func renderAssignDetail(m Model) string {
 		b.WriteString(a.Instructions + "\n")
 	}
 
-	// Archivos adjuntos del profesor
+	// Teacher attachments
 	if len(a.RefFiles) > 0 {
 		b.WriteString("\n" + selectedItemStyle.Render("Reference materials:") + "\n")
 		for i, f := range a.RefFiles {
@@ -1655,7 +1655,7 @@ func renderAssignDetail(m Model) string {
 		}
 	}
 
-	// Mis archivos entregados
+	// My submitted files
 	if len(a.MyFiles) > 0 {
 		b.WriteString("\n" + selectedItemStyle.Render("My work:") + "\n")
 		for i, f := range a.MyFiles {
@@ -1671,6 +1671,7 @@ func renderAssignDetail(m Model) string {
 		b.WriteString("\n")
 		b.WriteString(helpStyle.Render("Open in browser: "))
 		b.WriteString(makeClickableLink("Teams", a.WebUrl) + "\n")
+		b.WriteString(helpStyle.Render("(Shift + click)"))
 	}
 
 	if m.downloadStatus != "" {

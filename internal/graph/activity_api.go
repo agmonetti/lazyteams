@@ -95,7 +95,7 @@ func (c *Client) FetchNotifications() ([]NotificationItem, error) {
 		preview := cleanHTML(act.MessagePreview)
 		preview = strings.TrimSpace(preview)
 
-		// Parsear isread (puede ser bool o string)
+		// Parse isread (can be bool or string)
 		isRead := false
 		if raw := msg.Properties.IsRead; len(raw) > 0 {
 			var b bool

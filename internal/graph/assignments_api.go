@@ -130,7 +130,7 @@ func (c *Client) FetchAssignments() ([]Assignment, error) {
 		if len(v.Submissions) > 0 {
 			sub := v.Submissions[0]
 			
-			// Asegurar que el status sea en minúsculas para las validaciones
+			// Ensure the status is lowercase for validations
 			cleanStatus := strings.ToLower(sub.Status)
 			if cleanStatus != "" {
 				a.SubmissionStatus = cleanStatus

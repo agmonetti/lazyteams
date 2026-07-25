@@ -847,7 +847,7 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case "D", "d":
-		// Delete team — solo en focusList==0
+		// Delete team — only when focusList==0
 		if m.workspace == WorkspaceTeams && m.focusList == 0 && len(m.teams) > 0 {
 			m.showDeleteTeamPopup = true
 		}

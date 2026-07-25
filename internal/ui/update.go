@@ -866,7 +866,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					folderID := m.folderStack[len(m.folderStack)-1].ID
 					return m, uploadFileToFolderCmd(m.client, teamID, folderID, msg.Path)
 				}
-				// fallback — no debería ocurrir con Opción B
+				// fallback — shouldn't happen with Option B
 				channelName := m.channels[m.selectedChan].DisplayName
 				return m, uploadFileCmd(m.client, teamID, channelName, msg.Path, false)
 			}

@@ -12,7 +12,7 @@ func (m Model) handleInsertMode(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	var cmd tea.Cmd
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		// Si el popup está abierto, las flechas y enter van al popup
+		// If the popup is open, arrows and enter go to the popup
 		if m.showMentionPopup {
 			switch msg.String() {
 			case "up":
@@ -33,11 +33,11 @@ func (m Model) handleInsertMode(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 					return m, nil, true
 				}
 				selected := m.mentionSuggestions[m.mentionCursor]
-				// Reemplazar desde el @ hasta el final con el nombre completo
+				// Replace from the @ to the end with the full name
 				v := m.input.Value()
 				newVal := v[:m.mentionAtPos] + "@" + selected.DisplayName + " "
 				m.input.SetValue(newVal)
-				// Mover cursor al final
+				// Move cursor to the end
 				m.input.CursorEnd()
 				m.showMentionPopup = false
 				m.mentionSuggestions = nil
