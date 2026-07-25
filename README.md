@@ -1,4 +1,4 @@
-# lazyteams (formerly ms-teams-TUI)
+# lazyteams 
 
 <p align="center">
   <img src="assets/banner.svg" alt="ms-teams-TUI" width="900">
