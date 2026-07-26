@@ -49,7 +49,7 @@ TUI client for Microsoft Teams. Runs entirely in the terminal — no Electron, n
   - **Member Management**: Add or remove members from Teams and **Private Channels** (bypassing public API limitations using internal Fabric APIs).
   - Hide/unhide specific teams and channels (`H`, `A`) to declutter your workspace.
 - **Direct Messages**: Create new 1:1 chats via user search, auto-discovery of "Personal notes" chat (always prioritized at the top), and collapsible sections (DMs vs Groups).
-- **Education Assignments**: View instructions, download professor reference materials, see your submitted work, and track statuses (Pending, Overdue, Turned In, Returned).
+- **Education Assignments**: View instructions, download professor reference materials, see your submitted work, track statuses, upload files (`u`), submit (`s`), undo submit (`S`), and remove resources (`Del`).
 - **Presence**: Read and change your availability status (Available, Busy, DoNotDisturb, etc.).
 
 ## Requirements
