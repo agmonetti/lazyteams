@@ -156,7 +156,22 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case "u":
-		if m.workspace == WorkspaceTeams && m.viewMode == ModeFiles && !m.focusLeft {
+		if m.workspace == WorkspaceAssignments && !m.focusLeft {
+			a := m.assignments[m.selectedAssign]
+			if a.SubmissionStatus != "submitted" && a.SubmissionStatus != "returned" && a.SubmissionStatus != "reassigned" {
+				m.showDirPicker = true
+				m.pickerPurpose = "assignment_upload"
+				m.dirPicker = directorypicker.New(directorypicker.Options{
+					Title:       "Select file to submit for assignment",
+					InitialPath: m.prefs.DownloadDir,
+					Mode:        "file",
+					Width:       m.width,
+					Height:      m.height,
+				})
+				m.dirPicker, _ = m.dirPicker.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
+				return m, nil
+			}
+		} else if m.workspace == WorkspaceTeams && m.viewMode == ModeFiles && !m.focusLeft {
 			m.showDirPicker = true
 			m.pickerPurpose = "upload"
 			m.dirPicker = directorypicker.New(directorypicker.Options{
@@ -182,6 +197,22 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
+	case "s":
+		if m.workspace == WorkspaceAssignments && !m.focusLeft {
+			a := m.assignments[m.selectedAssign]
+			if a.SubmissionID != "" && a.SubmissionStatus != "submitted" && a.SubmissionStatus != "returned" && a.SubmissionStatus != "reassigned" {
+				return m, submitAssignmentCmd(m.client, a)
+			}
+		}
+
+	case "S":
+		if m.workspace == WorkspaceAssignments && !m.focusLeft {
+			a := m.assignments[m.selectedAssign]
+			if a.SubmissionID != "" && a.SubmissionStatus == "submitted" {
+				return m, undoSubmitAssignmentCmd(m.client, a)
+			}
+		}
+
 	case "F":
 		if !m.focusLeft && m.viewMode == ModeFiles {
 			m.showCreateFolderPopup = true
@@ -192,7 +223,16 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case "delete", "backspace":
-		if !m.focusLeft && m.viewMode == ModeFiles && len(m.files) > 0 {
+		if m.workspace == WorkspaceAssignments && !m.focusLeft {
+			a := m.assignments[m.selectedAssign]
+			if a.SubmissionStatus != "submitted" && a.SubmissionStatus != "returned" && a.SubmissionStatus != "reassigned" {
+				f := getAssignFile(a, m.assignFileCursor)
+				// Only allow deleting from "My work" (index >= len(RefFiles))
+				if f != nil && m.assignFileCursor >= len(a.RefFiles) && f.ID != "" {
+					return m, removeAssignmentResourceCmd(m.client, a, f.ID, f.Name)
+				}
+			}
+		} else if !m.focusLeft && m.viewMode == ModeFiles && len(m.files) > 0 {
 			m.showDeleteFilePopup = true
 			return m, nil
 		}

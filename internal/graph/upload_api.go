@@ -92,6 +92,24 @@ func (c *Client) uploadFile(endpoint, filePath string) (DriveItem, error) {
 	return item, nil
 }
 
+// UploadFileToSubmissionFolder uploads a file to a submission's resources folder.
+func (c *Client) UploadFileToSubmissionFolder(resourcesFolderUrl, filePath string) (DriveItem, error) {
+	trimmed := strings.TrimPrefix(resourcesFolderUrl, baseURL+"/")
+	parts := strings.Split(trimmed, "/")
+	if len(parts) < 4 {
+		return DriveItem{}, fmt.Errorf("invalid resourcesFolderUrl: %s", resourcesFolderUrl)
+	}
+	driveID := parts[1]
+	parentItemID := parts[3]
+	return c.uploadFile(
+		fmt.Sprintf("/drives/%s/items/%s:/%s:/content",
+			driveID, parentItemID,
+			url.PathEscape(filepath.Base(filePath)),
+		),
+		filePath,
+	)
+}
+
 func (c *Client) uploadLargeFile(endpoint string, data []byte) (DriveItem, error) {
 	sessionURL := baseURL + strings.Replace(endpoint, ":/content", ":/createUploadSession", 1)
 	req, err := http.NewRequest("POST", sessionURL, strings.NewReader(`{"item":{"@microsoft.graph.conflictBehavior":"rename"}}`))

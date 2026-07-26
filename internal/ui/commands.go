@@ -337,13 +337,48 @@ func loadAssignmentsCmd(client *graph.Client) tea.Cmd {
 
 func loadAssignmentDetailCmd(client *graph.Client, classID, assignmentID string) tea.Cmd {
 	return func() tea.Msg {
-		refFiles, myFiles, err := client.FetchAssignmentFiles(classID, assignmentID)
+		refFiles, myFiles, resourcesFolderUrl, err := client.FetchAssignmentFiles(classID, assignmentID)
 		return assignmentDetailMsg{
-			assignmentID: assignmentID,
-			refFiles:     refFiles,
-			myFiles:      myFiles,
-			err:          err,
+			assignmentID:       assignmentID,
+			refFiles:           refFiles,
+			myFiles:            myFiles,
+			resourcesFolderUrl: resourcesFolderUrl,
+			err:                err,
 		}
+	}
+}
+
+func uploadAssignmentFileCmd(client *graph.Client, a graph.Assignment, filePath string) tea.Cmd {
+	return func() tea.Msg {
+		item, err := client.UploadFileToSubmissionFolder(a.ResourcesFolderUrl, filePath)
+		if err != nil {
+			return assignmentUploadDoneMsg{assignmentID: a.ID, err: err}
+		}
+		fileURL := fmt.Sprintf("https://graph.microsoft.com/v1.0/drives/%s/items/%s",
+			item.ParentReference.DriveID, item.ID)
+		err = client.RegisterAssignmentResource(a.ClassID, a.ID, a.SubmissionID, fileURL, filepath.Base(filePath))
+		return assignmentUploadDoneMsg{assignmentID: a.ID, fileName: filepath.Base(filePath), err: err}
+	}
+}
+
+func submitAssignmentCmd(client *graph.Client, a graph.Assignment) tea.Cmd {
+	return func() tea.Msg {
+		err := client.SubmitAssignment(a.ClassID, a.ID, a.SubmissionID)
+		return assignmentSubmitDoneMsg{assignmentID: a.ID, err: err}
+	}
+}
+
+func undoSubmitAssignmentCmd(client *graph.Client, a graph.Assignment) tea.Cmd {
+	return func() tea.Msg {
+		err := client.UndoSubmitAssignment(a.ClassID, a.ID, a.SubmissionID)
+		return assignmentUndoSubmitDoneMsg{assignmentID: a.ID, err: err}
+	}
+}
+
+func removeAssignmentResourceCmd(client *graph.Client, a graph.Assignment, resourceID string, fileName string) tea.Cmd {
+	return func() tea.Msg {
+		err := client.RemoveAssignmentResource(a.ClassID, a.ID, a.SubmissionID, resourceID)
+		return assignmentRemoveResourceDoneMsg{assignmentID: a.ID, resourceID: resourceID, fileName: fileName, err: err}
 	}
 }
 

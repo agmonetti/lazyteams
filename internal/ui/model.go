@@ -48,14 +48,38 @@ type assignmentsMsg struct {
 }
 
 type assignmentDetailMsg struct {
-	assignmentID string
-	refFiles     []graph.AssignmentFile
-	myFiles      []graph.AssignmentFile
-	err          error
+	assignmentID       string
+	refFiles           []graph.AssignmentFile
+	myFiles            []graph.AssignmentFile
+	resourcesFolderUrl string
+	err                error
 }
 
 type assignmentsErrMsg struct {
 	err error
+}
+
+type assignmentUploadDoneMsg struct {
+	assignmentID string
+	fileName     string
+	err          error
+}
+
+type assignmentSubmitDoneMsg struct {
+	assignmentID string
+	err          error
+}
+
+type assignmentUndoSubmitDoneMsg struct {
+	assignmentID string
+	err          error
+}
+
+type assignmentRemoveResourceDoneMsg struct {
+	assignmentID string
+	resourceID   string
+	fileName     string
+	err          error
 }
 
 type ViewMode int

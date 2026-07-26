@@ -473,8 +473,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err == nil {
 			for i, a := range m.assignments {
 				if a.ID == msg.assignmentID {
-					m.assignments[i].RefFiles = msg.refFiles
-					m.assignments[i].MyFiles = msg.myFiles
+					if msg.refFiles != nil {
+						m.assignments[i].RefFiles = msg.refFiles
+					}
+					if msg.myFiles != nil {
+						m.assignments[i].MyFiles = msg.myFiles
+					}
+					m.assignments[i].ResourcesFolderUrl = msg.resourcesFolderUrl
 					break
 				}
 			}
@@ -581,6 +586,65 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case createDMErrMsg:
 		m.newDMErr = msg.err.Error()
 		return m, nil
+
+	case assignmentUploadDoneMsg:
+		if msg.err != nil {
+			m.downloadStatus = "✗ Upload failed: " + msg.err.Error()
+		} else {
+			m.downloadStatus = "✓ " + msg.fileName + " uploaded"
+			return m, loadAssignmentDetailCmd(m.client,
+				m.assignments[m.selectedAssign].ClassID,
+				m.assignments[m.selectedAssign].ID)
+		}
+		m.downloadStatusID++
+		return m, clearStatusAfter(m.downloadStatusID)
+
+	case assignmentSubmitDoneMsg:
+		if msg.err != nil {
+			m.downloadStatus = "✗ Submit failed: " + msg.err.Error()
+		} else {
+			m.downloadStatus = "✓ Assignment submitted"
+			for i, a := range m.assignments {
+				if a.ID == msg.assignmentID {
+					m.assignments[i].SubmissionStatus = "submitted"
+					m.assignments[i].IsCompleted = true
+					break
+				}
+			}
+			m.focusLeft = true // Go back to list to avoid showing the wrong assignment
+		}
+		m.downloadStatusID++
+		return m, clearStatusAfter(m.downloadStatusID)
+
+	case assignmentUndoSubmitDoneMsg:
+		if msg.err != nil {
+			m.downloadStatus = "✗ Undo turn in failed: " + msg.err.Error()
+		} else {
+			m.downloadStatus = "✓ Submission reverted"
+			for i, a := range m.assignments {
+				if a.ID == msg.assignmentID {
+					m.assignments[i].SubmissionStatus = "working"
+					m.assignments[i].IsCompleted = false
+					break
+				}
+			}
+			m.focusLeft = true // Go back to list
+		}
+		m.downloadStatusID++
+		return m, clearStatusAfter(m.downloadStatusID)
+
+	case assignmentRemoveResourceDoneMsg:
+		if msg.err != nil {
+			m.downloadStatus = "✗ Remove failed: " + msg.err.Error()
+		} else {
+			m.downloadStatus = "✓ " + msg.fileName + " removed"
+
+			return m, loadAssignmentDetailCmd(m.client,
+				m.assignments[m.selectedAssign].ClassID,
+				m.assignments[m.selectedAssign].ID)
+		}
+		m.downloadStatusID++
+		return m, clearStatusAfter(m.downloadStatusID)
 
 	case uploadDoneMsg:
 		m.uploading = false
@@ -851,6 +915,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.prefs.DownloadDir = msg.Path
 			savePrefs(m.prefs)
 			m.confirmingDownload = true
+		} else if m.pickerPurpose == "assignment_upload" {
+			info, err := os.Stat(msg.Path)
+			if err != nil || info.IsDir() {
+				m.downloadStatus = "✗ Please select a file, not a folder"
+				m.downloadStatusID++
+				return m, clearStatusAfter(m.downloadStatusID)
+			}
+			return m, uploadAssignmentFileCmd(m.client, m.assignments[m.selectedAssign], msg.Path)
 		} else if m.pickerPurpose == "upload" {
 			info, err := os.Stat(msg.Path)
 			if err != nil || info.IsDir() {

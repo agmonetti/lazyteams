@@ -16,6 +16,10 @@ type DriveItem struct {
 	Name        string `json:"name"`
 	WebUrl      string `json:"webUrl"`
 	DownloadUrl string `json:"@microsoft.graph.downloadUrl"`
+	ParentReference *struct {
+		DriveID string `json:"driveId"`
+		ID      string `json:"id"`
+	} `json:"parentReference,omitempty"`
 	Folder      *struct {
 		ChildCount int `json:"childCount"`
 	} `json:"folder,omitempty"`

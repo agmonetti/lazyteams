@@ -66,6 +66,7 @@ var HelpData = []HelpCategory{
 			{Key: "u", Description: "Upload a file"},
 		},
 	},
+
 	{
 		Title: "Files & Drive",
 		Shortcuts: []Shortcut{
@@ -76,6 +77,19 @@ var HelpData = []HelpCategory{
 			{Key: "F", Description: "New folder"},
 			{Key: "Del", Description: "Delete file/folder"},
 			{Key: "h/Esc", Description: "Back to parent folder"},
+		},
+	},
+	{
+		Title: "Assignments & Tasks",
+		Shortcuts: []Shortcut{
+			{Key: "Enter", Description: "View assignment details"},
+			{Key: "j/k", Description: "Navigate files in detail view"},
+			{Key: "Enter", Description: "Open file in browser"},
+			{Key: "o", Description: "Download file"},
+			{Key: "u", Description: "Upload file to assignment"},
+			{Key: "Del", Description: "Remove uploaded file"},
+			{Key: "s", Description: "Submit assignment"},
+			{Key: "S", Description: "Undo turn in"},
 		},
 	},
 }
@@ -102,34 +116,32 @@ func renderHelpMenu() string {
 		return out.String()
 	}
 
-	// Assuming HelpData has at least 4 items, let's split into 2 columns.
-	half := len(HelpData) / 2
-	if len(HelpData)%2 != 0 {
-		half++
-	}
-
 	var col1Sections []string
 	var col2Sections []string
+	var col3Sections []string
 
 	for i, cat := range HelpData {
 		rendered := renderCategory(cat)
-		if i < half {
+		if i == 0 || i == 1 { // Global & Navigation (11) + Workspaces (8)
 			col1Sections = append(col1Sections, rendered)
-			if i < half-1 {
+			if i == 0 {
 				col1Sections = append(col1Sections, "\n")
 			}
-		} else {
+		} else if i == 2 { // Chat & Messages (10)
 			col2Sections = append(col2Sections, rendered)
-			if i < len(HelpData)-1 {
-				col2Sections = append(col2Sections, "\n")
+		} else { // Files & Drive (7) + Assignments & Tasks (7)
+			col3Sections = append(col3Sections, rendered)
+			if i == 3 {
+				col3Sections = append(col3Sections, "\n")
 			}
 		}
 	}
 
 	col1 := lipgloss.JoinVertical(lipgloss.Left, col1Sections...)
 	col2 := lipgloss.JoinVertical(lipgloss.Left, col2Sections...)
+	col3 := lipgloss.JoinVertical(lipgloss.Left, col3Sections...)
 
-	table := lipgloss.JoinHorizontal(lipgloss.Top, col1, "    ", col2)
+	table := lipgloss.JoinHorizontal(lipgloss.Top, col1, "    ", col2, "    ", col3)
 
 	return titleStyle.Render(" Cheat Sheet ") + "\n\n" + table + "\n" + dim.Render(" Press [Esc] or [?] to close")
 }

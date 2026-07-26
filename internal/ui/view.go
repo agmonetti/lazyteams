@@ -1057,7 +1057,21 @@ func (m Model) footerText() string {
 		return dim.Render(" [Enter/y] Download   [e] Change folder   [Esc/n] Cancel")
 	case m.workspace == WorkspaceAssignments:
 		if !m.focusLeft {
-			return dim.Render(" [j/k] Navigate files  [Enter] Open  [o] Download  [Esc] Back  [?] Help  [q] Quit")
+			base := " [j/k] Navigate files  [Enter] Open  [o] Download  [Esc] Back"
+			filtered := filteredAssignments(m)
+			if len(filtered) > 0 && m.selectedAssign >= 0 && m.selectedAssign < len(filtered) {
+				a := filtered[m.selectedAssign]
+				if a.SubmissionStatus != "submitted" && a.SubmissionStatus != "returned" && a.SubmissionStatus != "reassigned" {
+					base += "  [u] Upload  [s] Submit"
+					if m.assignFileCursor >= len(a.RefFiles) {
+						base += "  [Del] Remove file"
+					}
+				} else if a.SubmissionStatus == "submitted" {
+					base += "  [S] Undo turn in"
+				}
+			}
+			base += "  [?] Help  [q] Quit"
+			return dim.Render(base)
 		}
 		return dim.Render(" ") + workspaceHint + dim.Render("  [←/→] Filter  [↑/↓] Navigate  [Enter] View  [?] Help  [q] Quit")
 	case m.workspace == WorkspaceActivity:
@@ -1643,7 +1657,7 @@ func renderAssignDetail(m Model) string {
 		b.WriteString(a.Instructions + "\n")
 	}
 
-	// Teacher attachments
+	// Reference materials
 	if len(a.RefFiles) > 0 {
 		b.WriteString("\n" + selectedItemStyle.Render("Reference materials:") + "\n")
 		for i, f := range a.RefFiles {
@@ -1653,9 +1667,11 @@ func renderAssignDetail(m Model) string {
 			}
 			b.WriteString(cursor + makeClickableLink(f.Name, buildSharePointViewerURL(f.FileUrl)) + "\n")
 		}
+	} else {
+		b.WriteString("\n" + selectedItemStyle.Render("Reference materials:") + " " + metaStyle.Render("(none)") + "\n")
 	}
 
-	// My submitted files
+	// My work
 	if len(a.MyFiles) > 0 {
 		b.WriteString("\n" + selectedItemStyle.Render("My work:") + "\n")
 		for i, f := range a.MyFiles {
@@ -1665,6 +1681,8 @@ func renderAssignDetail(m Model) string {
 			}
 			b.WriteString(cursor + makeClickableLink(f.Name, buildSharePointViewerURL(f.FileUrl)) + "\n")
 		}
+	} else {
+		b.WriteString("\n" + selectedItemStyle.Render("My work:") + " " + metaStyle.Render("(none)") + "\n")
 	}
 
 	if a.WebUrl != "" {

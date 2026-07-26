@@ -1,6 +1,7 @@
 package graph
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,24 +11,27 @@ import (
 )
 
 type AssignmentFile struct {
+	ID      string
 	Name    string
 	FileUrl string
 }
 
 type Assignment struct {
-	ID                string
-	DisplayName       string
-	ClassID           string
-	DueDateTime       time.Time
-	Status            string
-	IsCompleted       bool
-	AnySubmittedState bool
-	SubmittedDateTime time.Time
-	Instructions      string
-	WebUrl            string
-	SubmissionStatus  string
-	MyFiles           []AssignmentFile
-	RefFiles          []AssignmentFile
+	ID                 string
+	SubmissionID       string
+	DisplayName        string
+	ClassID            string
+	DueDateTime        time.Time
+	Status             string
+	IsCompleted        bool
+	AnySubmittedState  bool
+	SubmittedDateTime  time.Time
+	Instructions       string
+	WebUrl             string
+	SubmissionStatus   string
+	ResourcesFolderUrl string
+	MyFiles            []AssignmentFile
+	RefFiles           []AssignmentFile
 }
 
 func (c *Client) FetchAssignments() ([]Assignment, error) {
@@ -90,15 +94,18 @@ func (c *Client) FetchAssignments() ([]Assignment, error) {
 				Content string `json:"content"`
 			} `json:"instructions"`
 			Submissions []struct {
+				ID                string  `json:"id"`
 				Status            string  `json:"status"`
 				SubmittedDateTime *string `json:"submittedDateTime"`
 				Resources         []struct {
+					ID       string `json:"id"`
 					Resource struct {
 						DisplayName string `json:"displayName"`
 						FileUrl     string `json:"fileUrl"`
 					} `json:"resource"`
 				} `json:"resources"`
 				SubmittedResources []struct {
+					ID       string `json:"id"`
 					Resource struct {
 						DisplayName string `json:"displayName"`
 						FileUrl     string `json:"fileUrl"`
@@ -128,8 +135,9 @@ func (c *Client) FetchAssignments() ([]Assignment, error) {
 		}
 		
 		if len(v.Submissions) > 0 {
+			a.SubmissionID = v.Submissions[0].ID
 			sub := v.Submissions[0]
-			
+
 			// Ensure the status is lowercase for validations
 			cleanStatus := strings.ToLower(sub.Status)
 			if cleanStatus != "" {
@@ -152,6 +160,7 @@ func (c *Client) FetchAssignments() ([]Assignment, error) {
 						fu = a.WebUrl
 					}
 					a.RefFiles = append(a.RefFiles, AssignmentFile{
+						ID:      r.ID,
 						Name:    r.Resource.DisplayName,
 						FileUrl: fu,
 					})
@@ -165,6 +174,7 @@ func (c *Client) FetchAssignments() ([]Assignment, error) {
 						fu = a.WebUrl
 					}
 					a.MyFiles = append(a.MyFiles, AssignmentFile{
+						ID:      sr.ID,
 						Name:    sr.Resource.DisplayName,
 						FileUrl: fu,
 					})
@@ -183,7 +193,7 @@ func (c *Client) FetchAssignments() ([]Assignment, error) {
 	return assignments, nil
 }
 
-func (c *Client) FetchAssignmentFiles(classID, assignmentID string) (refFiles, myFiles []AssignmentFile, err error) {
+func (c *Client) FetchAssignmentFiles(classID, assignmentID string) (refFiles, myFiles []AssignmentFile, resourcesFolderUrl string, err error) {
 	url := fmt.Sprintf(
 		"https://assignments.edu.cloud.microsoft/api/v1.0/edu/classes/%s/assignments/%s/submissions?$expand=resources($expand=dependentResources),submittedResources($expand=dependentResources),outcomes&$top=1000",
 		classID, assignmentID,
@@ -191,7 +201,7 @@ func (c *Client) FetchAssignmentFiles(classID, assignmentID string) (refFiles, m
 
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, "", err
 	}
 
 	req.Header.Set("Authorization", "Bearer "+c.EduToken)
@@ -209,45 +219,50 @@ func (c *Client) FetchAssignmentFiles(classID, assignmentID string) (refFiles, m
 
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, "", err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		return nil, nil, fmt.Errorf("status %d", resp.StatusCode)
+		return nil, nil, "", fmt.Errorf("status %d", resp.StatusCode)
 	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, "", err
 	}
 
 	var res struct {
 		Value []struct {
-			Resources []struct {
-				Resource struct {
-					DisplayName string `json:"displayName"`
-					FileUrl     string `json:"fileUrl"`
-				} `json:"resource"`
-			} `json:"resources"`
-			SubmittedResources []struct {
-				Resource struct {
-					DisplayName string `json:"displayName"`
-					FileUrl     string `json:"fileUrl"`
-				} `json:"resource"`
-			} `json:"submittedResources"`
+			ResourcesFolderUrl string `json:"resourcesFolderUrl"`
+				Resources         []struct {
+					ID       string `json:"id"`
+					Resource struct {
+						DisplayName string `json:"displayName"`
+						FileUrl     string `json:"fileUrl"`
+					} `json:"resource"`
+				} `json:"resources"`
+				SubmittedResources []struct {
+					ID       string `json:"id"`
+					Resource struct {
+						DisplayName string `json:"displayName"`
+						FileUrl     string `json:"fileUrl"`
+					} `json:"resource"`
+				} `json:"submittedResources"`
 		} `json:"value"`
 	}
 
 	if err := json.Unmarshal(body, &res); err != nil {
-		return nil, nil, err
+		return nil, nil, "", err
 	}
 
 	if len(res.Value) > 0 {
 		sub := res.Value[0]
+		resourcesFolderUrl = sub.ResourcesFolderUrl
 		for _, r := range sub.Resources {
 			if r.Resource.DisplayName != "" {
 				refFiles = append(refFiles, AssignmentFile{
+					ID:      r.ID,
 					Name:    r.Resource.DisplayName,
 					FileUrl: r.Resource.FileUrl,
 				})
@@ -256,6 +271,7 @@ func (c *Client) FetchAssignmentFiles(classID, assignmentID string) (refFiles, m
 		for _, sr := range sub.SubmittedResources {
 			if sr.Resource.DisplayName != "" {
 				myFiles = append(myFiles, AssignmentFile{
+					ID:      sr.ID,
 					Name:    sr.Resource.DisplayName,
 					FileUrl: sr.Resource.FileUrl,
 				})
@@ -263,7 +279,98 @@ func (c *Client) FetchAssignmentFiles(classID, assignmentID string) (refFiles, m
 		}
 	}
 
-	return refFiles, myFiles, nil
+	return refFiles, myFiles, resourcesFolderUrl, nil
+}
+
+// RegisterAssignmentResource registers an uploaded file as a submission resource.
+func (c *Client) RegisterAssignmentResource(classID, assignmentID, submissionID, fileURL, displayName string) error {
+	endpoint := fmt.Sprintf(
+		"https://assignments.edu.cloud.microsoft/api/v1.0/edu/classes/%s/assignments/%s/submissions/%s/resources",
+		classID, assignmentID, submissionID,
+	)
+	body := map[string]interface{}{
+		"resource": map[string]interface{}{
+			"@odata.type": "#microsoft.education.assignments.api.educationFileResource",
+			"fileUrl":     fileURL,
+			"displayName": displayName,
+		},
+	}
+	data, _ := json.Marshal(body)
+	req, _ := http.NewRequest("POST", endpoint, bytes.NewReader(data))
+	req.Header.Set("Authorization", "Bearer "+c.EduToken)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("register resource failed %d: %s", resp.StatusCode, string(respBody))
+	}
+	return nil
+}
+
+// SubmitAssignment submits a student's work for an assignment.
+func (c *Client) SubmitAssignment(classID, assignmentID, submissionID string) error {
+	endpoint := fmt.Sprintf(
+		"https://assignments.edu.cloud.microsoft/api/v1.0/edu/classes/%s/assignments/%s/submissions/%s/submit",
+		classID, assignmentID, submissionID,
+	)
+	req, _ := http.NewRequest("POST", endpoint, nil)
+	req.Header.Set("Authorization", "Bearer "+c.EduToken)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("submit failed %d: %s", resp.StatusCode, string(respBody))
+	}
+	return nil
+}
+
+// UndoSubmitAssignment reverses a student's submission.
+func (c *Client) UndoSubmitAssignment(classID, assignmentID, submissionID string) error {
+	endpoint := fmt.Sprintf(
+		"https://assignments.edu.cloud.microsoft/api/v1.0/edu/classes/%s/assignments/%s/submissions/%s/undoSubmit",
+		classID, assignmentID, submissionID,
+	)
+	req, _ := http.NewRequest("POST", endpoint, nil)
+	req.Header.Set("Authorization", "Bearer "+c.EduToken)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("undo submit failed %d: %s", resp.StatusCode, string(respBody))
+	}
+	return nil
+}
+
+// RemoveAssignmentResource deletes a resource from a submission.
+func (c *Client) RemoveAssignmentResource(classID, assignmentID, submissionID, resourceID string) error {
+	endpoint := fmt.Sprintf(
+		"https://assignments.edu.cloud.microsoft/api/v1.0/edu/classes/%s/assignments/%s/submissions/%s/resources/%s",
+		classID, assignmentID, submissionID, resourceID,
+	)
+	req, _ := http.NewRequest("DELETE", endpoint, nil)
+	req.Header.Set("Authorization", "Bearer "+c.EduToken)
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("remove resource failed %d: %s", resp.StatusCode, string(respBody))
+	}
+	return nil
 }
 
 func AssignmentStatusLabel(a Assignment) string {
