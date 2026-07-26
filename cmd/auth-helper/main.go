@@ -312,7 +312,7 @@ func main() {
 		} else {
 			fmt.Println("→ Teams will load automatically.")
 		}
-		fullRenewal(pw, page, context, captured, sessionDir)
+		fullRenewal(pw, page, context, captured, sessionDir, firstRun)
 	}
 
 	fmt.Println()
@@ -533,7 +533,7 @@ func renewEdu(page playwright.Page, captured *tokens) {
 }
 
 // fullRenewal runs the full capture flow (all 5 tokens).
-func fullRenewal(pw *playwright.Playwright, page playwright.Page, ctx playwright.BrowserContext, captured *tokens, sessionDir string) {
+func fullRenewal(pw *playwright.Playwright, page playwright.Page, ctx playwright.BrowserContext, captured *tokens, sessionDir string, firstRun bool) {
 	globalSpin = newSpinner("Connecting to Teams...")
 	globalSpin.Start()
 	defer func() {
@@ -746,17 +746,10 @@ func fullRenewal(pw *playwright.Playwright, page playwright.Page, ctx playwright
 			}
 			visiblePage.SetViewportSize(1280, 800)
 
-			// Navigate to explicit auth URL with prompt=select_account for Graph API scopes
-			visiblePage.Goto("https://login.microsoftonline.com/common/oauth2/v2.0/authorize"+
-				"?client_id=de8bc8b5-d9f9-48b1-a8ad-b748da725064"+
-				"&response_type=token"+
-				"&redirect_uri=https://developer.microsoft.com/graph/graph-explorer"+
-				"&scope=User.Read+User.ReadBasic.All+Presence.Read.All+Presence.ReadWrite+Chat.ReadWrite+Team.ReadWrite.All+Channel.ReadWrite.All+GroupMember.Read.All+Group.ReadWrite.All+Files.ReadWrite.All+Sites.Read.All+offline_access"+
-				"&prompt=select_account",
-				playwright.PageGotoOptions{Timeout: playwright.Float(20000)},
-			)
+			// Navigate to Graph Explorer and optionally auto-click Run query
+			tryExtractGraphTokenViaGraphExplorer(visiblePage, captured, !firstRun)
 
-			// Wait for token
+			// Wait for token if not yet captured
 			graphDeadline := time.Now().Add(60 * time.Second)
 			for time.Now().Before(graphDeadline) {
 				time.Sleep(500 * time.Millisecond)
@@ -764,9 +757,10 @@ func fullRenewal(pw *playwright.Playwright, page playwright.Page, ctx playwright
 				hasGraph := captured.graphToken != ""
 				captured.mu.Unlock()
 				if hasGraph {
-					break // Close immediately, don't continue
+					break
 				}
 			}
+
 
 			// Do not close visibleCtx — reuse it for fabric token
 			if captured.fabricToken == "" {
@@ -828,7 +822,12 @@ func fullRenewal(pw *playwright.Playwright, page playwright.Page, ctx playwright
 					select {
 					case <-skipCh:
 						fmt.Println("\n  · TEAMS_FABRIC_TOKEN — skipped by user")
-						visibleCtx.Close()
+			// Force Firefox to flush cookies to disk via page navigation
+			visiblePage.Goto("about:blank", playwright.PageGotoOptions{
+				Timeout: playwright.Float(3000),
+			})
+			time.Sleep(5 * time.Second)
+			visibleCtx.Close()
 						return
 					default:
 					}
@@ -914,7 +913,8 @@ func extractAudFromJWT(token string) string {
 
 // tryExtractGraphTokenViaGraphExplorer navigates to Graph Explorer and extracts
 // the token with the correct scopes (Chat.ReadBasic, Files.Read, etc.).
-func tryExtractGraphTokenViaGraphExplorer(page playwright.Page, captured *tokens) {
+func tryExtractGraphTokenViaGraphExplorer(page playwright.Page, captured *tokens, autoClick bool) {
+
 	_, err := page.Goto("https://developer.microsoft.com/en-us/graph/graph-explorer",
 		playwright.PageGotoOptions{Timeout: playwright.Float(20000)},
 	)
@@ -924,22 +924,28 @@ func tryExtractGraphTokenViaGraphExplorer(page playwright.Page, captured *tokens
 
 	time.Sleep(5 * time.Second)
 
-	// Click "Run query" to trigger a request to graph.microsoft.com
-	// The request interceptor captures it automatically
-	selectors := []string{
-		`button[aria-label="Run query"]`,
-		`button:text("Run query")`,
-		`[data-testid="run-query-button"]`,
-	}
-
-	for _, sel := range selectors {
-		err := page.Click(sel, playwright.PageClickOptions{
-			Timeout: playwright.Float(3000),
-		})
-		if err == nil {
-			time.Sleep(3 * time.Second)
-			break
+	if autoClick {
+		// Click "Run query" to trigger a request to graph.microsoft.com
+		// The request interceptor captures it automatically
+		selectors := []string{
+			`button[aria-label="Run query"]`,
+			`button:text("Run query")`,
+			`[data-testid="run-query-button"]`,
 		}
+
+		for _, sel := range selectors {
+			err := page.Click(sel, playwright.PageClickOptions{
+				Timeout: playwright.Float(3000),
+			})
+			if err == nil {
+				time.Sleep(3 * time.Second)
+				break
+			}
+		}
+	} else {
+		fmt.Println("→ First run detected. Waiting for you to sign in and consent permissions in Graph Explorer.")
+		fmt.Println("  Once you have granted all permissions, click 'Run query' to capture the token.")
+		fmt.Println("  The helper will detect it automatically.")
 	}
 
 	// Fallback: extract from Graph Explorer's localStorage

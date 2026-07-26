@@ -72,6 +72,31 @@ go build -o msTTui-auth ./cmd/auth-helper/
 ./msTTui
 ```
 
+### First-time setup — Graph API consent
+
+The `MS_GRAPH_TOKEN` requires consent for specific permissions. On first run, the helper opens Graph Explorer in a browser window. **If you are prompted to sign in**, you must also grant the required permissions manually:
+
+1. In the opened browser window, click **"Modify permissions"** (tab next to "Request body").
+2. Search and enable each permission, then click **"Consent"**:
+
+| Permission | Used for |
+|------------|----------|
+| `User.Read` | Read your profile |
+| `Team.ReadBasic.All` | List your teams |
+| `Channel.ReadBasic.All` | List channels |
+| `ChannelMessage.Read.All` | Read channel messages |
+| `ChannelMessage.Send` | Send messages |
+| `Chat.ReadWrite` | Read and write DMs |
+| `Files.ReadWrite.All` | Access files |
+| `Sites.Read.All` | Access SharePoint sites |
+| `Presence.Read.All` | Read presence |
+| `Presence.ReadWrite` | Set your status |
+| `GroupMember.Read.All` | Read team members |
+
+3. After consenting all permissions, click **"Run query"** — the helper captures the token automatically.
+
+This is a **one-time** setup. The session persists for months (`ESTSAUTHPERSISTENT` cookie). On subsequent runs, the helper auto-clicks "Run query" and captures the token without any interaction.
+
 ## Tokens
 
 The client requires 8 distinct tokens/cookies to talk to the many internal APIs that power Microsoft Teams. The `msTTui-auth` helper captures them automatically via a headless (and partially visible) Playwright Firefox session:
