@@ -105,6 +105,7 @@ func main() {
 	// Parse --renew flag
 	renewOnly := ""
 	showBrowser := false
+	forceHeadless := false
 	args := os.Args[1:]
 	for i := 0; i < len(args); i++ {
 		if args[i] == "--renew" && i+1 < len(args) {
@@ -112,6 +113,9 @@ func main() {
 		}
 		if args[i] == "--show" {
 			showBrowser = true
+		}
+		if args[i] == "--headless" {
+			forceHeadless = true
 		}
 	}
 
@@ -121,6 +125,10 @@ func main() {
 		fmt.Println("  ● First run — browser will open for login")
 	} else {
 		fmt.Println("  ● Session found — running headless")
+	}
+
+	if forceHeadless {
+		showBrowser = false
 	}
 	fmt.Println()
 

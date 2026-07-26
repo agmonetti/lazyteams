@@ -131,17 +131,38 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loading = false
 		return m, nil
 
+	case tokenCheckDoneMsg:
+		for _, tokenType := range msg.expired {
+			if !m.tokenRenewing {
+				m.tokenRenewing = true
+				return m, launchAuthHelperCmd(tokenType)
+			}
+		}
+		return m, nil
+
 	case tokenRenewingMsg:
 		m.tokenRenewing = true
 		return m, launchAuthHelperCmd("web")
 
 	case tokenRenewedMsg:
+		if msg.err != nil {
+			m.tokenRenewErr = msg.err.Error()
+			m.tokenRenewing = false
+		} else {
+			m.tokenRenewErr = ""
+			return m, reloadTokensCmd(m.client, msg.tokenType)
+		}
+		return m, nil
+		
+	case tokensReloadedMsg:
 		m.tokenRenewing = false
 		if msg.err != nil {
 			m.tokenRenewErr = msg.err.Error()
 		} else {
 			m.tokenRenewErr = ""
-			return m, reloadTokensCmd(m.client)
+			if msg.tokenType == "edu" {
+				return m, loadAssignmentsCmd(m.client)
+			}
 		}
 		return m, nil
 
@@ -465,6 +486,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case assignmentsErrMsg:
+		if is401(msg.err) {
+			if !m.tokenRenewing {
+				m.tokenRenewing = true
+				return m, launchAuthHelperCmd("edu")
+			}
+		}
 		m.assignErr = msg.err
 		m.assignLoaded = true
 		return m, nil

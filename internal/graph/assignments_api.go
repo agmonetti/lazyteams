@@ -70,7 +70,7 @@ func (c *Client) FetchAssignments() ([]Assignment, error) {
 	if resp.StatusCode != 200 {
 		body, _ := io.ReadAll(resp.Body)
 		if resp.StatusCode == 401 {
-			return nil, fmt.Errorf("EDU_TOKEN expired (401). Please run ./msTTui-auth --renew edu to renew your EDU_TOKEN.")
+			return nil, fmt.Errorf("401")
 		}
 		return nil, fmt.Errorf("assignments API error (%d): %s", resp.StatusCode, string(body))
 	}

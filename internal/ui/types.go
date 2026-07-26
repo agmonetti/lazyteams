@@ -28,7 +28,14 @@ type navigateToThreadMsg struct {
 type markNotifReadMsg struct{ err error }
 
 type tokenExpiredMsg struct{ token string }
-type tokenRenewedMsg struct{ err error }
+type tokenRenewedMsg struct{ 
+	tokenType string
+	err       error 
+}
+
+type tokenCheckDoneMsg struct {
+	expired []string
+}
 type tokenRenewingMsg struct{}
 
 type searchUsersMsg struct{ results []graph.UserSearchResult }

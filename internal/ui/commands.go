@@ -138,23 +138,42 @@ func launchAuthHelperCmd(expiredToken string) tea.Cmd {
 	return func() tea.Msg {
 		exe, err := os.Executable()
 		if err != nil {
-			return tokenRenewedMsg{err: err}
+			return tokenRenewedMsg{tokenType: expiredToken, err: err}
 		}
 		authHelper := filepath.Join(filepath.Dir(exe), "msTTui-auth")
-		cmd := exec.Command(authHelper, "--renew", expiredToken)
+
+		args := []string{"--renew", expiredToken}
+		// graph and fabric require visible browser — all others run headless
+		if expiredToken != "graph" && expiredToken != "fabric" {
+			args = append(args, "--headless")
+		}
+
+		cmd := exec.Command(authHelper, args...)
 		cmd.Stdout = nil
 		cmd.Stderr = nil
 		if err := cmd.Run(); err != nil {
-			return tokenRenewedMsg{err: err}
+			return tokenRenewedMsg{tokenType: expiredToken, err: err}
 		}
-		return tokenRenewedMsg{err: nil}
+		return tokenRenewedMsg{tokenType: expiredToken, err: nil}
 	}
 }
 
-func reloadTokensCmd(client *graph.Client) tea.Cmd {
+type tokensReloadedMsg struct {
+	tokenType string
+	err       error
+}
+
+func reloadTokensCmd(client *graph.Client, tokenType string) tea.Cmd {
 	return func() tea.Msg {
 		err := client.ReloadTokens()
-		return tokenRenewedMsg{err: err}
+		return tokensReloadedMsg{tokenType: tokenType, err: err}
+	}
+}
+
+func checkTokensCmd(client *graph.Client) tea.Cmd {
+	return func() tea.Msg {
+		expired := client.CheckAllTokens()
+		return tokenCheckDoneMsg{expired: expired}
 	}
 }
 

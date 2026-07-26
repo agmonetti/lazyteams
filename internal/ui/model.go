@@ -410,7 +410,15 @@ func New(client *graph.Client, userName string) Model {
 }
 
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(loadTeamsCmd(m.client), loadChatsCmd(m.client), loadMeCmd(m.client), refreshTickCmd(), initialPresenceTickCmd(), loadNotificationsCmd(m.client))
+	return tea.Batch(
+		checkTokensCmd(m.client),
+		loadTeamsCmd(m.client),
+		loadChatsCmd(m.client),
+		loadMeCmd(m.client),
+		refreshTickCmd(),
+		initialPresenceTickCmd(),
+		loadNotificationsCmd(m.client),
+	)
 }
 
 func (m Model) activeConversationID() string {
