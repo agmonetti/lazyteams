@@ -1303,11 +1303,21 @@ func formatThread(parent graph.Message, replies []graph.Message, width int, self
 			}
 			rBody += rAttStr
 		}
-		content += fmt.Sprintf("%s%s %s:\n%s\n",
+		lines := strings.Split(strings.TrimRight(rBody, "\n"), "\n")
+		var prefixedBody string
+		for j, line := range lines {
+			if j == 0 {
+				prefixedBody += "  └→ " + line + "\n"
+			} else {
+				prefixedBody += "     " + line + "\n"
+			}
+		}
+
+		content += fmt.Sprintf("%s┌─ %s %s:\n%s",
 			replyCursor,
 			metaStyle.Render(fmt.Sprintf("[%s]", timeStr)),
 			selectedItemStyle.Render(name),
-			rBody,
+			prefixedBody,
 		)
 		// Reply reactions
 		if len(r.Reactions) > 0 {
