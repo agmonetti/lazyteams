@@ -72,30 +72,44 @@ go build -o msTTui-auth ./cmd/auth-helper/
 ./msTTui
 ```
 
-### First-time setup — Graph API consent
+## First-time setup
 
-The `MS_GRAPH_TOKEN` requires consent for specific permissions. On first run, the helper opens Graph Explorer in a browser window. **If you are prompted to sign in**, you must also grant the required permissions manually:
+### 1. Grant Microsoft Graph permissions (one-time)
 
-1. In the opened browser window, click **"Modify permissions"** (tab next to "Request body").
-2. Search and enable each permission, then click **"Consent"**:
+Before running the auth helper for the first time, you need to grant permissions manually via Graph Explorer:
 
-| Permission | Used for |
-|------------|----------|
+1. Go to [Graph Explorer](https://developer.microsoft.com/en-us/graph/graph-explorer)
+2. Click **Sign in** and log in with your Microsoft/organizational account
+3. Go to the **Modify permissions** tab
+4. Search and enable each of the following permissions:
+
+| Permission | Purpose |
+|------------|---------|
 | `User.Read` | Read your profile |
 | `Team.ReadBasic.All` | List your teams |
 | `Channel.ReadBasic.All` | List channels |
 | `ChannelMessage.Read.All` | Read channel messages |
 | `ChannelMessage.Send` | Send messages |
 | `Chat.ReadWrite` | Read and write DMs |
-| `Files.ReadWrite.All` | Access files |
+| `Files.ReadWrite.All` | Access and upload files |
 | `Sites.Read.All` | Access SharePoint sites |
-| `Presence.Read.All` | Read presence |
-| `Presence.ReadWrite` | Set your status |
+| `Presence.Read.All` | Read presence status |
+| `Presence.ReadWrite` | Set your presence |
 | `GroupMember.Read.All` | Read team members |
 
-3. After consenting all permissions, click **"Run query"** — the helper captures the token automatically.
+### 2. Run the auth helper
 
-This is a **one-time** setup. The session persists for months (`ESTSAUTHPERSISTENT` cookie). On subsequent runs, the helper auto-clicks "Run query" and captures the token without any interaction.
+```bash
+./msTTui-auth
+```
+
+When prompted, a browser will open Graph Explorer. Click **Sign in**, select your account, and wait for the tokens to be captured automatically.
+
+### 3. Run msTTui
+
+```bash
+./msTTui
+```
 
 ## Tokens
 
