@@ -447,6 +447,7 @@ func openAssignmentFileCmd(client *graph.Client, file graph.AssignmentFile) tea.
 }
 
 func getUniquePath(baseDir, name string) string {
+	name = filepath.Base(name)
 	destPath := filepath.Join(baseDir, name)
 	if _, err := os.Stat(destPath); os.IsNotExist(err) {
 		return destPath
