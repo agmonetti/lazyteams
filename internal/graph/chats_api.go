@@ -218,6 +218,7 @@ func (c *Client) SearchUsers(query string) ([]UserSearchResult, error) {
 						UserPrincipalName string `json:"userPrincipalName"`
 						DisplayName       string `json:"displayName"`
 						MRI               string `json:"mri"`
+						ObjectID          string `json:"objectId"`
 					}
 					if json.NewDecoder(extResp.Body).Decode(&extRes) == nil {
 						for _, ex := range extRes {
@@ -230,9 +231,9 @@ func (c *Client) SearchUsers(query string) ([]UserSearchResult, error) {
 								}
 							}
 							if !exists {
-								// Store the MRI as ID to signal this is an external user
+								// For external users, we pass their raw ObjectID prefixed to synthesize the chat ID later
 								results = append(results, UserSearchResult{
-									ID:          ex.MRI,
+									ID:          "ext:" + ex.ObjectID,
 									DisplayName: ex.DisplayName + " (External)",
 									Mail:        ex.UserPrincipalName,
 								})
@@ -261,47 +262,20 @@ func (c *Client) SearchUsers(query string) ([]UserSearchResult, error) {
 }
 
 func (c *Client) CreateOneOnOneChat(selfID, targetID string) (Chat, error) {
-	if strings.HasPrefix(targetID, "8:") {
-		// External user MRI, use Middle Tier / chatsvc API instead of Graph
-		myMRI := "8:orgid:" + selfID
-		payload := fmt.Sprintf(`{
-			"members": [
-				{"id": "%s", "role": "Admin"},
-				{"id": "%s", "role": "Admin"}
-			],
-			"properties": {"systemEventMessageCreationHandling": "fallbackToMute"}
-		}`, myMRI, targetID)
-
-		req, err := http.NewRequest("POST", "https://teams.microsoft.com/api/chatsvc/amer/v1/users/ME/conversations", strings.NewReader(payload))
-		if err != nil {
-			return Chat{}, err
-		}
-		req.Header.Set("Authorization", "Bearer "+c.SpacesToken)
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Accept", "application/json, text/plain, */*")
-		req.Header.Set("behavioroverride", "redirectAs404")
-		req.Header.Set("x-ms-migration", "True")
-		req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64; rv:151.0) Gecko/20100101 Firefox/151.0")
-		req.Header.Set("Referer", "https://teams.microsoft.com/")
-		req.Header.Set("Origin", "https://teams.microsoft.com")
+	if strings.HasPrefix(targetID, "ext:") {
+		// External/Federated user: we don't need to "create" the chat via an API!
+		// Teams deterministically generates the conversation ID for 1:1 chats
+		// by lexicographically sorting the two Object IDs and joining them.
+		targetUUID := strings.TrimPrefix(targetID, "ext:")
 		
-		resp, err := c.HTTPClient.Do(req)
-		if err != nil {
-			return Chat{}, err
+		u1, u2 := selfID, targetUUID
+		if u1 > u2 {
+			u1, u2 = u2, u1
 		}
-		defer resp.Body.Close()
-		if resp.StatusCode < 200 || resp.StatusCode > 299 {
-			body, _ := io.ReadAll(resp.Body)
-			return Chat{}, fmt.Errorf("chatsvc create chat error %d: %s", resp.StatusCode, string(body))
-		}
-		var res struct {
-			ID string `json:"id"`
-		}
-		if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
-			return Chat{}, err
-		}
+		
+		chatID := fmt.Sprintf("19:%s_%s@unq.gbl.spaces", u1, u2)
 		return Chat{
-			ID:       res.ID,
+			ID:       chatID,
 			ChatType: "oneOnOne",
 		}, nil
 	}
