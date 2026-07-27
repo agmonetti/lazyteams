@@ -12,6 +12,7 @@ debug_api.go
 debug*.log
 debug*.json
 cmd/debug-*/
+.plan/
 
 # Credentials
 tokens.env
