@@ -93,7 +93,7 @@ func printTokenStatus(t *tokens) {
 
 func main() {
 	fmt.Println("╔══════════════════════════════════════════════════╗")
-	fmt.Println("║         msTTui — Auth Helper  v1.0               ║")
+	fmt.Println("║               msTTui — Auth Helper	            ║")
 	fmt.Println("╚══════════════════════════════════════════════════╝")
 	fmt.Println()
 
@@ -454,14 +454,14 @@ func renewWebNotif(page playwright.Page, ctx playwright.BrowserContext, captured
 		webTok := captured.webToken
 		captured.mu.Unlock()
 		if webTok != "" && !hasNotif {
-			page.Evaluate(fmt.Sprintf(`
+			page.Evaluate(`(token) => {
 				fetch("https://teams.microsoft.com/api/chatsvc/amer/v1/users/ME/conversations/48:notifications/messages?startTime=0&pageSize=1&view=msnp24Equivalent&targetType=Passport", {
 					headers: {
-						"Authorization": "Bearer %s",
+						"Authorization": "Bearer " + token,
 						"X-Ms-Client-Type": "web"
 					}
 				})
-			`, webTok))
+			}`, webTok)
 		}
 	}
 
@@ -595,7 +595,6 @@ func fullRenewal(pw *playwright.Playwright, page playwright.Page, ctx playwright
 
 	// Step: try fabric token from storage
 
-
 	startTime := time.Now()
 	deadline := startTime.Add(90 * time.Second)
 	ticker := time.NewTicker(3 * time.Second)
@@ -624,7 +623,6 @@ func fullRenewal(pw *playwright.Playwright, page playwright.Page, ctx playwright
 			break // Exit loop early, go straight to Graph Explorer
 		}
 
-
 		// Step 2 (20s): trigger TEAMS_NOTIF_TOKEN
 		if elapsed > 20*time.Second && !hasNotif {
 			globalSpin.SetLabel("Navigating to Activity to trigger notifications token...")
@@ -636,14 +634,14 @@ func fullRenewal(pw *playwright.Playwright, page playwright.Page, ctx playwright
 			webTok := captured.webToken
 			captured.mu.Unlock()
 			if webTok != "" {
-				page.Evaluate(fmt.Sprintf(`
+				page.Evaluate(`(token) => {
 					fetch("https://teams.microsoft.com/api/chatsvc/amer/v1/users/ME/conversations/48:notifications/messages?startTime=0&pageSize=1&view=msnp24Equivalent&targetType=Passport", {
 						headers: {
-							"Authorization": "Bearer %s",
+							"Authorization": "Bearer " + token,
 							"X-Ms-Client-Type": "web"
 						}
 					})
-				`, webTok))
+				}`, webTok)
 				time.Sleep(2 * time.Second)
 			}
 		}
@@ -696,7 +694,7 @@ func fullRenewal(pw *playwright.Playwright, page playwright.Page, ctx playwright
 			globalSpin.Stop("")
 			globalSpin = nil
 		}
-		
+
 		fmt.Println()
 		printBox([]string{
 			"Action required: MS_GRAPH_TOKEN",
@@ -706,7 +704,7 @@ func fullRenewal(pw *playwright.Playwright, page playwright.Page, ctx playwright
 
 		// Close headless context and reopen visible
 		ctx.Close()
-		
+
 		visibleCtx, err := pw.Firefox.LaunchPersistentContext(
 			sessionDir,
 			playwright.BrowserTypeLaunchPersistentContextOptions{
@@ -732,7 +730,7 @@ func fullRenewal(pw *playwright.Playwright, page playwright.Page, ctx playwright
 				}
 				token := strings.TrimPrefix(authHeader, "Bearer ")
 				aud := extractAudFromJWT(token)
-				if (strings.Contains(aud, "graph.microsoft.com") || aud == "00000003-0000-0000-c000-000000000000") {
+				if strings.Contains(aud, "graph.microsoft.com") || aud == "00000003-0000-0000-c000-000000000000" {
 					captured.mu.Lock()
 					if captured.graphToken == "" {
 						captured.graphToken = token
@@ -766,7 +764,6 @@ func fullRenewal(pw *playwright.Playwright, page playwright.Page, ctx playwright
 				}
 			}
 
-
 			// Do not close visibleCtx — reuse it for fabric token
 			if captured.fabricToken == "" {
 				fmt.Println()
@@ -781,10 +778,10 @@ func fullRenewal(pw *playwright.Playwright, page playwright.Page, ctx playwright
 					"   remove the user you just added",
 					"Press [Enter] in this terminal to skip.",
 				})
-				
+
 				globalSpin = newSpinner("Capturing fabric token...")
 				globalSpin.Start()
-			
+
 				// Re-register interceptor in the already opened context
 				visibleCtx.On("request", func(req playwright.Request) {
 					authHeader := ""
@@ -807,12 +804,12 @@ func fullRenewal(pw *playwright.Playwright, page playwright.Page, ctx playwright
 						captured.mu.Unlock()
 					}
 				})
-			
+
 				// Navigate to Teams in the same browser
 				visiblePage.Goto("https://teams.microsoft.com/v2/",
 					playwright.PageGotoOptions{Timeout: playwright.Float(20000)},
 				)
-			
+
 				// Channel for skip
 				skipCh := make(chan struct{}, 1)
 				go func() {
@@ -827,12 +824,12 @@ func fullRenewal(pw *playwright.Playwright, page playwright.Page, ctx playwright
 					select {
 					case <-skipCh:
 						fmt.Println("\n  · TEAMS_FABRIC_TOKEN — skipped by user")
-			// Force Firefox to flush cookies to disk via page navigation
-			visiblePage.Goto("about:blank", playwright.PageGotoOptions{
-				Timeout: playwright.Float(3000),
-			})
-			time.Sleep(5 * time.Second)
-			visibleCtx.Close()
+						// Force Firefox to flush cookies to disk via page navigation
+						visiblePage.Goto("about:blank", playwright.PageGotoOptions{
+							Timeout: playwright.Float(3000),
+						})
+						time.Sleep(5 * time.Second)
+						visibleCtx.Close()
 						return
 					default:
 					}
@@ -852,13 +849,13 @@ func fullRenewal(pw *playwright.Playwright, page playwright.Page, ctx playwright
 					}
 				}
 			}
-			
+
 			visibleCtx.Close()
 			return
+		}
 	}
-}
 
-// For the normal flow where needsGraphToken is false
+	// For the normal flow where needsGraphToken is false
 	time.Sleep(2 * time.Second)
 	cookies, err := ctx.Cookies("https://teams.microsoft.com", "https://ic3.teams.office.com")
 	if err == nil && len(cookies) > 0 {
@@ -1096,7 +1093,7 @@ func manualFabricTokenCapture(pw *playwright.Playwright, sessionDir string, capt
 			return
 		}
 		token := strings.TrimPrefix(authHeader, "Bearer ")
-		
+
 		if strings.Contains(req.URL(), "fabric/amer/templates") {
 			captured.mu.Lock()
 			if captured.fabricToken == "" {
@@ -1134,12 +1131,12 @@ func manualFabricTokenCapture(pw *playwright.Playwright, sessionDir string, capt
 			return
 		default:
 		}
-		
+
 		time.Sleep(1 * time.Second)
 		captured.mu.Lock()
 		hasFabric := captured.fabricToken != ""
 		captured.mu.Unlock()
-		
+
 		if hasFabric {
 			if globalSpin != nil {
 				globalSpin.Stop("")
@@ -1150,7 +1147,7 @@ func manualFabricTokenCapture(pw *playwright.Playwright, sessionDir string, capt
 			return
 		}
 	}
-	
+
 	fmt.Println("\n  · TEAMS_FABRIC_TOKEN — timed out waiting for manual action")
 }
 
