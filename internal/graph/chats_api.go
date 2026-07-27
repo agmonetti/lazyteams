@@ -185,20 +185,102 @@ func (c *Client) SearchUsers(query string) ([]UserSearchResult, error) {
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("ConsistencyLevel", "eventual")
 	resp, err := c.HTTPClient.Do(req)
-	if err != nil {
-		return nil, err
+	
+	var results []UserSearchResult
+	if err == nil {
+		defer resp.Body.Close()
+		var res struct {
+			Value []UserSearchResult `json:"value"`
+		}
+		if json.NewDecoder(resp.Body).Decode(&res) == nil {
+			results = res.Value
+		}
 	}
-	defer resp.Body.Close()
-	var res struct {
-		Value []UserSearchResult `json:"value"`
+
+	// Fallback/additive search for external users by exact email
+	if strings.Contains(query, "@") {
+		extURL := fmt.Sprintf("https://teams.microsoft.com/api/mt/part/amer-02/beta/users/%s/externalsearchv3?includeTFLUsers=true", query)
+		extReq, extErr := http.NewRequest("GET", extURL, nil)
+		if extErr == nil {
+			// WebToken or SpacesToken are usually accepted here, we use WebToken as it's the primary Teams token
+			extReq.Header.Set("Authorization", "Bearer "+c.WebToken)
+			extReq.Header.Set("Accept", "application/json")
+			extResp, extErr := c.HTTPClient.Do(extReq)
+			if extErr == nil {
+				defer extResp.Body.Close()
+				if extResp.StatusCode == 200 {
+					var extRes []struct {
+						UserPrincipalName string `json:"userPrincipalName"`
+						DisplayName       string `json:"displayName"`
+						MRI               string `json:"mri"`
+					}
+					if json.NewDecoder(extResp.Body).Decode(&extRes) == nil {
+						for _, ex := range extRes {
+							// Check if we already have this user from Graph
+							exists := false
+							for _, r := range results {
+								if strings.EqualFold(r.Mail, ex.UserPrincipalName) {
+									exists = true
+									break
+								}
+							}
+							if !exists {
+								// Store the MRI as ID to signal this is an external user
+								results = append(results, UserSearchResult{
+									ID:          ex.MRI,
+									DisplayName: ex.DisplayName + " (External)",
+									Mail:        ex.UserPrincipalName,
+								})
+							}
+						}
+					}
+				}
+			}
+		}
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
-		return nil, fmt.Errorf("error parsing user search: %w", err)
-	}
-	return res.Value, nil
+
+	return results, nil
 }
 
 func (c *Client) CreateOneOnOneChat(selfID, targetID string) (Chat, error) {
+	if strings.HasPrefix(targetID, "8:") {
+		// External user MRI, use Middle Tier / chatsvc API instead of Graph
+		myMRI := "8:orgid:" + selfID
+		payload := fmt.Sprintf(`{
+			"members": [
+				{"id": "%s", "role": "Admin"},
+				{"id": "%s", "role": "Admin"}
+			],
+			"properties": {"systemEventMessageCreationHandling": "fallbackToMute"}
+		}`, myMRI, targetID)
+
+		req, err := http.NewRequest("POST", "https://teams.microsoft.com/api/chatsvc/amer/v1/users/ME/conversations", strings.NewReader(payload))
+		if err != nil {
+			return Chat{}, err
+		}
+		req.Header.Set("Authorization", "Bearer "+c.WebToken)
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := c.HTTPClient.Do(req)
+		if err != nil {
+			return Chat{}, err
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode < 200 || resp.StatusCode > 299 {
+			body, _ := io.ReadAll(resp.Body)
+			return Chat{}, fmt.Errorf("chatsvc create chat error %d: %s", resp.StatusCode, string(body))
+		}
+		var res struct {
+			ID string `json:"id"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
+			return Chat{}, err
+		}
+		return Chat{
+			ID:       res.ID,
+			ChatType: "oneOnOne",
+		}, nil
+	}
+
 	payload := fmt.Sprintf(`{
 		"chatType": "oneOnOne",
 		"members": [
