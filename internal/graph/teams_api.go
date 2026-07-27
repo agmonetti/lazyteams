@@ -1,6 +1,7 @@
 package graph
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -124,13 +125,15 @@ func (c *Client) GetChannels(teamID string) ([]Channel, error) {
 }
 
 func (c *Client) CreateTeam(displayName string) error {
-	payload := fmt.Sprintf(`{
-		"displayName": "%s",
-		"mailNickname": "%s",
-		"template@odata.bind": "https://graph.microsoft.com/v1.0/teamsTemplates('standard')"
-	}`, displayName, sanitizeMailNickname(displayName))
+	// Build the JSON payload safely using a map and json.Marshal
+	payloadMap := map[string]string{
+		"displayName":         displayName,
+		"mailNickname":        sanitizeMailNickname(displayName),
+		"template@odata.bind": "https://graph.microsoft.com/v1.0/teamsTemplates('standard')",
+	}
+	bodyBytes, _ := json.Marshal(payloadMap)
 
-	req, err := http.NewRequest("POST", baseURL+"/teams", strings.NewReader(payload))
+	req, err := http.NewRequest("POST", baseURL+"/teams", bytes.NewBuffer(bodyBytes))
 	if err != nil {
 		return err
 	}
