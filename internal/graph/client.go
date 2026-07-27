@@ -40,6 +40,8 @@ var (
 	divCloseRe      = regexp.MustCompile(`(?i)</div\s*>`)
 	blockquoteRe    = regexp.MustCompile(`(?i)<blockquote(\s+[^>]*)?>`)
 	blockquoteCloseRe = regexp.MustCompile(`(?i)</blockquote\s*>`)
+	imgRe           = regexp.MustCompile(`(?i)<img[^>]*>`)
+	attachmentRe    = regexp.MustCompile(`(?i)<attachment[^>]*>.*?</attachment>`)
 	headingRe       [6]*regexp.Regexp
 	headingCloseRe  [6]*regexp.Regexp
 )
@@ -121,6 +123,10 @@ func cleanHTML(s string) string {
 	s = strings.ReplaceAll(s, "</td>", "")
 	s = strings.ReplaceAll(s, "<th>", "")
 	s = strings.ReplaceAll(s, "</th>", "")
+
+	// Images and Attachments
+	s = imgRe.ReplaceAllString(s, "[Attached Image]")
+	s = attachmentRe.ReplaceAllString(s, "[Attached File]")
 
 	// Block separators
 	s = brRe.ReplaceAllString(s, "\n")
