@@ -282,27 +282,35 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case addReactionMsg:
 		m.reactionPending = false
+		teamID := ""
+		if m.workspace == WorkspaceTeams && len(m.teams) > 0 {
+			teamID = m.teams[m.selectedTeam].ID
+		}
 		if msg.err != nil {
 			m.downloadStatus = fmt.Sprintf("✗ %v", msg.err)
 			m.downloadStatusID++
 			return m, tea.Batch(
-				loadMessagesCmd(m.client, m.teams[m.selectedTeam].ID, m.activeConversationID(), 200),
+				loadMessagesCmd(m.client, teamID, m.activeConversationID(), 200),
 				clearStatusAfter(m.downloadStatusID),
 			)
 		}
-		return m, nil
+		return m, loadMessagesCmd(m.client, teamID, m.activeConversationID(), 200)
 
 	case removeReactionMsg:
 		m.reactionPending = false
+		teamID := ""
+		if m.workspace == WorkspaceTeams && len(m.teams) > 0 {
+			teamID = m.teams[m.selectedTeam].ID
+		}
 		if msg.err != nil {
 			m.downloadStatus = fmt.Sprintf("✗ %v", msg.err)
 			m.downloadStatusID++
 			return m, tea.Batch(
-				loadMessagesCmd(m.client, m.teams[m.selectedTeam].ID, m.activeConversationID(), 200),
+				loadMessagesCmd(m.client, teamID, m.activeConversationID(), 200),
 				clearStatusAfter(m.downloadStatusID),
 			)
 		}
-		return m, nil
+		return m, loadMessagesCmd(m.client, teamID, m.activeConversationID(), 200)
 
 	case reactionsLoadedMsg:
 		m.loading = false
