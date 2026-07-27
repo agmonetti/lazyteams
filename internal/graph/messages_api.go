@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"html"
 	"io"
 	"net/http"
 	"sort"
@@ -232,19 +233,19 @@ func (c *Client) GetMessagesWithLink(teamID, channelID string, pageSize int) ([]
 				rootID = m.ID
 			}
 
-		var reactions []Reaction
-		if m.AnnotationsSummary != nil {
-			for key, count := range m.AnnotationsSummary.Emotions {
-				if count > 0 {
-					reactions = append(reactions, Reaction{Key: key, Count: count})
+			var reactions []Reaction
+			if m.AnnotationsSummary != nil {
+				for key, count := range m.AnnotationsSummary.Emotions {
+					if count > 0 {
+						reactions = append(reactions, Reaction{Key: key, Count: count})
+					}
 				}
+				sort.Slice(reactions, func(i, j int) bool {
+					return reactions[i].Count > reactions[j].Count
+				})
+			} else {
+				reactions = parseReactions(m.Properties)
 			}
-			sort.Slice(reactions, func(i, j int) bool {
-				return reactions[i].Count > reactions[j].Count
-			})
-		} else {
-			reactions = parseReactions(m.Properties)
-		}
 
 			isDeleted := false
 			if m.Properties != nil {
@@ -401,7 +402,7 @@ func (c *Client) GetMessagesFromLink(link string) (MessagePage, error) {
 func (c *Client) SendMessage(channelID, content string, mentions []MentionedUser) error {
 	url := fmt.Sprintf("https://teams.microsoft.com/api/chatsvc/amer/v1/users/ME/conversations/%s/messages", channelID)
 
-	htmlContent := "<p>" + content + "</p>"
+	htmlContent := "<p>" + html.EscapeString(content) + "</p>"
 	properties := map[string]string{
 		"importance": "",
 		"subject":    "",
@@ -458,7 +459,7 @@ func (c *Client) SendReply(channelID, parentMessageID, content string, mentions 
 		channelID, parentMessageID,
 	)
 
-	htmlContent := "<p>" + content + "</p>"
+	htmlContent := "<p>" + html.EscapeString(content) + "</p>"
 	properties := map[string]string{
 		"importance": "",
 		"subject":    "",
@@ -637,7 +638,7 @@ func (c *Client) MarkConversationAsRead(conversationID string, lastMsg Message) 
 func (c *Client) EditMessage(channelID, messageID, content string) error {
 	url := fmt.Sprintf("https://teams.microsoft.com/api/chatsvc/amer/v1/users/ME/conversations/%s/messages/%s", channelID, messageID)
 	payload := map[string]interface{}{
-		"content":     fmt.Sprintf("<p>%s</p>", content),
+		"content":     fmt.Sprintf("<p>%s</p>", html.EscapeString(content)),
 		"messagetype": "RichText/Html",
 		"contenttype": "Text",
 	}
@@ -698,15 +699,21 @@ type MentionedUser struct {
 // mentions must be pre-resolved (MRI known) and ItemID set sequentially.
 // The text must contain the display names exactly as stored in MentionedUser.DisplayName.
 func BuildMentionContent(text string, mentions []MentionedUser) (content, mentionsJSON string) {
+	// 1. Escape the entire user text first to prevent HTML injection
+	result := html.EscapeString(text)
+
 	// Replace each @DisplayName occurrence with the Teams readonly span.
 	// We iterate by ItemID order so indices are injected correctly.
-	result := text
 	for _, m := range mentions {
+		// 2. Escape the display name in case a user has a malicious HTML name
+		safeName := html.EscapeString(m.DisplayName)
+
 		tag := fmt.Sprintf(
 			`<readonly class="skipProofing" itemtype="http://schema.skype.com/Mention" spellcheck="false" contenteditable="false"><span itemtype="http://schema.skype.com/Mention" itemscope itemid="%d">%s</span></readonly>`,
-			m.ItemID, m.DisplayName,
+			m.ItemID, safeName,
 		)
-		result = strings.ReplaceAll(result, "@"+m.DisplayName, tag)
+		// 3. Replace the escaped mention with our safe HTML tag
+		result = strings.ReplaceAll(result, "@"+safeName, tag)
 	}
 	content = "<p>" + result + "</p>"
 
