@@ -204,7 +204,7 @@ func (c *Client) SearchUsers(query string) ([]UserSearchResult, error) {
 		extReq, extErr := http.NewRequest("GET", extURL, nil)
 		if extErr == nil {
 			// WebToken or SpacesToken are usually accepted here, we use WebToken as it's the primary Teams token
-			extReq.Header.Set("Authorization", "Bearer "+c.WebToken)
+			extReq.Header.Set("Authorization", "Bearer "+c.SpacesToken)
 			extReq.Header.Set("Accept", "application/json")
 			extReq.Header.Set("x-ms-client-caller", "newChat")
 			extReq.Header.Set("x-ms-client-type", "web")
@@ -276,8 +276,15 @@ func (c *Client) CreateOneOnOneChat(selfID, targetID string) (Chat, error) {
 		if err != nil {
 			return Chat{}, err
 		}
-		req.Header.Set("Authorization", "Bearer "+c.WebToken)
+		req.Header.Set("Authorization", "Bearer "+c.SpacesToken)
 		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "application/json, text/plain, */*")
+		req.Header.Set("behavioroverride", "redirectAs404")
+		req.Header.Set("x-ms-migration", "True")
+		req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64; rv:151.0) Gecko/20100101 Firefox/151.0")
+		req.Header.Set("Referer", "https://teams.microsoft.com/")
+		req.Header.Set("Origin", "https://teams.microsoft.com")
+		
 		resp, err := c.HTTPClient.Do(req)
 		if err != nil {
 			return Chat{}, err
