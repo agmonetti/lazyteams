@@ -86,16 +86,16 @@ Before running the auth helper for the first time, you need to grant permissions
 | Permission | Purpose |
 |------------|---------|
 | `User.Read` | Read your profile |
+| `User.Read.All` | Search users for DMs, @mentions, member management |
 | `Team.ReadBasic.All` | List your teams |
 | `Channel.ReadBasic.All` | List channels |
-| `ChannelMessage.Read.All` | Read channel messages |
-| `ChannelMessage.Send` | Send messages |
 | `Chat.ReadWrite` | Read and write DMs |
-| `Files.ReadWrite.All` | Access and upload files |
-| `Sites.Read.All` | Access SharePoint sites |
+| `GroupMember.Read.All` | Read team members |
+| `Group.ReadWrite.All` | Create teams (optional) |
 | `Presence.Read.All` | Read presence status |
 | `Presence.ReadWrite` | Set your presence |
-| `GroupMember.Read.All` | Read team members |
+| `Files.ReadWrite.All` | Access and upload files |
+| `Sites.Read.All` | Access SharePoint sites |
 
 ### 2. Run the auth helper
 
