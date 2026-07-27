@@ -38,10 +38,17 @@ func copyToClipboard(text string) error {
 }
 
 func makeClickableLink(text, url string) string {
-	return fmt.Sprintf("\x1b]8;;%s\x1b\\%s\x1b]8;;\x1b\\", url, text)
+	// Strip any escape characters from the URL to prevent terminal injection
+	safeURL := strings.ReplaceAll(url, "\x1b", "")
+	return fmt.Sprintf("\x1b]8;;%s\x1b\\%s\x1b]8;;\x1b\\", safeURL, text)
 }
 
 func openBrowser(url string) {
+	// Security filter: only allow safe web schemes to prevent local file execution
+	if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
+		return
+	}
+
 	var err error
 	switch runtime.GOOS {
 	case "linux":
@@ -50,8 +57,11 @@ func openBrowser(url string) {
 		err = exec.Command("rundll32", "url.dll,FileProtocolHandler", url).Start()
 	case "darwin":
 		err = exec.Command("open", url).Start()
+	default:
+		err = fmt.Errorf("unsupported platform")
 	}
 	if err != nil {
+		// Intentionally ignore background errors
 	}
 }
 
