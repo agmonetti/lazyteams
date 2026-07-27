@@ -356,7 +356,7 @@ func pluralS(n int) string {
 }
 
 func chatPriority(ch graph.Chat, selfChatID string) int {
-	if selfChatID != "" && ch.ID == selfChatID {
+	if (selfChatID != "" && ch.ID == selfChatID) || ch.Topic == "Personal notes (You)" {
 		return 0
 	}
 	switch ch.ChatType {

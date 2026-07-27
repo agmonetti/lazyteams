@@ -277,7 +277,7 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "2":
 			m.workspace = WorkspaceDMs
 			m.focusLeft = true
-			m.cursorOnDMHeader = false
+			m.cursorOnDMHeader = true
 			m.cursorOnGroupHeader = false
 		if !m.chatsLoaded {
 			m.loading = true
