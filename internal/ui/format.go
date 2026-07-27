@@ -2,7 +2,6 @@ package ui
 
 import (
 	"fmt"
-	"os"
 	"regexp"
 	"sort"
 	"strings"
@@ -186,13 +185,6 @@ func formatMessagesWithCursor(messages []graph.Message, width, cursor int, curso
 			var reactionStr string
 			for _, r := range msg.Reactions {
 				emoji := reactionEmoji(r.Key)
-				if emoji == "●" {
-					f, _ := os.OpenFile("/tmp/reaction_debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
-					if f != nil {
-						f.WriteString(fmt.Sprintf("key=%-30s count=%d\n", r.Key, r.Count))
-						f.Close()
-					}
-				}
 				if r.Count > 1 {
 					reactionStr += fmt.Sprintf("%s %d  ", emoji, r.Count)
 				} else {
