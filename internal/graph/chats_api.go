@@ -11,11 +11,12 @@ import (
 )
 
 type Chat struct {
-	ID                 string              `json:"id"`
-	Topic              string              `json:"topic"`
-	ChatType           string              `json:"chatType"`
-	Members            []ChatMember        `json:"members"`
-	LastMessagePreview *ChatMessagePreview `json:"lastMessagePreview,omitempty"`
+	ID                  string              `json:"id"`
+	Topic               string              `json:"topic"`
+	ChatType            string              `json:"chatType"`
+	LastUpdatedDateTime string              `json:"lastUpdatedDateTime"`
+	Members             []ChatMember        `json:"members"`
+	LastMessagePreview  *ChatMessagePreview `json:"lastMessagePreview,omitempty"`
 }
 
 type ChatMessagePreview struct {

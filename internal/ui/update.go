@@ -1029,8 +1029,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmds...)
 
 	case unreadStatusMsg:
+		changed := false
 		if msg.hasUnread {
-			m.chatUnread[msg.chatID] = true
+			if !m.chatUnread[msg.chatID] {
+				m.chatUnread[msg.chatID] = true
+				changed = true
+			}
+		} else {
+			if m.chatUnread[msg.chatID] {
+				delete(m.chatUnread, msg.chatID)
+				changed = true
+			}
+		}
+		if changed {
+			m.ReSortChats()
 		}
 		return m, nil
 

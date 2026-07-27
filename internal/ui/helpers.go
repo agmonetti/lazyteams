@@ -369,6 +369,46 @@ func chatPriority(ch graph.Chat, selfChatID string) int {
 	}
 }
 
+func sortChats(chats []graph.Chat, unreadMap map[string]bool, selfChatID string) {
+	sort.SliceStable(chats, func(i, j int) bool {
+		a, b := chats[i], chats[j]
+		p1, p2 := chatPriority(a, selfChatID), chatPriority(b, selfChatID)
+		if p1 != p2 {
+			return p1 < p2
+		}
+		
+		u1, u2 := unreadMap[a.ID], unreadMap[b.ID]
+		if u1 && !u2 {
+			return true
+		}
+		if !u1 && u2 {
+			return false
+		}
+		
+		return a.LastUpdatedDateTime > b.LastUpdatedDateTime
+	})
+}
+
+func (m *Model) ReSortChats() {
+	var currID string
+	if m.selectedChat >= 0 && m.selectedChat < len(m.chats) {
+		currID = m.chats[m.selectedChat].ID
+	}
+	selfChatID := ""
+	if m.selfID != "" {
+		selfChatID = fmt.Sprintf("19:%s_%s@unq.gbl.spaces", m.selfID, m.selfID)
+	}
+	sortChats(m.chats, m.chatUnread, selfChatID)
+	if currID != "" {
+		for i, c := range m.chats {
+			if c.ID == currID {
+				m.selectedChat = i
+				break
+			}
+		}
+	}
+}
+
 func dmChatIndices(chats []graph.Chat) []int {
 	var result []int
 	for i, ch := range chats {

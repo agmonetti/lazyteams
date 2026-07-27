@@ -2,7 +2,6 @@ package ui
 
 import (
 	"fmt"
-	"sort"
 	"strings"
 	"teamsTUI/internal/teams"
 
@@ -63,10 +62,7 @@ func (m Model) handleChatsMsg(msg chatsMsg) (tea.Model, tea.Cmd) {
 	if m.selfID != "" {
 		selfChatID = fmt.Sprintf("19:%s_%s@unq.gbl.spaces", m.selfID, m.selfID)
 	}
-	sort.SliceStable(m.chats, func(i, j int) bool {
-		a, b := m.chats[i], m.chats[j]
-		return chatPriority(a, selfChatID) < chatPriority(b, selfChatID)
-	})
+	sortChats(m.chats, m.chatUnread, selfChatID)
 	m.chatsLoaded = true
 	m.loading = false
 	m.selectedChat = 0

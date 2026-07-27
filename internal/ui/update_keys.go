@@ -1003,10 +1003,13 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.viewMode = ModeChat // MUST RESET
 			m.selectedFiles = make(map[int]bool)
 			m.folderStack = nil
-			chatID := m.chats[m.selectedChat].ID
-			m.loadedConvID = chatID
-			delete(m.chatUnread, chatID) // Clear badge on open
-			m.messagesBackwardLink = ""
+				chatID := m.chats[m.selectedChat].ID
+				m.loadedConvID = chatID
+				if m.chatUnread[chatID] {
+					delete(m.chatUnread, chatID) // Clear badge on open
+					m.ReSortChats()
+				}
+				m.messagesBackwardLink = ""
 			m.loadingMore = false
 			cmds = append(cmds, loadMessagesCmd(m.client, "", chatID, 200))
 		} else if m.focusLeft && m.workspace == WorkspaceTeams && m.focusList == 0 {
