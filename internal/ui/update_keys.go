@@ -402,28 +402,33 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					dmChats := dmChatIndices(m.chats)
 					groupChats := groupChatIndices(m.chats)
 					allVisible := visibleChatIndices(m.chats, m.dmSectionCollapsed, m.groupSectionCollapsed)
-					pos := indexOf(allVisible, m.selectedChat)
-					if pos > 0 {
-						m.selectedChat = allVisible[pos-1]
-						if m.viewMode == ModeChat {
-							m.loading = true
-							m.loadedConvID = m.chats[m.selectedChat].ID
-							m.messagesBackwardLink = ""
-							m.loadingMore = false
-							cmds = append(cmds, loadMessagesCmd(m.client, "", m.loadedConvID, 200))
-						} else if m.viewMode == ModeFiles {
-							m.loadedConvID = m.chats[m.selectedChat].ID
-							m.loading = true
-							m.messagesBackwardLink = ""
-							m.loadingMore = false
-							cmds = append(cmds, loadMessagesCmd(m.client, "", m.loadedConvID, 200))
+						pos := indexOf(allVisible, m.selectedChat)
+						if pos > 0 {
+							prevIdx := allVisible[pos-1]
+							if isInGroup(m.chats, m.selectedChat) && isInDMs(m.chats, prevIdx) {
+								m.cursorOnGroupHeader = true
+							} else {
+								m.selectedChat = prevIdx
+								if m.viewMode == ModeChat {
+									m.loading = true
+									m.loadedConvID = m.chats[m.selectedChat].ID
+									m.messagesBackwardLink = ""
+									m.loadingMore = false
+									cmds = append(cmds, loadMessagesCmd(m.client, "", m.loadedConvID, 200))
+								} else if m.viewMode == ModeFiles {
+									m.loadedConvID = m.chats[m.selectedChat].ID
+									m.loading = true
+									m.messagesBackwardLink = ""
+									m.loadingMore = false
+									cmds = append(cmds, loadMessagesCmd(m.client, "", m.loadedConvID, 200))
+								}
+							}
+						} else if isInGroup(m.chats, m.selectedChat) {
+							m.cursorOnGroupHeader = true
+						} else if len(dmChats) > 0 && m.selectedChat == dmChats[0] {
+							m.cursorOnDMHeader = true
 						}
-					} else if isInGroup(m.chats, m.selectedChat) {
-						m.cursorOnGroupHeader = true
-					} else if len(dmChats) > 0 && m.selectedChat == dmChats[0] {
-						m.cursorOnDMHeader = true
-					}
-					_ = groupChats
+						_ = groupChats
 				}
 			} else if m.workspace == WorkspaceActivity {
 				if len(m.notifications) > 0 && m.selectedNotif > 0 {
@@ -534,29 +539,34 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 						}
 					}
 				} else {
-					allVisible := visibleChatIndices(m.chats, m.dmSectionCollapsed, m.groupSectionCollapsed)
-					pos1 := indexOf(allVisible, m.selectedChat)
-					if pos1 < len(allVisible)-1 {
-						m.selectedChat = allVisible[pos1+1]
-						if m.viewMode == ModeChat {
-							m.loading = true
-							m.loadedConvID = m.chats[m.selectedChat].ID
-							m.messagesBackwardLink = ""
-							m.loadingMore = false
-							cmds = append(cmds, loadMessagesCmd(m.client, "", m.loadedConvID, 200))
-						} else if m.viewMode == ModeFiles {
-							m.loadedConvID = m.chats[m.selectedChat].ID
-							m.loading = true
-							m.messagesBackwardLink = ""
-							m.loadingMore = false
-							cmds = append(cmds, loadMessagesCmd(m.client, "", m.loadedConvID, 200))
+						allVisible := visibleChatIndices(m.chats, m.dmSectionCollapsed, m.groupSectionCollapsed)
+						pos1 := indexOf(allVisible, m.selectedChat)
+						if pos1 < len(allVisible)-1 {
+							nextIdx := allVisible[pos1+1]
+							if isInDMs(m.chats, m.selectedChat) && isInGroup(m.chats, nextIdx) {
+								m.cursorOnGroupHeader = true
+							} else {
+								m.selectedChat = nextIdx
+								if m.viewMode == ModeChat {
+									m.loading = true
+									m.loadedConvID = m.chats[m.selectedChat].ID
+									m.messagesBackwardLink = ""
+									m.loadingMore = false
+									cmds = append(cmds, loadMessagesCmd(m.client, "", m.loadedConvID, 200))
+								} else if m.viewMode == ModeFiles {
+									m.loadedConvID = m.chats[m.selectedChat].ID
+									m.loading = true
+									m.messagesBackwardLink = ""
+									m.loadingMore = false
+									cmds = append(cmds, loadMessagesCmd(m.client, "", m.loadedConvID, 200))
+								}
+							}
+						} else if isInDMs(m.chats, m.selectedChat) {
+							groupChats := groupChatIndices(m.chats)
+							if len(groupChats) > 0 {
+								m.cursorOnGroupHeader = true
+							}
 						}
-					} else if isInDMs(m.chats, m.selectedChat) {
-						groupChats := groupChatIndices(m.chats)
-						if len(groupChats) > 0 {
-							m.cursorOnGroupHeader = true
-						}
-					}
 				}
 			} else if m.workspace == WorkspaceActivity {
 				if len(m.notifications) > 0 && m.selectedNotif < len(m.notifications)-1 {
