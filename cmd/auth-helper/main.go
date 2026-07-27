@@ -93,7 +93,7 @@ func printTokenStatus(t *tokens) {
 
 func main() {
 	fmt.Println("╔══════════════════════════════════════════════════╗")
-	fmt.Println("║               msTTui — Auth Helper	            ║")
+	fmt.Println("║               msTTui — Auth Helper	           ║")
 	fmt.Println("╚══════════════════════════════════════════════════╝")
 	fmt.Println()
 
