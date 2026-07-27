@@ -206,6 +206,10 @@ func (c *Client) SearchUsers(query string) ([]UserSearchResult, error) {
 			// WebToken or SpacesToken are usually accepted here, we use WebToken as it's the primary Teams token
 			extReq.Header.Set("Authorization", "Bearer "+c.WebToken)
 			extReq.Header.Set("Accept", "application/json")
+			extReq.Header.Set("x-ms-client-caller", "newChat")
+			extReq.Header.Set("x-ms-client-type", "web")
+			extReq.Header.Set("x-ms-migration", "True")
+			
 			extResp, extErr := c.HTTPClient.Do(extReq)
 			if extErr == nil {
 				defer extResp.Body.Close()
@@ -235,7 +239,20 @@ func (c *Client) SearchUsers(query string) ([]UserSearchResult, error) {
 							}
 						}
 					}
+				} else {
+					body, _ := io.ReadAll(extResp.Body)
+					results = append(results, UserSearchResult{
+						ID:          "",
+						DisplayName: fmt.Sprintf("Error %d (Please renew web token)", extResp.StatusCode),
+						Mail:        string(body),
+					})
 				}
+			} else {
+				results = append(results, UserSearchResult{
+					ID:          "",
+					DisplayName: "ExtSearch Net Error",
+					Mail:        extErr.Error(),
+				})
 			}
 		}
 	}
