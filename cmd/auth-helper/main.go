@@ -304,6 +304,11 @@ func main() {
 		fmt.Println("→ Renewing EDU token...")
 		renewEdu(page, captured)
 
+	case "fabric":
+		fmt.Println("→ Renewing FABRIC token...")
+		context.Close()
+		manualFabricTokenCapture(pw, sessionDir, captured)
+
 	default:
 		fmt.Println("→ Full token capture...")
 		if firstRun {

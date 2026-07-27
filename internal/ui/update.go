@@ -120,7 +120,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if is401(msg.err) {
 			which := detectExpiredToken(msg.err)
 			if which == "graph" {
-				m.err = fmt.Errorf("MS_GRAPH_TOKEN expired — run ./msTTui-auth manually")
+				m.err = fmt.Errorf("MS_GRAPH_TOKEN expired — run: ./msTTui-auth --renew graph")
+			} else if which == "fabric" {
+				m.err = fmt.Errorf("TEAMS_FABRIC_TOKEN expired — run: ./msTTui-auth --renew fabric")
 			} else {
 				m.tokenRenewing = true
 				return m, launchAuthHelperCmd("web")
@@ -215,8 +217,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		if strings.Contains(msg.err.Error(), "401") {
-			if !m.tokenRenewing {
+		if is401(msg.err) {
+			which := detectExpiredToken(msg.err)
+			if which == "graph" {
+				m.viewport.SetContent("MS_GRAPH_TOKEN expired — run: ./msTTui-auth --renew graph")
+			} else if which == "fabric" {
+				m.viewport.SetContent("TEAMS_FABRIC_TOKEN expired — run: ./msTTui-auth --renew fabric")
+			} else if !m.tokenRenewing {
 				m.tokenRenewing = true
 				return m, launchAuthHelperCmd("web")
 			}
@@ -397,7 +404,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if is401(msg.err) {
 			which := detectExpiredToken(msg.err)
 			if which == "graph" {
-				m.err = fmt.Errorf("MS_GRAPH_TOKEN expired — run ./msTTui-auth manually")
+				m.err = fmt.Errorf("MS_GRAPH_TOKEN expired — run: ./msTTui-auth --renew graph")
+			} else if which == "fabric" {
+				m.err = fmt.Errorf("TEAMS_FABRIC_TOKEN expired — run: ./msTTui-auth --renew fabric")
 			} else if !m.tokenRenewing {
 				m.tokenRenewing = true
 				return m, launchAuthHelperCmd("web")
@@ -871,6 +880,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case removeMemberMsg:
 		m.showRemoveMemberPopup = false
 		if msg.err != nil {
+			if is401(msg.err) {
+				return m, func() tea.Msg { return errMsg{err: msg.err} }
+			}
 			m.downloadStatus = fmt.Sprintf("✗ %v", msg.err)
 		} else {
 			m.downloadStatus = "✓ Member removed"
@@ -888,6 +900,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.addChannelMemberInput.Reset()
 		m.addChannelMemberResults = nil
 		if msg.err != nil {
+			if is401(msg.err) {
+				return m, func() tea.Msg { return errMsg{err: msg.err} }
+			}
 			m.downloadStatus = fmt.Sprintf("✗ %v", msg.err)
 		} else {
 			m.downloadStatus = "✓ Member added to channel"
@@ -909,6 +924,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case removeChannelMemberMsg:
 		m.showRemoveChannelMemberPopup = false
 		if msg.err != nil {
+			if is401(msg.err) {
+				return m, func() tea.Msg { return errMsg{err: msg.err} }
+			}
 			m.downloadStatus = fmt.Sprintf("✗ %v", msg.err)
 		} else {
 			m.downloadStatus = "✓ Member removed from channel"

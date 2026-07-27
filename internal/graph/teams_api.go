@@ -447,6 +447,9 @@ func (c *Client) AddChannelMember(teamGUID, channelThreadID, userID, tenantID st
 		return err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == 401 {
+		return fmt.Errorf("add channel member error 401: TEAMS_FABRIC_TOKEN expired")
+	}
 	if resp.StatusCode == 200 || resp.StatusCode == 201 || resp.StatusCode == 202 {
 		return nil
 	}
@@ -494,6 +497,9 @@ func (c *Client) RemoveChannelMember(teamGUID, channelThreadID, userID, tenantID
 		return err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == 401 {
+		return fmt.Errorf("remove channel member error 401: TEAMS_FABRIC_TOKEN expired")
+	}
 	if resp.StatusCode == 200 || resp.StatusCode == 204 {
 		return nil
 	}

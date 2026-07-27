@@ -258,6 +258,9 @@ func detectExpiredToken(err error) string {
 	if strings.Contains(s, "Lifetime validation failed") || strings.Contains(s, "MS_GRAPH") {
 		return "graph"
 	}
+	if strings.Contains(s, "TEAMS_FABRIC_TOKEN") {
+		return "fabric"
+	}
 	return "web"
 }
 
