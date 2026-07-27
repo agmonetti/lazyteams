@@ -1,4 +1,3 @@
-tokens.json
 # Binaries
 msTTui
 msTTui-auth
@@ -14,7 +13,10 @@ debug*.log
 debug*.json
 cmd/debug-*/
 
-# Environment
-.env
-debug_*.json
-.plan/
+# Credentials
+tokens.env
+tokens.json
+browser-session/
+prefs.json
+*.env
+.config/teamstui/
