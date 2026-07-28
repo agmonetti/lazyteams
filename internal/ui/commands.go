@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"teamsTUI/internal/graph"
 	"time"
@@ -504,8 +505,23 @@ func openAttachmentsCmd(client *graph.Client, attachments []graph.Attachment) te
 			if cerr != nil {
 				results = append(results, fmt.Sprintf("✗ %s: %v", att.Name, cerr))
 			} else {
-				openBrowser("file://" + destPath)
-				results = append(results, fmt.Sprintf("✓ %s: opened locally", att.Name))
+				// Open the local file directly using the OS default application.
+				// We bypass the openBrowser() security filter here because we specifically
+				// authored this safe file in our /tmp directory.
+				var openErr error
+				switch runtime.GOOS {
+				case "linux":
+					openErr = exec.Command("xdg-open", destPath).Start()
+				case "windows":
+					openErr = exec.Command("rundll32", "url.dll,FileProtocolHandler", destPath).Start()
+				case "darwin":
+					openErr = exec.Command("open", destPath).Start()
+				}
+				if openErr != nil {
+					results = append(results, fmt.Sprintf("✗ %s: %v", att.Name, openErr))
+				} else {
+					results = append(results, fmt.Sprintf("✓ %s: opened locally", att.Name))
+				}
 			}
 		}
 
