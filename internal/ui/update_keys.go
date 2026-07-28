@@ -830,6 +830,11 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "v":
 			// File preview: text in TUI, rest in browser
 			if !m.focusLeft && m.viewMode == ModeChat && len(m.messages) > 0 {
+				if !m.cursorMode {
+					m.downloadStatus = "Press 'c' to enter Cursor Mode and select the message first"
+					m.downloadStatusID++
+					return m, clearStatusAfter(m.downloadStatusID)
+				}
 				roots := rootMessages(m.messages)
 				if m.messageCursor >= 0 && m.messageCursor < len(roots) {
 					msg := roots[m.messageCursor]
