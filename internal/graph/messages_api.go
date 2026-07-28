@@ -7,6 +7,7 @@ import (
 	"html"
 	"io"
 	"net/http"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -225,6 +226,19 @@ func (c *Client) GetMessagesWithLink(teamID, channelID string, pageSize int) ([]
 							})
 						}
 					}
+				}
+			}
+
+			// Extract AMS images from HTML
+			imgSrcRe := regexp.MustCompile(`(?i)<img[^>]*src="([^"]+)"`)
+			matches := imgSrcRe.FindAllStringSubmatch(m.Content, -1)
+			for i, match := range matches {
+				if len(match) > 1 {
+					attachments = append(attachments, Attachment{
+						Name: fmt.Sprintf("Image_%d.png", i+1),
+						URL:  match[1],
+						Type: "ams_image",
+					})
 				}
 			}
 

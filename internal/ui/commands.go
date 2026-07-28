@@ -465,6 +465,54 @@ func getUniquePath(baseDir, name string) string {
 	}
 }
 
+func openAttachmentsCmd(client *graph.Client, attachments []graph.Attachment) tea.Cmd {
+	return func() tea.Msg {
+		var results []string
+		tmpDir := filepath.Join(os.TempDir(), "msTTui-attachments")
+		os.MkdirAll(tmpDir, 0700)
+
+		for _, att := range attachments {
+			var body io.ReadCloser
+			var err error
+
+			if att.Type == "ams_image" {
+				body, err = client.DownloadAMSImage(att.URL)
+			} else if att.Type == "file" || att.Type == "link" {
+				// Links and files without content in AMS can be opened in browser
+				openBrowser(att.URL)
+				results = append(results, fmt.Sprintf("⟳ %s: opened in browser", att.Name))
+				continue
+			}
+
+			if err != nil {
+				results = append(results, fmt.Sprintf("✗ %s: %v", att.Name, err))
+				continue
+			}
+
+			destPath := getUniquePath(tmpDir, att.Name)
+			out, ferr := os.Create(destPath)
+			if ferr != nil {
+				body.Close()
+				results = append(results, fmt.Sprintf("✗ %s: %v", att.Name, ferr))
+				continue
+			}
+			
+			_, cerr := io.Copy(out, body)
+			body.Close()
+			out.Close()
+			
+			if cerr != nil {
+				results = append(results, fmt.Sprintf("✗ %s: %v", att.Name, cerr))
+			} else {
+				openBrowser("file://" + destPath)
+				results = append(results, fmt.Sprintf("✓ %s: opened locally", att.Name))
+			}
+		}
+
+		return downloadDoneMsg{results: results}
+	}
+}
+
 func downloadFilesCmd(client *graph.Client, teamID, driveID string, items []graph.DriveItem, destDir string) tea.Cmd {
 	return func() tea.Msg {
 		if destDir == "" {

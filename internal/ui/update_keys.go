@@ -827,9 +827,26 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-	case "v":
-		// File preview: text in TUI, rest in browser
-		if !m.focusLeft && m.viewMode == ModeFiles && len(m.files) > 0 && !m.previewing {
+		case "v":
+			// File preview: text in TUI, rest in browser
+			if !m.focusLeft && m.viewMode == ModeChat && len(m.messages) > 0 {
+				roots := rootMessages(m.messages)
+				if m.messageCursor >= 0 && m.messageCursor < len(roots) {
+					msg := roots[m.messageCursor]
+					if len(msg.Attachments) > 0 {
+						m.downloadStatus = "Downloading attachments..."
+						m.downloadStatusID++
+						return m, tea.Batch(
+							openAttachmentsCmd(m.client, msg.Attachments),
+							clearStatusAfter(m.downloadStatusID),
+						)
+					} else {
+						m.downloadStatus = "No attachments in selected message"
+						m.downloadStatusID++
+						return m, clearStatusAfter(m.downloadStatusID)
+					}
+				}
+			} else if !m.focusLeft && m.viewMode == ModeFiles && len(m.files) > 0 && !m.previewing {
 			if len(m.selectedFiles) > 1 {
 				m.downloadStatus = "Only one file can be previewed at a time"
 				m.downloadStatusID++

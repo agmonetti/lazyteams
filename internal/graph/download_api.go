@@ -9,6 +9,27 @@ import (
 	"strings"
 )
 
+func (c *Client) DownloadAMSImage(imageURL string) (io.ReadCloser, error) {
+	req, err := http.NewRequest("GET", imageURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.WebToken)
+	req.Header.Set("Accept", "image/*, application/json, text/plain, */*")
+	req.Header.Set("x-ms-client-caller", "newChat")
+	req.Header.Set("x-ms-client-type", "web")
+	
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		resp.Body.Close()
+		return nil, fmt.Errorf("download AMS image error %d", resp.StatusCode)
+	}
+	return resp.Body, nil
+}
+
 func (c *Client) DownloadItem(teamID, itemID string) (io.ReadCloser, error) {
 	endpoint := fmt.Sprintf("https://graph.microsoft.com/v1.0/groups/%s/drive/items/%s/content", teamID, itemID)
 	return c.downloadContent(endpoint)
