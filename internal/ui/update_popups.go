@@ -315,7 +315,7 @@ func (m Model) handleThreadView(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
 		}
 		return m, nil, true
 	}
-	return m, nil, true
+	return m, nil, false
 }
 
 func (m Model) handleCursorModeTeams(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
@@ -424,7 +424,7 @@ func (m Model) handleCursorModeTeams(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) 
 		}
 		return m, nil, true
 	}
-	return m, nil, true
+	return m, nil, false
 }
 
 func (m Model) handleCursorModeDMs(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
@@ -517,7 +517,7 @@ func (m Model) handleCursorModeDMs(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
 		}
 		return m, nil, true
 	}
-	return m, nil, true
+	return m, nil, false
 }
 
 func (m Model) handleSearching(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
