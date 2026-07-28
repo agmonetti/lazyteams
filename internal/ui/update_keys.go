@@ -267,18 +267,18 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "tab":
 		m.focusLeft = !m.focusLeft
 
-		case "1":
-			m.workspace = WorkspaceTeams
-			m.focusLeft = true
-			m.focusList = 0
-			m.cursorOnDMHeader = false
-			m.cursorOnGroupHeader = false
+	case "1":
+		m.workspace = WorkspaceTeams
+		m.focusLeft = true
+		m.focusList = 0
+		m.cursorOnDMHeader = false
+		m.cursorOnGroupHeader = false
 
-		case "2":
-			m.workspace = WorkspaceDMs
-			m.focusLeft = true
-			m.cursorOnDMHeader = true
-			m.cursorOnGroupHeader = false
+	case "2":
+		m.workspace = WorkspaceDMs
+		m.focusLeft = true
+		m.cursorOnDMHeader = true
+		m.cursorOnGroupHeader = false
 		if !m.chatsLoaded {
 			m.loading = true
 			cmds = append(cmds, loadChatsCmd(m.client))
@@ -304,22 +304,22 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-		case "3":
-			m.workspace = WorkspaceActivity
-			m.focusLeft = true
-			m.cursorOnDMHeader = false
-			m.cursorOnGroupHeader = false
-			if !m.notifLoaded {
-				m.loading = true
-				m.selectedNotif = 0
-				cmds = append(cmds, loadNotificationsCmd(m.client))
-			}
+	case "3":
+		m.workspace = WorkspaceActivity
+		m.focusLeft = true
+		m.cursorOnDMHeader = false
+		m.cursorOnGroupHeader = false
+		if !m.notifLoaded {
+			m.loading = true
+			m.selectedNotif = 0
+			cmds = append(cmds, loadNotificationsCmd(m.client))
+		}
 
-		case "4":
-			m.workspace = WorkspaceAssignments
-			m.focusLeft = true
-			m.cursorOnDMHeader = false
-			m.cursorOnGroupHeader = false
+	case "4":
+		m.workspace = WorkspaceAssignments
+		m.focusLeft = true
+		m.cursorOnDMHeader = false
+		m.cursorOnGroupHeader = false
 		if !m.assignLoaded {
 			m.loading = true
 			m.selectedAssign = 0
@@ -402,33 +402,33 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					dmChats := dmChatIndices(m.chats)
 					groupChats := groupChatIndices(m.chats)
 					allVisible := visibleChatIndices(m.chats, m.dmSectionCollapsed, m.groupSectionCollapsed)
-						pos := indexOf(allVisible, m.selectedChat)
-						if pos > 0 {
-							prevIdx := allVisible[pos-1]
-							if isInGroup(m.chats, m.selectedChat) && isInDMs(m.chats, prevIdx) {
-								m.cursorOnGroupHeader = true
-							} else {
-								m.selectedChat = prevIdx
-								if m.viewMode == ModeChat {
-									m.loading = true
-									m.loadedConvID = m.chats[m.selectedChat].ID
-									m.messagesBackwardLink = ""
-									m.loadingMore = false
-									cmds = append(cmds, loadMessagesCmd(m.client, "", m.loadedConvID, 200))
-								} else if m.viewMode == ModeFiles {
-									m.loadedConvID = m.chats[m.selectedChat].ID
-									m.loading = true
-									m.messagesBackwardLink = ""
-									m.loadingMore = false
-									cmds = append(cmds, loadMessagesCmd(m.client, "", m.loadedConvID, 200))
-								}
-							}
-						} else if isInGroup(m.chats, m.selectedChat) {
+					pos := indexOf(allVisible, m.selectedChat)
+					if pos > 0 {
+						prevIdx := allVisible[pos-1]
+						if isInGroup(m.chats, m.selectedChat) && isInDMs(m.chats, prevIdx) {
 							m.cursorOnGroupHeader = true
-						} else if len(dmChats) > 0 && m.selectedChat == dmChats[0] {
-							m.cursorOnDMHeader = true
+						} else {
+							m.selectedChat = prevIdx
+							if m.viewMode == ModeChat {
+								m.loading = true
+								m.loadedConvID = m.chats[m.selectedChat].ID
+								m.messagesBackwardLink = ""
+								m.loadingMore = false
+								cmds = append(cmds, loadMessagesCmd(m.client, "", m.loadedConvID, 200))
+							} else if m.viewMode == ModeFiles {
+								m.loadedConvID = m.chats[m.selectedChat].ID
+								m.loading = true
+								m.messagesBackwardLink = ""
+								m.loadingMore = false
+								cmds = append(cmds, loadMessagesCmd(m.client, "", m.loadedConvID, 200))
+							}
 						}
-						_ = groupChats
+					} else if isInGroup(m.chats, m.selectedChat) {
+						m.cursorOnGroupHeader = true
+					} else if len(dmChats) > 0 && m.selectedChat == dmChats[0] {
+						m.cursorOnDMHeader = true
+					}
+					_ = groupChats
 				}
 			} else if m.workspace == WorkspaceActivity {
 				if len(m.notifications) > 0 && m.selectedNotif > 0 {
@@ -539,34 +539,34 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 						}
 					}
 				} else {
-						allVisible := visibleChatIndices(m.chats, m.dmSectionCollapsed, m.groupSectionCollapsed)
-						pos1 := indexOf(allVisible, m.selectedChat)
-						if pos1 < len(allVisible)-1 {
-							nextIdx := allVisible[pos1+1]
-							if isInDMs(m.chats, m.selectedChat) && isInGroup(m.chats, nextIdx) {
-								m.cursorOnGroupHeader = true
-							} else {
-								m.selectedChat = nextIdx
-								if m.viewMode == ModeChat {
-									m.loading = true
-									m.loadedConvID = m.chats[m.selectedChat].ID
-									m.messagesBackwardLink = ""
-									m.loadingMore = false
-									cmds = append(cmds, loadMessagesCmd(m.client, "", m.loadedConvID, 200))
-								} else if m.viewMode == ModeFiles {
-									m.loadedConvID = m.chats[m.selectedChat].ID
-									m.loading = true
-									m.messagesBackwardLink = ""
-									m.loadingMore = false
-									cmds = append(cmds, loadMessagesCmd(m.client, "", m.loadedConvID, 200))
-								}
-							}
-						} else if isInDMs(m.chats, m.selectedChat) {
-							groupChats := groupChatIndices(m.chats)
-							if len(groupChats) > 0 {
-								m.cursorOnGroupHeader = true
+					allVisible := visibleChatIndices(m.chats, m.dmSectionCollapsed, m.groupSectionCollapsed)
+					pos1 := indexOf(allVisible, m.selectedChat)
+					if pos1 < len(allVisible)-1 {
+						nextIdx := allVisible[pos1+1]
+						if isInDMs(m.chats, m.selectedChat) && isInGroup(m.chats, nextIdx) {
+							m.cursorOnGroupHeader = true
+						} else {
+							m.selectedChat = nextIdx
+							if m.viewMode == ModeChat {
+								m.loading = true
+								m.loadedConvID = m.chats[m.selectedChat].ID
+								m.messagesBackwardLink = ""
+								m.loadingMore = false
+								cmds = append(cmds, loadMessagesCmd(m.client, "", m.loadedConvID, 200))
+							} else if m.viewMode == ModeFiles {
+								m.loadedConvID = m.chats[m.selectedChat].ID
+								m.loading = true
+								m.messagesBackwardLink = ""
+								m.loadingMore = false
+								cmds = append(cmds, loadMessagesCmd(m.client, "", m.loadedConvID, 200))
 							}
 						}
+					} else if isInDMs(m.chats, m.selectedChat) {
+						groupChats := groupChatIndices(m.chats)
+						if len(groupChats) > 0 {
+							m.cursorOnGroupHeader = true
+						}
+					}
 				}
 			} else if m.workspace == WorkspaceActivity {
 				if len(m.notifications) > 0 && m.selectedNotif < len(m.notifications)-1 {
@@ -835,9 +835,21 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					m.downloadStatusID++
 					return m, clearStatusAfter(m.downloadStatusID)
 				}
-				roots := rootMessages(m.messages)
-				if m.messageCursor >= 0 && m.messageCursor < len(roots) {
-					msg := roots[m.messageCursor]
+				
+				var msg graph.Message
+				if m.workspace == WorkspaceDMs {
+					validMsgs := validDMMessages(m.messages)
+					if m.messageCursor >= 0 && m.messageCursor < len(validMsgs) {
+						msg = validMsgs[m.messageCursor]
+					}
+				} else {
+					roots := rootMessages(m.messages)
+					if m.messageCursor >= 0 && m.messageCursor < len(roots) {
+						msg = roots[m.messageCursor]
+					}
+				}
+
+				if msg.ID != "" {
 					if len(msg.Attachments) > 0 {
 						m.downloadStatus = "Downloading attachments..."
 						m.downloadStatusID++
@@ -1025,13 +1037,13 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.viewMode = ModeChat // MUST RESET
 			m.selectedFiles = make(map[int]bool)
 			m.folderStack = nil
-				chatID := m.chats[m.selectedChat].ID
-				m.loadedConvID = chatID
-				if m.chatUnread[chatID] {
-					delete(m.chatUnread, chatID) // Clear badge on open
-					m.ReSortChats()
-				}
-				m.messagesBackwardLink = ""
+			chatID := m.chats[m.selectedChat].ID
+			m.loadedConvID = chatID
+			if m.chatUnread[chatID] {
+				delete(m.chatUnread, chatID) // Clear badge on open
+				m.ReSortChats()
+			}
+			m.messagesBackwardLink = ""
 			m.loadingMore = false
 			cmds = append(cmds, loadMessagesCmd(m.client, "", chatID, 200))
 		} else if m.focusLeft && m.workspace == WorkspaceTeams && m.focusList == 0 {
