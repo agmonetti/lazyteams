@@ -56,6 +56,7 @@ var HelpData = []HelpCategory{
 		Shortcuts: []Shortcut{
 			{Key: "c", Description: "Toggle cursor mode (Select)"},
 			{Key: "Enter", Description: "Open Thread (Cursor mode)"},
+			{Key: "v", Description: "View/Download Image (Cursor mode)"},
 			{Key: "e / E", Description: "React / Edit (Cursor mode)"},
 			{Key: "Del", Description: "Delete msg (Cursor mode)"},
 			{Key: "i/r", Description: "Type message / Reply"},
