@@ -907,6 +907,10 @@ func (m Model) View() string {
 					Render(fmt.Sprintf("(%d) activity notification%s", unreadNotifs, pluralS(unreadNotifs))))
 			}
 
+			if m.downloadStatus != "" {
+				parts = append(parts, lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Render(m.downloadStatus))
+			}
+
 			if len(parts) > 0 {
 				leftBanner = strings.Join(parts, splashSubStyle.Render("  ·  "))
 			}
