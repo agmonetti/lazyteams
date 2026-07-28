@@ -70,6 +70,14 @@ func (m Model) handleInsertMode(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 			}
 		}
 		switch msg.String() {
+		case "ctrl+p": // Paste image from clipboard
+			m.downloadStatus = "Uploading image from clipboard..."
+			m.downloadStatusID++
+			v := m.input.Value()
+			return m, tea.Batch(
+				pasteImageCmd(m.client, m.activeConversationID(), v),
+				clearStatusAfter(m.downloadStatusID),
+			), true
 		case "esc": // Exit insert mode
 			m.isTyping = false
 			m.input.Blur()

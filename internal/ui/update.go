@@ -568,6 +568,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Batch(cmds...)
 
+	case imagePastedMsg:
+		m.downloading = false
+		if msg.err != nil {
+			m.downloadStatus = "✗ " + msg.err.Error()
+		} else {
+			m.downloadStatus = "✓ Image pasted successfully"
+			m.input.Reset()
+			// Reload messages to show the new one
+			cmds = append(cmds, loadMessagesCmd(m.client, "", m.activeConversationID(), 200))
+		}
+		m.downloadStatusID++
+		cmds = append(cmds, clearStatusAfter(m.downloadStatusID))
+		return m, tea.Batch(cmds...)
+
 	case downloadDoneMsg:
 		m.downloading = false
 		m.downloadStatus = strings.Join(msg.results, " | ")

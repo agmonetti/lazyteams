@@ -803,3 +803,37 @@ func checkUnreadCmd(client *graph.Client, chat graph.Chat) tea.Cmd {
 		}
 	}
 }
+
+type imagePastedMsg struct {
+	err error
+}
+
+func pasteImageCmd(client *graph.Client, channelID, textContent string) tea.Cmd {
+	return func() tea.Msg {
+		data, err := getClipboardImage()
+		if err != nil {
+			return downloadDoneMsg{results: []string{"✗ Paste error: " + err.Error()}}
+		}
+
+		// Save to temporary file
+		tmpPath := filepath.Join(os.TempDir(), "msTTui-pasted-image.png")
+		err = os.WriteFile(tmpPath, data, 0600)
+		if err != nil {
+			return downloadDoneMsg{results: []string{"✗ Paste error: " + err.Error()}}
+		}
+
+		// Upload to OneDrive
+		item, err := client.UploadFileToOneDrive(tmpPath)
+		if err != nil {
+			return downloadDoneMsg{results: []string{"✗ Upload error: " + err.Error()}}
+		}
+
+		// Send message
+		err = client.SendMessageWithFile(channelID, textContent, nil, item)
+		if err != nil {
+			return downloadDoneMsg{results: []string{"✗ Send error: " + err.Error()}}
+		}
+
+		return imagePastedMsg{}
+	}
+}

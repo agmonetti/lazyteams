@@ -333,7 +333,7 @@ type Model struct {
 
 func New(client *graph.Client, userName string) Model {
 	ta := textarea.New()
-	ta.Placeholder = "Press 'i' to type a message..."
+	ta.Placeholder = "Type a message... (Esc to cancel, Enter to send, Ctrl+P to paste image)"
 	ta.ShowLineNumbers = false
 	ta.CharLimit = 4000
 	ta.SetWidth(50)
