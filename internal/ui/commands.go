@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -806,6 +807,45 @@ func checkUnreadCmd(client *graph.Client, chat graph.Chat) tea.Cmd {
 
 type imagePastedMsg struct {
 	err error
+}
+
+func sendPendingMessageCmd(
+	client *graph.Client,
+	conversationID string,
+	text string,
+	pending []PendingImage,
+	mentions []graph.MentionedUser,
+) tea.Cmd {
+	return func() tea.Msg {
+		ctx := context.Background()
+
+		// Upload first image via AMS (soporte para una imagen por ahora)
+		img, err := client.UploadInlineImage(ctx, conversationID, pending[0].Data, pending[0].ContentType)
+		if err != nil {
+			return errMsg{fmt.Errorf("AMS upload error: %w", err)}
+		}
+
+		// Send message with inline image
+		if err := client.SendMessageWithInlineImage(conversationID, text, img, len(pending[0].Data)); err != nil {
+			return errMsg{err}
+		}
+
+		return messageSentMsg{}
+	}
+}
+
+func readClipboardImageCmd() tea.Cmd {
+	return func() tea.Msg {
+		data, err := getClipboardImage()
+		if err != nil {
+			return clipboardImageErrMsg{err: err}
+		}
+
+		return clipboardImageLoadedMsg{
+			Data:        data,
+			ContentType: "image/png", // por ahora fijo; luego puede detectarse
+		}
+	}
 }
 
 func pasteImageCmd(client *graph.Client, channelID, textContent string) tea.Cmd {

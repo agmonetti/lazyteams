@@ -77,6 +77,17 @@ func renderInfoContent(m *Model) string {
 	return content
 }
 
+func renderPendingImages(pending []PendingImage) string {
+	if len(pending) == 0 {
+		return ""
+	}
+
+	return lipgloss.NewStyle().
+		Foreground(lipgloss.Color("212")).
+		Bold(true).
+		Render(fmt.Sprintf("[%d imagen(es) lista(s)]", len(pending)))
+}
+
 func (m Model) View() string {
 	if m.err != nil {
 		return fmt.Sprintf("\n[!] Error: %v\n\nPress 'q' to quit.\n", m.err)
@@ -418,10 +429,18 @@ func (m Model) View() string {
 		if !m.focusLeft && m.viewMode == ModeChat {
 			var inputView string
 			if m.isSearching {
-				inputView = lipgloss.NewStyle().Foreground(lipgloss.Color("205")).Render("Search: ") + m.searchInput.View()
+				inputView = lipgloss.NewStyle().
+					Foreground(lipgloss.Color("205")).
+					Render("Search: ") + m.searchInput.View()
 			} else {
 				inputView = m.input.View()
 			}
+
+			pending := renderPendingImages(m.pendingImages)
+			if pending != "" {
+				rightContent += pending + "\n"
+			}
+
 			rightContent += inputView
 		}
 	} else if m.workspace == WorkspaceTeams {
@@ -480,10 +499,18 @@ func (m Model) View() string {
 
 			var inputView string
 			if m.isSearching {
-				inputView = lipgloss.NewStyle().Foreground(lipgloss.Color("205")).Render("Search: ") + m.searchInput.View()
+				inputView = lipgloss.NewStyle().
+					Foreground(lipgloss.Color("205")).
+					Render("Search: ") + m.searchInput.View()
 			} else {
 				inputView = m.input.View()
 			}
+
+			pending := renderPendingImages(m.pendingImages)
+			if pending != "" {
+				rightContent += pending + "\n"
+			}
+
 			rightContent += inputView
 		}
 	} else if m.workspace == WorkspaceActivity {

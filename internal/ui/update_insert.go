@@ -11,6 +11,32 @@ func (m Model) handleInsertMode(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	var cmds []tea.Cmd
 	var cmd tea.Cmd
 	switch msg := msg.(type) {
+	case clipboardImageLoadedMsg:
+		if len(m.pendingImages) > 0 {
+			// Replace placeholder with real data
+			m.pendingImages[len(m.pendingImages)-1] = PendingImage{
+				Data:        msg.Data,
+				ContentType: msg.ContentType,
+			}
+		} else {
+			m.pendingImages = append(m.pendingImages, PendingImage{
+				Data:        msg.Data,
+				ContentType: msg.ContentType,
+			})
+		}
+		m.downloadStatus = "Image staged successfully"
+		m.downloadStatusID++
+		return m, clearStatusAfter(m.downloadStatusID), true
+
+	case clipboardImageErrMsg:
+		// Remove placeholder on error
+		if len(m.pendingImages) > 0 {
+			m.pendingImages = m.pendingImages[:len(m.pendingImages)-1]
+		}
+		m.downloadStatus = "Clipboard image error: " + msg.err.Error()
+		m.downloadStatusID++
+		return m, clearStatusAfter(m.downloadStatusID), true
+
 	case tea.KeyMsg:
 		// If the popup is open, arrows and enter go to the popup
 		if m.showMentionPopup {
@@ -42,65 +68,64 @@ func (m Model) handleInsertMode(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 				m.showMentionPopup = false
 				m.mentionSuggestions = nil
 				m.mentionCursor = 0
-				if m.ready {
-					rightInnerHeight := m.height - 6 - 2
-					if rightInnerHeight < 1 {
-						rightInnerHeight = 1
-					}
-					inputHeight := strings.Count(m.input.View(), "\n") + 1
-					newVpHeight := rightInnerHeight - 4 - inputHeight
-					if newVpHeight < 5 {
-						newVpHeight = 5
-					}
-					m.viewport.Height = newVpHeight
-				}
+				m.recalculateViewportHeight()
 				return m, nil, true
 			case "esc":
 				m.showMentionPopup = false
-				if m.ready {
-					rightInnerHeight := m.height - 6 - 2
-					inputHeight := strings.Count(m.input.View(), "\n") + 1
-					newVpHeight := rightInnerHeight - 4 - inputHeight
-					if newVpHeight < 5 {
-						newVpHeight = 5
-					}
-					m.viewport.Height = newVpHeight
-				}
+				m.recalculateViewportHeight()
 				return m, nil, true
 			}
 		}
 		switch msg.String() {
-		case "ctrl+p": // Paste image from clipboard
-			m.downloadStatus = "Uploading image from clipboard..."
-			m.downloadStatusID++
-			v := m.input.Value()
-			return m, tea.Batch(
-				pasteImageCmd(m.client, m.activeConversationID(), v),
-				clearStatusAfter(m.downloadStatusID),
-			), true
+		case "ctrl+p": // Stage image from clipboard
+			// Add a placeholder immediately so viewport height adjusts
+			// before the async clipboard read completes
+			m.pendingImages = append(m.pendingImages, PendingImage{
+				Data:        nil,
+				ContentType: "image/png",
+			})
+			return m, readClipboardImageCmd(), true
+		case "ctrl+v": // Block paste to avoid breaking the textarea
+			return m, nil, true
 		case "esc": // Exit insert mode
 			m.isTyping = false
 			m.input.Blur()
 			m.input.Reset()
-			// Restore viewport height
-			if m.ready {
-				rightInnerHeight := m.height - 6 - 2
-				m.viewport.Height = rightInnerHeight - 4 - 1
-			}
+			m.pendingImages = nil
+			m.recalculateViewportHeight()
 			return m, nil, true
 		case "enter": // Send message
 			v := m.input.Value()
-			if v != "" && m.activeConversationID() != "" {
+
+			if (v != "" || len(m.pendingImages) > 0) && m.activeConversationID() != "" {
+				pending := m.pendingImages
+
 				m.input.Reset()
+				m.pendingImages = nil
 				m.isTyping = false
 				m.input.Blur()
-				if m.ready {
-					rightInnerHeight := m.height - 6 - 2
-					m.viewport.Height = rightInnerHeight - 4 - 1
-				}
+
+				m.recalculateViewportHeight()
+
 				m.loading = true
 				mentions := resolveMentions(v, m.buildMemberIndex())
-				return m, sendMessageCmd(m.client, m.activeConversationID(), v, mentions), true
+
+				if len(pending) > 0 {
+					return m, sendPendingMessageCmd(
+						m.client,
+						m.activeConversationID(),
+						v,
+						pending,
+						mentions,
+					), true
+				}
+
+				return m, sendMessageCmd(
+					m.client,
+					m.activeConversationID(),
+					v,
+					mentions,
+				), true
 			}
 		}
 	}
@@ -145,25 +170,8 @@ func (m Model) handleInsertMode(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	}
 
 	// Adjust viewport height dynamically as textarea grows
-	if m.ready {
-		rightInnerHeight := m.height - 6 - 2
-		inputHeight := strings.Count(m.input.View(), "\n") + 1
+	m.recalculateViewportHeight()
 
-		popupHeight := 0
-		if m.showMentionPopup && len(m.mentionSuggestions) > 0 {
-			lines := len(m.mentionSuggestions)
-			if lines > 5 {
-				lines = 5
-			}
-			popupHeight = lines + 2 // borders
-		}
-
-		newVpHeight := rightInnerHeight - 4 - inputHeight - popupHeight
-		if newVpHeight < 5 {
-			newVpHeight = 5 // minimum safety height
-		}
-		m.viewport.Height = newVpHeight
-	}
-
-	return m, tea.Batch(cmds...), true
+	_, isKey := msg.(tea.KeyMsg)
+	return m, tea.Batch(cmds...), isKey
 }

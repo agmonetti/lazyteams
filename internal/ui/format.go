@@ -12,6 +12,8 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+var trailingSpaceWithAnsi = regexp.MustCompile(`(\x1b\[[0-9;]*m|[ \t\r])+$`)
+
 func getOptimalWrapWidth(raw string, maxW int) int {
 	lines := strings.Split(raw, "\n")
 	max := 0
@@ -326,32 +328,49 @@ func formatMessagesDM(messages []graph.Message, width int, selfName, selfID stri
 
 		if isSelf {
 			tsRaw := metaStyle.Render(timeStr)
-			timestamp := lipgloss.PlaceHorizontal(actualW, lipgloss.Right, tsRaw)
+			timestamp := lipgloss.PlaceHorizontal(actualW-2, lipgloss.Right, tsRaw)
 
 			var wrapped string
 			if msg.Deleted {
 				wrapped = systemEventStyle.Render("This message has been deleted.")
 			} else {
 				rawBody := strings.TrimSpace(body)
-				maxW := actualW * 2 / 3
 
-				optW := getOptimalWrapWidth(rawBody, maxW)
-				wrapped = renderMarkdown(rawBody, optW)
-			}
-
-			lines := strings.Split(wrapped, "\n")
-			actualMaxW := 0
-			for _, l := range lines {
-				lw := lipgloss.Width(l)
-				if lw > actualMaxW {
-					actualMaxW = lw
+				if strings.Contains(rawBody, "[Attached Image]") {
+					imgStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Italic(true)
+					var renderedLines []string
+					for _, line := range strings.Split(rawBody, "\n") {
+						line = strings.TrimSpace(line)
+						if line == "[Attached Image]" {
+							renderedLines = append(renderedLines, imgStyle.Render(line))
+						} else if line != "" {
+							renderedLines = append(renderedLines, line)
+						}
+					}
+					wrapped = strings.Join(renderedLines, "\n")
+				} else {
+					maxW := actualW * 2 / 3
+					optW := getOptimalWrapWidth(rawBody, maxW)
+					wrapped = renderMarkdown(rawBody, optW)
+					var cleanLines []string
+					for _, l := range strings.Split(wrapped, "\n") {
+						cleanLines = append(cleanLines, trailingSpaceWithAnsi.ReplaceAllString(l, ""))
+					}
+					wrapped = strings.Join(cleanLines, "\n")
 				}
 			}
 
-			styledBlock := lipgloss.NewStyle().Width(actualMaxW).Render(wrapped)
-			placedBlock := lipgloss.PlaceHorizontal(actualW, lipgloss.Right, styledBlock)
+			// Align each line independently to the right
+			var placedLines []string
+			for _, l := range strings.Split(wrapped, "\n") {
+				if strings.TrimSpace(l) == "" {
+					continue
+				}
+				placedLines = append(placedLines, "  "+lipgloss.PlaceHorizontal(actualW-2, lipgloss.Right, l))
+			}
+			placedBlock := strings.Join(placedLines, "\n")
 
-			content += fmt.Sprintf("%s%s\n  %s\n", cursorStr, timestamp, placedBlock)
+			content += fmt.Sprintf("%s%s\n%s\n", cursorStr, timestamp, placedBlock)
 			if len(msg.Reactions) > 0 {
 				var reactionStr string
 				for _, rx := range msg.Reactions {
@@ -376,7 +395,21 @@ func formatMessagesDM(messages []graph.Message, width int, selfName, selfID stri
 				wrapped = systemEventStyle.Render("This message has been deleted.")
 			} else {
 				rawBody := strings.TrimSpace(body)
-				wrapped = renderMarkdown(rawBody, actualW)
+				if strings.Contains(rawBody, "[Attached Image]") {
+					imgStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Italic(true)
+					var renderedLines []string
+					for _, line := range strings.Split(rawBody, "\n") {
+						line = strings.TrimSpace(line)
+						if line == "[Attached Image]" {
+							renderedLines = append(renderedLines, imgStyle.Render(line))
+						} else if line != "" {
+							renderedLines = append(renderedLines, line)
+						}
+					}
+					wrapped = strings.Join(renderedLines, "\n")
+				} else {
+					wrapped = renderMarkdown(rawBody, actualW)
+				}
 			}
 
 			content += fmt.Sprintf("%s%s\n  %s\n", cursorStr, header, strings.ReplaceAll(wrapped, "\n", "\n  "))

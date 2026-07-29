@@ -12,6 +12,21 @@ import (
 )
 
 type errMsg struct{ err error }
+
+type PendingImage struct {
+	Data        []byte
+	ContentType string
+}
+
+type clipboardImageLoadedMsg struct {
+	Data        []byte
+	ContentType string
+}
+
+type clipboardImageErrMsg struct {
+	err error
+}
+
 type channelsErrMsg struct {
 	teamID string
 	err    error
@@ -206,6 +221,9 @@ type Model struct {
 	// Input for sending messages
 	input    textarea.Model
 	isTyping bool
+
+	// Pending clipboard images (not uploaded yet)
+	pendingImages []PendingImage
 
 	// Search in chat
 	isSearching bool

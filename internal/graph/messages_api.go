@@ -529,6 +529,64 @@ func (c *Client) SendMessage(channelID, content string, mentions []MentionedUser
 	return nil
 }
 
+func buildInlineImageHTML(text string, img *AMSImage, dataLen int) string {
+	imgTag := fmt.Sprintf(
+		`<p><img src="%s" itemtype="http://schema.skype.com/AMSImage" itemscope="png" data-loading-state="success" data-inline-image="true" data-file-size="%d" alt="image" id="%s" itemid="%s" href="%s" target-src="%s"></p>`,
+		img.URL, dataLen, img.ObjectID, img.ObjectID, img.URL, img.URL,
+	)
+
+	if text == "" || strings.TrimSpace(text) == "" {
+		return imgTag
+	}
+
+	return imgTag + "<p>" + html.EscapeString(text) + "</p>"
+}
+
+// SendMessageWithInlineImage sends a message with inline AMS image references.
+func (c *Client) SendMessageWithInlineImage(
+	channelID string,
+	text string,
+	img *AMSImage,
+	dataLen int,
+) error {
+	url := fmt.Sprintf("https://teams.microsoft.com/api/chatsvc/amer/v1/users/ME/conversations/%s/messages", channelID)
+
+	htmlContent := buildInlineImageHTML(text, img, dataLen)
+
+	payload := map[string]interface{}{
+		"content":       htmlContent,
+		"messagetype":   "RichText/Html",
+		"contenttype":   "Text",
+		"amsreferences": []string{img.ObjectID},
+	}
+	bodyBytes, _ := json.Marshal(payload)
+
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(bodyBytes))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.WebToken)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/plain, */*")
+	req.Header.Set("behavioroverride", "redirectAs404")
+	req.Header.Set("x-ms-migration", "True")
+	req.Header.Set("x-ms-request-priority", "0")
+	req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64; rv:151.0) Gecko/20100101 Firefox/151.0")
+	req.Header.Set("Referer", "https://teams.microsoft.com/")
+	req.Header.Set("Origin", "https://teams.microsoft.com")
+
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("chatsvc send error %d: %s", resp.StatusCode, string(b))
+	}
+	return nil
+}
+
 func (c *Client) SendReply(channelID, parentMessageID, content string, mentions []MentionedUser) error {
 	url := fmt.Sprintf(
 		"https://teams.microsoft.com/api/chatsvc/amer/v1/users/ME/conversations/%s%%3Bmessageid%%3D%s/messages",

@@ -21,7 +21,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.isTyping {
 		newModel, keyCmd, consumed := m.handleInsertMode(msg)
 		if consumed {
-			return newModel, keyCmd
+			modelWithHeight := newModel.(Model)
+			modelWithHeight.recalculateViewportHeight()
+			return modelWithHeight, keyCmd
 		}
 		m = newModel.(Model)
 		cmds = append(cmds, keyCmd)
@@ -47,25 +49,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Max height for textarea to prevent it from covering the whole screen
 		m.input.MaxHeight = rightInnerHeight / 3
 		
-		// We reserve fixed lines for the input placeholder
-		vpInnerHeight := rightInnerHeight - 4 - 2 // reserve 2 lines
-		if vpInnerHeight < 5 {
-			vpInnerHeight = 5
-		}
-		
 		if !m.ready {
-			m.viewport = viewport.New(rightInnerWidth, vpInnerHeight)
+			m.viewport = viewport.New(rightInnerWidth, 5) // set correctly by recalculate below
 			m.leftVp = viewport.New(leftInnerWidth, leftInnerHeight)
-			m.threadViewport = viewport.New(rightInnerWidth, vpInnerHeight-6)
+			m.threadViewport = viewport.New(rightInnerWidth, 5) // set correctly by recalculate below
 			m.ready = true
 		} else {
 			m.viewport.Width = rightInnerWidth
-			m.viewport.Height = vpInnerHeight
 			m.leftVp.Width = leftInnerWidth
 			m.leftVp.Height = leftInnerHeight
 			m.threadViewport.Width = rightInnerWidth
-			m.threadViewport.Height = vpInnerHeight - 6
 		}
+		
+		m.recalculateViewportHeight()
 
 		// Re-wrap existing content with the new width
 		if m.ready && len(m.messages) > 0 {
@@ -592,6 +588,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, clearStatusAfter(m.downloadStatusID)
 
+	case statusMsg:
+		m.downloadStatus = msg.text
+		m.downloadStatusID++
+		return m, clearStatusAfter(m.downloadStatusID)
+
 	case clearDownloadStatusMsg:
 		if msg.id == m.downloadStatusID {
 			m.downloadStatus = ""
@@ -1071,6 +1072,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		return m.handleKeyMsg(msg)
 	}
+
+	// Always ensure viewport height is correct for current state
+	m.recalculateViewportHeight()
 
 	return m, tea.Batch(cmds...)
 }

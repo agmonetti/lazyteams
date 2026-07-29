@@ -100,6 +100,10 @@ type downloadDoneMsg struct {
 	results []string
 }
 
+type statusMsg struct {
+	text string
+}
+
 type clearDownloadStatusMsg struct{ id int }
 
 type threadReplySentMsg struct{}

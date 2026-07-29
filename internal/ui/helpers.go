@@ -463,3 +463,39 @@ func indexOf(slice []int, val int) int {
 	}
 	return -1
 }
+
+func (m *Model) recalculateViewportHeight() {
+	if !m.ready || m.height == 0 {
+		return
+	}
+	panelOuterHeight := m.height - 6
+	if panelOuterHeight < 2 {
+		panelOuterHeight = 2
+	}
+	rightInnerHeight := panelOuterHeight - 2
+
+	inputHeight := strings.Count(m.input.View(), "\n") + 1
+
+	popupHeight := 0
+	if m.showMentionPopup && len(m.mentionSuggestions) > 0 {
+		lines := len(m.mentionSuggestions)
+		if lines > 5 {
+			lines = 5
+		}
+		popupHeight = lines + 2
+	}
+
+	pendingLines := 0
+	if len(m.pendingImages) > 0 {
+		pendingLines = 1
+	}
+
+	// 4 lines for header (Title + \n + Tabs + \n\n)
+	// 1 line for the \n after the viewport
+	newVpHeight := rightInnerHeight - 4 - 1 - inputHeight - popupHeight - pendingLines
+	if newVpHeight < 5 {
+		newVpHeight = 5
+	}
+	m.viewport.Height = newVpHeight
+	m.threadViewport.Height = newVpHeight - 6
+}
