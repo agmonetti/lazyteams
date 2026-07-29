@@ -34,7 +34,7 @@ TUI client for Microsoft Teams. Runs entirely in the terminal — no Electron, n
 - **Chat & Messaging**: 
   - Send, read, **edit**, and **delete** messages.
   - **Inline image paste**: `Ctrl+P` pastes clipboard images via AMS (Microsoft's Attachment Media Service).
-  - **Thread view** with inline replies (`r`) and visual tree connectors (`┌─ └→`).
+  - **Thread view** with inline replies (`r`), visual tree connectors (`┌─ └→`), and **DM reply with quote** (`Enter` in cursor mode).
   - Native **Markdown rendering** (Glamour) translating Teams HTML (tables, bold, lists).
   - Infinite scroll pagination.
   - **@Mentions** with real-time autocomplete popup.
