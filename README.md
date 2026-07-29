@@ -33,11 +33,14 @@ TUI client for Microsoft Teams. Runs entirely in the terminal — no Electron, n
 - **Global UI**: Top status bar with global unread summary, customizable pane layout, and a full-screen interactive Cheat Sheet (`?`).
 - **Chat & Messaging**: 
   - Send, read, **edit**, and **delete** messages.
-  - **Thread view** with inline replies (Cursor mode).
+  - **Inline image paste**: `Ctrl+P` pastes clipboard images via AMS (Microsoft's Attachment Media Service).
+  - **Thread view** with inline replies (`r`) and visual tree connectors (`┌─ └→`).
   - Native **Markdown rendering** (Glamour) translating Teams HTML (tables, bold, lists).
   - Infinite scroll pagination.
   - **@Mentions** with real-time autocomplete popup.
-  - **Reactions** picker (emoji support) and real-time read receipts (Consumption Horizons).
+  - **Reactions** picker (emoji support) with auto-reload, and real-time read receipts (Consumption Horizons).
+  - **Attachments**: View/download AMS images and file attachments with `v` in cursor mode (opens locally via OS default app).
+  - Visual indicators: `[Attached Image]` / `[Attached File]` for messages with media.
   - Live chat search replacing the input bar (`/`).
 - **Files Management**: 
   - Recursive Drive browser with chunked uploads and multi-file downloads.
@@ -48,7 +51,7 @@ TUI client for Microsoft Teams. Runs entirely in the terminal — no Electron, n
   - Create and delete Teams (`N`, `D`) and Channels (`C`, `X`).
   - **Member Management**: Add or remove members from Teams and **Private Channels** (bypassing public API limitations using internal Fabric APIs).
   - Hide/unhide specific teams and channels (`H`, `A`) to declutter your workspace.
-- **Direct Messages**: Create new 1:1 chats via user search, auto-discovery of "Personal notes" chat (always prioritized at the top), and collapsible sections (DMs vs Groups).
+- **Direct Messages**: Create new 1:1 chats via user search (including **external/federated users** by exact email), auto-discovery of "Personal notes" chat (always prioritized at the top), collapsible sections (DMs vs Groups), and **dynamic sorting** by unread status and last activity.
 - **Education Assignments**: View instructions, download professor reference materials, see your submitted work, track statuses, upload files (`u`), submit (`s`), undo submit (`S`), and remove resources (`Del`).
 - **Presence**: Read and change your availability status (Available, Busy, DoNotDisturb, etc.).
 
