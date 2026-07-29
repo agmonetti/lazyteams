@@ -429,6 +429,18 @@ func (m Model) handleCursorModeTeams(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) 
 
 func (m Model) handleCursorModeDMs(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
 	switch msg.String() {
+	case "enter":
+		validMsgs := validDMMessages(m.messages)
+		if m.messageCursor < len(validMsgs) {
+			target := validMsgs[m.messageCursor]
+			m.replyToMsg = &target
+			m.cursorMode = false
+			m.isTyping = true
+			m.input.Focus()
+			m.recalculateViewportHeight()
+			return m, nil, true
+		}
+		return m, nil, true
 	case "esc":
 		m.cursorMode = false
 		m.messageCursor = 0

@@ -225,6 +225,9 @@ type Model struct {
 	// Pending clipboard images (not uploaded yet)
 	pendingImages []PendingImage
 
+	// Reply-to message in DM cursor mode; nil when not replying
+	replyToMsg *graph.Message
+
 	// Search in chat
 	isSearching bool
 	searchInput textinput.Model

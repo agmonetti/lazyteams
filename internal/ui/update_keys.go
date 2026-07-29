@@ -1033,6 +1033,7 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		} else if m.focusLeft && m.workspace == WorkspaceDMs && len(m.chats) > 0 {
 			m.loading = true
 			m.focusLeft = false
+			m.replyToMsg = nil
 			m.isTyping = false
 			m.viewMode = ModeChat // MUST RESET
 			m.selectedFiles = make(map[int]bool)
@@ -1053,6 +1054,7 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		} else if m.focusLeft && m.focusList == 1 && len(m.channels) > 0 {
 			m.loading = true
 			m.focusLeft = false
+			m.replyToMsg = nil
 			m.isTyping = false
 			m.viewMode = ModeChat // MUST RESET
 			m.selectedFiles = make(map[int]bool)

@@ -87,7 +87,13 @@ func (m Model) handleInsertMode(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 			return m, readClipboardImageCmd(), true
 		case "ctrl+v": // Block paste to avoid breaking the textarea
 			return m, nil, true
-		case "esc": // Exit insert mode
+		case "esc":
+			if m.replyToMsg != nil {
+				m.replyToMsg = nil
+				m.recalculateViewportHeight()
+				return m, nil, true
+			}
+			// Exit insert mode
 			m.isTyping = false
 			m.input.Blur()
 			m.input.Reset()
@@ -99,9 +105,11 @@ func (m Model) handleInsertMode(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 
 			if (v != "" || len(m.pendingImages) > 0) && m.activeConversationID() != "" {
 				pending := m.pendingImages
+				replyTo := m.replyToMsg
 
 				m.input.Reset()
 				m.pendingImages = nil
+				m.replyToMsg = nil
 				m.isTyping = false
 				m.input.Blur()
 
@@ -117,6 +125,7 @@ func (m Model) handleInsertMode(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 						v,
 						pending,
 						mentions,
+						replyTo,
 					), true
 				}
 
@@ -125,6 +134,7 @@ func (m Model) handleInsertMode(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 					m.activeConversationID(),
 					v,
 					mentions,
+					replyTo,
 				), true
 			}
 		}

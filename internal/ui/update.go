@@ -714,7 +714,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.workspace == WorkspaceDMs && msg.item.WebUrl != "" {
 				m.downloadStatusID++
 				return m, tea.Batch(
-					sendMessageCmd(m.client, m.activeConversationID(), fmt.Sprintf("📎 [%s](%s)", msg.item.Name, msg.item.WebUrl), nil),
+					sendMessageCmd(m.client, m.activeConversationID(), fmt.Sprintf("📎 [%s](%s)", msg.item.Name, msg.item.WebUrl), nil, nil),
 					clearStatusAfter(m.downloadStatusID),
 				)
 			}

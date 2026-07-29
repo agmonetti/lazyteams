@@ -490,9 +490,36 @@ func (m *Model) recalculateViewportHeight() {
 		pendingLines = 1
 	}
 
+	replyLines := 0
+	if m.replyToMsg != nil {
+		available := m.width - 5
+		leftOuterWidth := available / 3
+		rightOuterWidth := available - leftOuterWidth
+		rightInnerWidth := rightOuterWidth - 4
+
+		name := m.replyToMsg.FromName
+		if name == "User" {
+			name = m.userName
+		}
+		preview := m.replyToMsg.Body
+		if len([]rune(preview)) > 50 {
+			preview = string([]rune(preview)[:50]) + "..."
+		}
+		replyBarText := fmt.Sprintf("↩ Replying to %s: \"%s\"", name, preview)
+		textWidth := lipgloss.Width(replyBarText)
+		if rightInnerWidth > 0 {
+			replyLines = (textWidth + rightInnerWidth - 1) / rightInnerWidth
+		} else {
+			replyLines = 1
+		}
+		if replyLines < 1 {
+			replyLines = 1
+		}
+	}
+
 	// 4 lines for header (Title + \n + Tabs + \n\n)
 	// 1 line for the \n after the viewport
-	newVpHeight := rightInnerHeight - 4 - 1 - inputHeight - popupHeight - pendingLines
+	newVpHeight := rightInnerHeight - 4 - 1 - inputHeight - popupHeight - pendingLines - replyLines
 	if newVpHeight < 5 {
 		newVpHeight = 5
 	}

@@ -436,6 +436,19 @@ func (m Model) View() string {
 				inputView = m.input.View()
 			}
 
+			if m.replyToMsg != nil {
+				name := m.replyToMsg.FromName
+				if name == "User" {
+					name = m.userName
+				}
+				preview := m.replyToMsg.Body
+				if len([]rune(preview)) > 50 {
+					preview = string([]rune(preview)[:50]) + "..."
+				}
+				replyBar := metaStyle.Render(fmt.Sprintf("↩ Replying to %s: \"%s\"", name, preview))
+				rightContent += replyBar + "\n"
+			}
+
 			pending := renderPendingImages(m.pendingImages)
 			if pending != "" {
 				rightContent += pending + "\n"
@@ -1070,6 +1083,8 @@ func (m Model) footerText() string {
 		return dim.Render(" [Enter] Send reply   [Esc] Cancel")
 	case m.showThread:
 		return dim.Render(" [↑/↓] Navigate  [i/r] Reply  [e] React  [E] Edit  [Del] Delete  [Esc] Close")
+	case m.cursorMode && m.workspace == WorkspaceDMs:
+		return dim.Render(" [↑/↓] Navigate  [Enter] Reply  [e] React  [E] Edit  [Del] Delete  [Esc] Exit")
 	case m.cursorMode:
 		return dim.Render(" [↑/↓] Navigate  [Enter] Thread  [e] React  [E] Edit  [Del] Delete  [Esc] Exit")
 	case m.showCreateChannelPopup && m.createChannelStep == 0:

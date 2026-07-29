@@ -474,11 +474,13 @@ func (c *Client) SendMessageWithFile(channelID, content string, mentions []Menti
 	return nil
 }
 
-// SendMessage sends a text message to the specified channel using the internal API
-func (c *Client) SendMessage(channelID, content string, mentions []MentionedUser) error {
+// SendMessage sends a text message to the specified channel using the internal API.
+// If replyTo is non-nil, the message includes a quoted reply blockquote.
+func (c *Client) SendMessage(channelID, content string, mentions []MentionedUser, replyTo *Message) error {
 	url := fmt.Sprintf("https://teams.microsoft.com/api/chatsvc/amer/v1/users/ME/conversations/%s/messages", channelID)
 
-	htmlContent := "<p>" + html.EscapeString(content) + "</p>"
+	qtdMsgs := "[]"
+
 	properties := map[string]string{
 		"importance": "",
 		"subject":    "",
@@ -489,10 +491,41 @@ func (c *Client) SendMessage(channelID, content string, mentions []MentionedUser
 		"mentions":   "[]",
 	}
 
+	var htmlContent string
 	if len(mentions) > 0 {
 		var mentionsJSON string
 		htmlContent, mentionsJSON = BuildMentionContent(content, mentions)
 		properties["mentions"] = mentionsJSON
+	} else {
+		htmlContent = "<p>" + html.EscapeString(content) + "</p>"
+	}
+
+	if replyTo != nil {
+		preview := replyTo.Body
+		if len([]rune(preview)) > 100 {
+			preview = string([]rune(preview)[:100]) + "..."
+		}
+		ts := replyTo.CreatedAt.UnixMilli()
+		senderMRI := "8:orgid:" + replyTo.FromUserID
+		if strings.HasPrefix(replyTo.FromUserID, "8:") {
+			senderMRI = replyTo.FromUserID
+		}
+
+		blockquote := fmt.Sprintf(
+			`<blockquote itemscope itemtype="http://schema.skype.com/Reply" itemid="%d">`+
+				`<strong itemprop="mri" itemid="%s">%s</strong>`+
+				`<span itemprop="time" itemid="%d"></span>`+
+				`<p itemprop="preview"> %s</p>`+
+				`</blockquote>`,
+			ts, senderMRI, replyTo.FromName, ts, preview,
+		)
+		htmlContent = blockquote + htmlContent
+
+		qtdMsgs = fmt.Sprintf(
+			`[{"messageId":"%d","sender":"%s","time":%d}]`,
+			ts, senderMRI, ts,
+		)
+		properties["qtdMsgs"] = qtdMsgs
 	}
 
 	payload := map[string]interface{}{
@@ -543,11 +576,13 @@ func buildInlineImageHTML(text string, img *AMSImage, dataLen int) string {
 }
 
 // SendMessageWithInlineImage sends a message with inline AMS image references.
+// If replyTo is non-nil, the message includes a quoted reply blockquote.
 func (c *Client) SendMessageWithInlineImage(
 	channelID string,
 	text string,
 	img *AMSImage,
 	dataLen int,
+	replyTo *Message,
 ) error {
 	url := fmt.Sprintf("https://teams.microsoft.com/api/chatsvc/amer/v1/users/ME/conversations/%s/messages", channelID)
 
@@ -558,6 +593,36 @@ func (c *Client) SendMessageWithInlineImage(
 		"messagetype":   "RichText/Html",
 		"contenttype":   "Text",
 		"amsreferences": []string{img.ObjectID},
+	}
+
+	if replyTo != nil {
+		preview := replyTo.Body
+		if len([]rune(preview)) > 100 {
+			preview = string([]rune(preview)[:100]) + "..."
+		}
+		ts := replyTo.CreatedAt.UnixMilli()
+		senderMRI := "8:orgid:" + replyTo.FromUserID
+		if strings.HasPrefix(replyTo.FromUserID, "8:") {
+			senderMRI = replyTo.FromUserID
+		}
+
+		blockquote := fmt.Sprintf(
+			`<blockquote itemscope itemtype="http://schema.skype.com/Reply" itemid="%d">`+
+				`<strong itemprop="mri" itemid="%s">%s</strong>`+
+				`<span itemprop="time" itemid="%d"></span>`+
+				`<p itemprop="preview"> %s</p>`+
+				`</blockquote>`,
+			ts, senderMRI, replyTo.FromName, ts, preview,
+		)
+		htmlContent = blockquote + htmlContent
+
+		qtdMsgs := fmt.Sprintf(
+			`[{"messageId":"%d","sender":"%s","time":%d}]`,
+			ts, senderMRI, ts,
+		)
+		payload["properties"] = map[string]string{
+			"qtdMsgs": qtdMsgs,
+		}
 	}
 	bodyBytes, _ := json.Marshal(payload)
 

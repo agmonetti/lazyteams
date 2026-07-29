@@ -725,9 +725,9 @@ func sendReplyCmd(client *graph.Client, channelID, parentID, content string, men
 	}
 }
 
-func sendMessageCmd(client *graph.Client, channelID, content string, mentions []graph.MentionedUser) tea.Cmd {
+func sendMessageCmd(client *graph.Client, channelID, content string, mentions []graph.MentionedUser, replyTo *graph.Message) tea.Cmd {
 	return func() tea.Msg {
-		err := client.SendMessage(channelID, content, mentions)
+		err := client.SendMessage(channelID, content, mentions, replyTo)
 		if err != nil {
 			return messageSendErrMsg{err}
 		}
@@ -815,6 +815,7 @@ func sendPendingMessageCmd(
 	text string,
 	pending []PendingImage,
 	mentions []graph.MentionedUser,
+	replyTo *graph.Message,
 ) tea.Cmd {
 	return func() tea.Msg {
 		ctx := context.Background()
@@ -826,7 +827,7 @@ func sendPendingMessageCmd(
 		}
 
 		// Send message with inline image
-		if err := client.SendMessageWithInlineImage(conversationID, text, img, len(pending[0].Data)); err != nil {
+		if err := client.SendMessageWithInlineImage(conversationID, text, img, len(pending[0].Data), replyTo); err != nil {
 			return errMsg{err}
 		}
 
