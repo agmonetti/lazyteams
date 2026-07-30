@@ -230,8 +230,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case messageSentMsg:
 		// Message sent successfully. Reload messages for the channel/chat
 		m.messagesBackwardLink = ""
-			m.loadingMore = false
-			return m, loadMessagesCmd(m.client, "", m.activeConversationID(), 200)
+		m.loadingMore = false
+		m.forceScrollBottom = true
+		return m, loadMessagesCmd(m.client, "", m.activeConversationID(), 200)
 
 	case messageSendErrMsg:
 		m.viewport.SetContent(fmt.Sprintf("Error sending message: %v", msg.err))
@@ -243,8 +244,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.input.Reset()
 		// Reload messages to get the new reply
 		m.messagesBackwardLink = ""
-			m.loadingMore = false
-			return m, loadMessagesCmd(m.client, "", m.activeConversationID(), 200)
+		m.loadingMore = false
+		m.forceScrollBottom = true
+		return m, loadMessagesCmd(m.client, "", m.activeConversationID(), 200)
 
 	case threadReplySendErrMsg:
 		m.isReplyTyping = false
@@ -438,8 +440,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.loadedConvID = msg.id
 					m.loading = true
 					m.messagesBackwardLink = ""
-			m.loadingMore = false
-			return m, loadMessagesCmd(m.client, "", msg.id, 200)
+					m.loadingMore = false
+					m.forceScrollBottom = true
+					return m, loadMessagesCmd(m.client, "", msg.id, 200)
 				}
 				break
 			}
@@ -545,8 +548,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		m.messagesBackwardLink = ""
-			m.loadingMore = false
-			return m, loadMessagesCmd(m.client, msg.teamID, msg.threadID, 200)
+		m.loadingMore = false
+		m.forceScrollBottom = true
+		return m, loadMessagesCmd(m.client, msg.teamID, msg.threadID, 200)
 
 	case setPresenceMsg:
 		if msg.err != nil {
@@ -624,8 +628,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.viewMode = ModeChat
 				m.loading = true
 				m.messagesBackwardLink = ""
-			m.loadingMore = false
-			return m, loadMessagesCmd(m.client, "", ch.ID, 200)
+				m.loadingMore = false
+				m.forceScrollBottom = true
+				return m, loadMessagesCmd(m.client, "", ch.ID, 200)
 			}
 		}
 		m.chats = append([]graph.Chat{msg.chat}, m.chats...)
@@ -635,8 +640,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.viewMode = ModeChat
 		m.loading = true
 		m.messagesBackwardLink = ""
-			m.loadingMore = false
-			return m, loadMessagesCmd(m.client, "", msg.chat.ID, 200)
+		m.loadingMore = false
+		m.forceScrollBottom = true
+		return m, loadMessagesCmd(m.client, "", msg.chat.ID, 200)
 
 	case createDMErrMsg:
 		m.newDMErr = msg.err.Error()

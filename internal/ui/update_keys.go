@@ -800,6 +800,7 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 						m.loading = true
 						m.messagesBackwardLink = ""
 						m.loadingMore = false
+						m.forceScrollBottom = true
 						cmds = append(cmds, loadMessagesCmd(m.client, teamID, n.SourceThread, 200))
 					} else {
 						// Cache miss — async search across all teams
@@ -1046,6 +1047,7 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			m.messagesBackwardLink = ""
 			m.loadingMore = false
+			m.forceScrollBottom = true
 			cmds = append(cmds, loadMessagesCmd(m.client, "", chatID, 200))
 		} else if m.focusLeft && m.workspace == WorkspaceTeams && m.focusList == 0 {
 			if len(m.teams) > 0 {
@@ -1063,6 +1065,7 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.loadedConvID = chanID
 			m.messagesBackwardLink = ""
 			m.loadingMore = false
+			m.forceScrollBottom = true
 			cmds = append(cmds, loadMessagesCmd(m.client, m.teams[m.selectedTeam].ID, chanID, 200))
 			// Pre-load team members for mention resolution if not already loaded
 			if len(m.teamMembers) == 0 {

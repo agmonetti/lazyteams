@@ -30,10 +30,11 @@ func (m Model) handleMessagesMsg(msg messagesMsg) (tea.Model, tea.Cmd) {
 		}
 		atBottom := m.viewport.AtBottom()
 		m.viewport.SetContent(content)
-		if atBottom {
+		if atBottom || m.forceScrollBottom {
 			m.viewport.GotoBottom()
+			m.forceScrollBottom = false
 		}
-
+		
 		if m.showThread {
 			replies := repliesFor(m.messages, m.threadParentID)
 			threadContent := formatThread(m.threadParentMsg, replies, m.threadViewport.Width, m.userName, m.threadCursor, true)

@@ -217,6 +217,7 @@ type Model struct {
 	// Pagination
 	messagesBackwardLink string // URL for loading older messages
 	loadingMore          bool   // true while fetching older messages
+	forceScrollBottom    bool   // true when we should force scroll to bottom on next message load
 
 	// Input for sending messages
 	input    textarea.Model
