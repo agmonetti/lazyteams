@@ -126,7 +126,7 @@ The client requires 8 distinct tokens/cookies to talk to the many internal APIs 
 | `EDU_TOKEN` | ~1h | Education Assignments API |
 | `EDU_COOKIE` | ~24h | Education Assignments WAF bypass |
 | `TEAMS_SPACES_TOKEN` | ~24h | Team and standard channel creation/deletion |
-| `TEAMS_FABRIC_TOKEN` | ~24h | Private channel member management (JWE write-scope) |
+| `TEAMS_FABRIC_TOKEN` | ~24h | Private channel member management (JWE write-scope). Captured by changing your own role (Owner→Member) in any channel — fails if you are the only owner, but token is captured before the error. |
 | `TEAMS_COOKIE` | ~24h | General session authentication |
 
 Tokens are saved to `~/.config/teamstui/tokens.env`. The TUI automatically renews most expired tokens in the background via the auth helper.
