@@ -235,6 +235,7 @@ type Model struct {
 
 	// Token renewal
 	tokenRenewing bool
+	tokenRenewingType string // "graph", "fabric", "web", "notif", "edu"
 	tokenRenewErr string
 
 	// User

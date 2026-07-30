@@ -115,13 +115,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case errMsg:
 		if is401(msg.err) {
 			which := detectExpiredToken(msg.err)
-			if which == "graph" {
-				m.err = fmt.Errorf("MS_GRAPH_TOKEN expired — run: ./msTTui-auth --renew graph")
-			} else if which == "fabric" {
-				m.err = fmt.Errorf("TEAMS_FABRIC_TOKEN expired — run: ./msTTui-auth --renew fabric")
-			} else {
+			if !m.tokenRenewing {
 				m.tokenRenewing = true
-				return m, launchAuthHelperCmd("web")
+				m.tokenRenewingType = which
+				return m, launchAuthHelperCmd(which)
 			}
 			return m, nil
 		}
@@ -133,6 +130,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		for _, tokenType := range msg.expired {
 			if !m.tokenRenewing {
 				m.tokenRenewing = true
+				m.tokenRenewingType = tokenType
 				return m, launchAuthHelperCmd(tokenType)
 			}
 		}
@@ -140,12 +138,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tokenRenewingMsg:
 		m.tokenRenewing = true
+		m.tokenRenewingType = "web"
 		return m, launchAuthHelperCmd("web")
 
 	case tokenRenewedMsg:
 		if msg.err != nil {
 			m.tokenRenewErr = msg.err.Error()
 			m.tokenRenewing = false
+			m.tokenRenewingType = ""
 		} else {
 			m.tokenRenewErr = ""
 			return m, reloadTokensCmd(m.client, msg.tokenType)
@@ -154,6 +154,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		
 	case tokensReloadedMsg:
 		m.tokenRenewing = false
+		m.tokenRenewingType = ""
 		if msg.err != nil {
 			m.tokenRenewErr = msg.err.Error()
 		} else {
@@ -215,13 +216,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		if is401(msg.err) {
 			which := detectExpiredToken(msg.err)
-			if which == "graph" {
-				m.viewport.SetContent("MS_GRAPH_TOKEN expired — run: ./msTTui-auth --renew graph")
-			} else if which == "fabric" {
-				m.viewport.SetContent("TEAMS_FABRIC_TOKEN expired — run: ./msTTui-auth --renew fabric")
-			} else if !m.tokenRenewing {
+			if !m.tokenRenewing {
 				m.tokenRenewing = true
-				return m, launchAuthHelperCmd("web")
+				m.tokenRenewingType = which
+				return m, launchAuthHelperCmd(which)
 			}
 		} else {
 			m.viewport.SetContent(fmt.Sprintf("Error loading messages: %v", msg.err))
@@ -406,14 +404,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case chatsErrMsg:
 		if is401(msg.err) {
-			which := detectExpiredToken(msg.err)
-			if which == "graph" {
-				m.err = fmt.Errorf("MS_GRAPH_TOKEN expired — run: ./msTTui-auth --renew graph")
-			} else if which == "fabric" {
-				m.err = fmt.Errorf("TEAMS_FABRIC_TOKEN expired — run: ./msTTui-auth --renew fabric")
-			} else if !m.tokenRenewing {
+			if !m.tokenRenewing {
 				m.tokenRenewing = true
-				return m, launchAuthHelperCmd("web")
+				m.tokenRenewingType = detectExpiredToken(msg.err)
+				return m, launchAuthHelperCmd(detectExpiredToken(msg.err))
 			}
 		} else {
 			m.err = msg.err
@@ -484,6 +478,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if is401(msg.err) {
 			if !m.tokenRenewing {
 				m.tokenRenewing = true
+				m.tokenRenewingType = "notif"
 				return m, launchAuthHelperCmd("notif")
 			}
 		} else {
@@ -502,6 +497,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if is401(msg.err) {
 			if !m.tokenRenewing {
 				m.tokenRenewing = true
+				m.tokenRenewingType = "edu"
 				return m, launchAuthHelperCmd("edu")
 			}
 		}

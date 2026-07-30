@@ -92,9 +92,9 @@ func printTokenStatus(t *tokens) {
 }
 
 func main() {
-	fmt.Println("╔══════════════════════════════════════════════════╗")
-	fmt.Println("║              msTTui — Auth Helper	          	║")
-	fmt.Println("╚══════════════════════════════════════════════════╝")
+	fmt.Println("╔════════════════════════════════════════════╗")
+	fmt.Println("║            msTTui — Auth Helper -          ║")
+	fmt.Println("╚════════════════════════════════════════════╝")
 	fmt.Println()
 
 	configDir := filepath.Join(os.Getenv("HOME"), ".config", "teamstui")
@@ -269,7 +269,7 @@ func main() {
 			captured.spacesToken = token
 			notifyTokenCaptured("TEAMS_SPACES_TOKEN")
 
-		case strings.Contains(url, "fabric/amer/templates"):
+		case strings.Contains(url, "fabric/"):
 			if captured.fabricToken == "" {
 				captured.fabricToken = token
 				notifyTokenCaptured("TEAMS_FABRIC_TOKEN")
@@ -308,6 +308,75 @@ func main() {
 		fmt.Println("→ Renewing FABRIC token...")
 		context.Close()
 		manualFabricTokenCapture(pw, sessionDir, captured)
+
+	case "graph":
+		fmt.Println("→ Renewing GRAPH token...")
+		context.Close()
+		visibleCtx, err := pw.Firefox.LaunchPersistentContext(
+			sessionDir,
+			playwright.BrowserTypeLaunchPersistentContextOptions{
+				Headless: playwright.Bool(false),
+				Args:     []string{"--no-first-run"},
+			},
+		)
+		if err != nil {
+			fmt.Printf("  ⚠ Could not open browser: %v\n", err)
+			break
+		}
+		defer visibleCtx.Close()
+
+		visibleCtx.On("request", func(req playwright.Request) {
+			authHeader := ""
+			for k, v := range req.Headers() {
+				if strings.ToLower(k) == "authorization" {
+					authHeader = v
+					break
+				}
+			}
+			if !strings.HasPrefix(authHeader, "Bearer ") {
+				return
+			}
+			token := strings.TrimPrefix(authHeader, "Bearer ")
+			aud := extractAudFromJWT(token)
+			if strings.Contains(aud, "graph.microsoft.com") || aud == "00000003-0000-0000-c000-000000000000" {
+				captured.mu.Lock()
+				if captured.graphToken == "" {
+					captured.graphToken = token
+					notifyTokenCaptured("MS_GRAPH_TOKEN")
+				}
+				captured.mu.Unlock()
+			}
+		})
+
+		pages := visibleCtx.Pages()
+		var visiblePage playwright.Page
+		if len(pages) > 0 {
+			visiblePage = pages[0]
+		} else {
+			visiblePage, _ = visibleCtx.NewPage()
+		}
+		visiblePage.SetViewportSize(1280, 800)
+
+		fmt.Println()
+		fmt.Println("→ Browser opening Graph Explorer.")
+		fmt.Println("  Sign in with your account and the token")
+		fmt.Println("  will be captured automatically.")
+		fmt.Println()
+
+		tryExtractGraphTokenViaGraphExplorer(visiblePage, captured, !firstRun)
+
+		deadline := time.Now().Add(120 * time.Second)
+		for time.Now().Before(deadline) {
+			time.Sleep(500 * time.Millisecond)
+			captured.mu.Lock()
+			has := captured.graphToken != ""
+			captured.mu.Unlock()
+			if has {
+				fmt.Println("  ✓ Token captured! Browser closes in 3s...")
+				time.Sleep(3 * time.Second)
+				break
+			}
+		}
 
 	default:
 		fmt.Println("→ Full token capture...")
@@ -729,12 +798,24 @@ func fullRenewal(pw *playwright.Playwright, page playwright.Page, ctx playwright
 					return
 				}
 				token := strings.TrimPrefix(authHeader, "Bearer ")
+				
+				// 1. Check for Graph Token
 				aud := extractAudFromJWT(token)
 				if strings.Contains(aud, "graph.microsoft.com") || aud == "00000003-0000-0000-c000-000000000000" {
 					captured.mu.Lock()
 					if captured.graphToken == "" {
 						captured.graphToken = token
 						notifyTokenCaptured("MS_GRAPH_TOKEN")
+					}
+					captured.mu.Unlock()
+				}
+
+				// 2. Check for Fabric Token
+				if strings.Contains(req.URL(), "fabric/") {
+					captured.mu.Lock()
+					if captured.fabricToken == "" {
+						captured.fabricToken = token
+						notifyTokenCaptured("TEAMS_FABRIC_TOKEN")
 					}
 					captured.mu.Unlock()
 				}
@@ -769,41 +850,17 @@ func fullRenewal(pw *playwright.Playwright, page playwright.Page, ctx playwright
 				fmt.Println()
 				printBox([]string{
 					"Action required: TEAMS_FABRIC_TOKEN",
-					"1. Go to any Private Channel",
-					"2. Open the 'Members' panel",
-					"3. Click 'Add member', search any user,",
-					"   and confirm adding them",
-					"(The request fires on confirm, not on click)",
-					"4. Browser stays open 10s so you can",
-					"   remove the user you just added",
+					"1. Go to any Private or Shared Channel.",
+					"2. Go to the 'Members' tab.",
+					"3. Try to change your own role", 
+					"	(e.g., Owner -> Member).",
+					"   (It will fail if you are the only owner, but",
+					"   the token will be captured instantly!)",
 					"Press [Enter] in this terminal to skip.",
 				})
 
 				globalSpin = newSpinner("Capturing fabric token...")
 				globalSpin.Start()
-
-				// Re-register interceptor in the already opened context
-				visibleCtx.On("request", func(req playwright.Request) {
-					authHeader := ""
-					for k, v := range req.Headers() {
-						if strings.ToLower(k) == "authorization" {
-							authHeader = v
-							break
-						}
-					}
-					if !strings.HasPrefix(authHeader, "Bearer ") {
-						return
-					}
-					token := strings.TrimPrefix(authHeader, "Bearer ")
-					if strings.Contains(req.URL(), "fabric/amer/templates") {
-						captured.mu.Lock()
-						if captured.fabricToken == "" {
-							captured.fabricToken = token
-							notifyTokenCaptured("TEAMS_FABRIC_TOKEN")
-						}
-						captured.mu.Unlock()
-					}
-				})
 
 				// Navigate to Teams in the same browser
 				visiblePage.Goto("https://teams.microsoft.com/v2/",
@@ -814,8 +871,9 @@ func fullRenewal(pw *playwright.Playwright, page playwright.Page, ctx playwright
 				skipCh := make(chan struct{}, 1)
 				go func() {
 					var dummy string
-					fmt.Scanln(&dummy)
-					close(skipCh)
+					if _, err := fmt.Scanln(&dummy); err == nil {
+						close(skipCh)
+					}
 				}()
 
 				// Esperar hasta 2 minutos
@@ -1054,16 +1112,13 @@ func manualFabricTokenCapture(pw *playwright.Playwright, sessionDir string, capt
 	fmt.Println()
 	printBox([]string{
 		"Action required: TEAMS_FABRIC_TOKEN",
-		"Opening browser for manual capture.",
-		"1. Go to any Private Channel",
-		"2. Open the 'Members' panel",
-		"3. Click 'Add member', search any user,",
-		"   and confirm adding them",
-		"(The request fires on confirm, not on click)",
-		"4. Browser stays open 10s so you can",
-		"   remove the user you just added",
+		"1. Go to any Private or Shared Channel.",
+		"2. Go to the 'Members' tab.",
+		"3. Try to change your own role", 
+		"	(e.g., Owner -> Member).",
+		"   (It will fail if you are the only owner, but",
+		"   the token will be captured instantly!)",
 		"Press [Enter] in this terminal to skip.",
-		"The script is watching the network...",
 	})
 	fmt.Println()
 
@@ -1094,10 +1149,11 @@ func manualFabricTokenCapture(pw *playwright.Playwright, sessionDir string, capt
 		}
 		token := strings.TrimPrefix(authHeader, "Bearer ")
 
-		if strings.Contains(req.URL(), "fabric/amer/templates") {
+		if strings.Contains(req.URL(), "fabric/") {
 			captured.mu.Lock()
 			if captured.fabricToken == "" {
 				captured.fabricToken = token
+				notifyTokenCaptured("TEAMS_FABRIC_TOKEN")
 				fmt.Println("\n  ✓ TEAMS_FABRIC_TOKEN manually captured!")
 			}
 			captured.mu.Unlock()
@@ -1118,8 +1174,9 @@ func manualFabricTokenCapture(pw *playwright.Playwright, sessionDir string, capt
 	skipCh := make(chan struct{}, 1)
 	go func() {
 		var dummy string
-		fmt.Scanln(&dummy)
-		close(skipCh)
+		if _, err := fmt.Scanln(&dummy); err == nil {
+			close(skipCh)
+		}
 	}()
 
 	// Wait up to 2 minutes for the user to do the action

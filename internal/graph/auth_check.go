@@ -27,6 +27,9 @@ func (c *Client) CheckAllTokens() []string {
 		{"edu", func() bool {
 			return c.checkEndpoint("https://assignments.edu.cloud.microsoft/api/v1.0/edu/me/work?$top=1", c.EduToken)
 		}},
+		{"fabric", func() bool {
+			return c.checkEndpointFabric(c.FabricToken)
+		}},
 	}
 
 	var mu sync.Mutex
@@ -66,4 +69,30 @@ func (c *Client) checkEndpoint(url, token string) bool {
 	}
 	defer resp.Body.Close()
 	return resp.StatusCode == 401
+}
+
+// checkEndpointFabric returns true if the fabric token is expired.
+// Note: The Teams Fabric API returns 403 Forbidden (not 401) when the
+// TEAMS_FABRIC_TOKEN is expired — this is expected behavior, not a permissions error.
+func (c *Client) checkEndpointFabric(token string) bool {
+	if token == "" {
+		return false
+	}
+	req, err := http.NewRequest("GET",
+		"https://teams.microsoft.com/api/mt/amer/beta/teams/fabric/amer/templates?templateType=standard",
+		nil,
+	)
+	if err != nil {
+		return false
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("x-ms-client-type", "web")
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	// 403 Forbidden = token expired (known Fabric API behavior)
+	// 401 Unauthorized = also expired
+	return resp.StatusCode == 401 || resp.StatusCode == 403
 }

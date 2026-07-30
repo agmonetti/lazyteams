@@ -908,9 +908,26 @@ func (m Model) View() string {
 		var leftBanner string
 
 		if m.tokenRenewing {
+			tokenLabel := m.tokenRenewingType
+			switch tokenLabel {
+			case "graph":
+				tokenLabel = "MS_GRAPH_TOKEN"
+			case "fabric":
+				tokenLabel = "TEAMS_FABRIC_TOKEN"
+			case "web":
+				tokenLabel = "TEAMS_WEB_TOKEN"
+			case "notif":
+				tokenLabel = "TEAMS_NOTIF_TOKEN"
+			case "edu":
+				tokenLabel = "EDU_TOKEN"
+			}
+			msg := "⟳ Renewing tokens..."
+			if tokenLabel != "" {
+				msg = fmt.Sprintf("⟳ Renewing %s...", tokenLabel)
+			}
 			leftBanner = lipgloss.NewStyle().
 				Foreground(colorYellow).Bold(true).
-				Render("⟳ Renewing tokens...")
+				Render(msg)
 		} else if m.tokenRenewErr != "" {
 			leftBanner = lipgloss.NewStyle().
 				Foreground(colorRed).Bold(true).
