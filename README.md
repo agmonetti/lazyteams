@@ -98,7 +98,7 @@ Before running the auth helper for the first time, you need to grant permissions
 | `Files.ReadWrite.All` | Access and upload files |
 | `Sites.Read.All` | Access SharePoint sites |
 | `GroupMember.Read.All` | *(Optional)* Read team members (May require Admin Consent) |
-| `Group.ReadWrite.All` | *(Optional)* Create teams (May require Admin Consent) |
+| `Team.Create` | *(Optional)* Create teams (`N`) |
 
 ### 2. Run the auth helper
 
