@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/playwright-community/playwright-go"
@@ -192,6 +194,20 @@ func main() {
 	defer context.Close()
 
 	captured := &tokens{}
+
+	// Catch Ctrl+C to save tokens before exiting
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-sigCh
+		fmt.Println("\n\n[!] Interrupted by user. Saving captured tokens...")
+		if err := saveTokens(captured, configDir); err != nil {
+			fmt.Printf("Error saving tokens: %v\n", err)
+		} else {
+			fmt.Println("Tokens saved.")
+		}
+		os.Exit(1)
+	}()
 
 	context.On("request", func(req playwright.Request) {
 		url := req.URL()
@@ -834,7 +850,7 @@ func fullRenewal(pw *playwright.Playwright, page playwright.Page, ctx playwright
 			tryExtractGraphTokenViaGraphExplorer(visiblePage, captured, !firstRun)
 
 			// Wait for token if not yet captured
-			graphDeadline := time.Now().Add(60 * time.Second)
+			graphDeadline := time.Now().Add(300 * time.Second)
 			for time.Now().Before(graphDeadline) {
 				time.Sleep(500 * time.Millisecond)
 				captured.mu.Lock()
@@ -853,7 +869,7 @@ func fullRenewal(pw *playwright.Playwright, page playwright.Page, ctx playwright
 					"1. Go to any Private or Shared Channel.",
 					"2. Go to the 'Members' tab.",
 					"3. Try to change your own role", 
-					"	(e.g., Owner -> Member).",
+					"	(e.g., Owner -> Member)",
 					"   (It will fail if you are the only owner, but",
 					"   the token will be captured instantly!)",
 					"Press [Enter] in this terminal to skip.",
@@ -870,8 +886,8 @@ func fullRenewal(pw *playwright.Playwright, page playwright.Page, ctx playwright
 				// Channel for skip
 				skipCh := make(chan struct{}, 1)
 				go func() {
-					var dummy string
-					if _, err := fmt.Scanln(&dummy); err == nil {
+					buf := make([]byte, 1)
+					if _, err := os.Stdin.Read(buf); err == nil {
 						close(skipCh)
 					}
 				}()
@@ -1003,8 +1019,8 @@ func tryExtractGraphTokenViaGraphExplorer(page playwright.Page, captured *tokens
 			}
 		}
 	} else {
-		fmt.Println("→ First run detected. Waiting for you to sign in and consent permissions in Graph Explorer.")
-		fmt.Println("  Once you have granted all permissions, click 'Run query' to capture the token.")
+		fmt.Println("→ First run detected. Waiting for you to sign in to Graph Explorer.")
+		fmt.Println("  Once signed in, click 'Run query' to capture the token.")
 		fmt.Println("  The helper will detect it automatically.")
 	}
 
@@ -1115,7 +1131,7 @@ func manualFabricTokenCapture(pw *playwright.Playwright, sessionDir string, capt
 		"1. Go to any Private or Shared Channel.",
 		"2. Go to the 'Members' tab.",
 		"3. Try to change your own role", 
-		"	(e.g., Owner -> Member).",
+		"	(e.g., Owner -> Member)",
 		"   (It will fail if you are the only owner, but",
 		"   the token will be captured instantly!)",
 		"Press [Enter] in this terminal to skip.",
@@ -1173,8 +1189,8 @@ func manualFabricTokenCapture(pw *playwright.Playwright, sessionDir string, capt
 	// Channel for skip
 	skipCh := make(chan struct{}, 1)
 	go func() {
-		var dummy string
-		if _, err := fmt.Scanln(&dummy); err == nil {
+		buf := make([]byte, 1)
+		if _, err := os.Stdin.Read(buf); err == nil {
 			close(skipCh)
 		}
 	}()

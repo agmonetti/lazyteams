@@ -189,11 +189,18 @@ func searchUsersCmd(client *graph.Client, query string) tea.Cmd {
 	}
 }
 
-func createDMCmd(client *graph.Client, selfID, targetID string) tea.Cmd {
+func createDMCmd(client *graph.Client, selfID, targetID, targetDisplayName string) tea.Cmd {
 	return func() tea.Msg {
 		chat, err := client.CreateOneOnOneChat(selfID, targetID)
 		if err != nil {
 			return createDMErrMsg{err}
+		}
+		// Asegurar que el chat tenga el nombre del usuario para que no aparezca como Legacy
+		if len(chat.Members) == 0 {
+			chat.Members = []graph.ChatMember{
+				{UserID: selfID},
+				{UserID: targetID, DisplayName: targetDisplayName},
+			}
 		}
 		return createDMMsg{chat}
 	}

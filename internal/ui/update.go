@@ -616,7 +616,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case searchUsersErrMsg:
-		m.newDMErr = msg.err.Error()
+		if is401(msg.err) {
+			if !m.tokenRenewing {
+				m.tokenRenewing = true
+				m.tokenRenewingType = detectExpiredToken(msg.err)
+				return m, launchAuthHelperCmd(detectExpiredToken(msg.err))
+			}
+		} else {
+			m.newDMErr = msg.err.Error()
+		}
 		return m, nil
 
 	case createDMMsg:
@@ -646,6 +654,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case createDMErrMsg:
 		m.newDMErr = msg.err.Error()
+		m.showNewDMPopup = true
 		return m, nil
 
 	case assignmentUploadDoneMsg:

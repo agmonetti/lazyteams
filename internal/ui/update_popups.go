@@ -898,7 +898,7 @@ func (m Model) handleNewDMPopup(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
 			m.showNewDMPopup = false
 			m.newDMQuery.Reset()
 			m.newDMResults = nil
-			return m, createDMCmd(m.client, m.selfID, target.ID), true
+			return m, createDMCmd(m.client, m.selfID, target.ID, target.DisplayName), true
 		}
 	default:
 		var cmd tea.Cmd

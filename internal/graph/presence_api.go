@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 )
 
 // SetPresence updates the user's preferred presence status.
@@ -96,9 +95,6 @@ func (c *Client) GetPresences(userIDs []string) (map[string]string, error) {
 		r := <-ch
 		if r.err != nil {
 			errCount++
-			if errCount == 1 {
-				fmt.Fprintf(os.Stderr, "[presence] error: %v\n", r.err)
-			}
 		} else if r.avail != "" {
 			result[r.id] = r.avail
 		}

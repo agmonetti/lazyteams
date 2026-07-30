@@ -203,8 +203,8 @@ func (c *Client) SearchUsers(query string) ([]UserSearchResult, error) {
 		extURL := fmt.Sprintf("https://teams.microsoft.com/api/mt/part/amer-02/beta/users/%s/externalsearchv3?includeTFLUsers=true", query)
 		extReq, extErr := http.NewRequest("GET", extURL, nil)
 		if extErr == nil {
-			// WebToken or SpacesToken are usually accepted here, we use WebToken as it's the primary Teams token
-			extReq.Header.Set("Authorization", "Bearer "+c.SpacesToken)
+			// WebToken is the primary Teams token
+			extReq.Header.Set("Authorization", "Bearer "+c.WebToken)
 			extReq.Header.Set("Accept", "application/json")
 			extReq.Header.Set("x-ms-client-caller", "newChat")
 			extReq.Header.Set("x-ms-client-type", "web")
@@ -240,20 +240,10 @@ func (c *Client) SearchUsers(query string) ([]UserSearchResult, error) {
 							}
 						}
 					}
-				} else {
-					body, _ := io.ReadAll(extResp.Body)
-					results = append(results, UserSearchResult{
-						ID:          "",
-						DisplayName: fmt.Sprintf("Error %d (Please renew web token)", extResp.StatusCode),
-						Mail:        string(body),
-					})
 				}
+				// Cualquier status != 200: ignorar silenciosamente
 			} else {
-				results = append(results, UserSearchResult{
-					ID:          "",
-					DisplayName: "ExtSearch Net Error",
-					Mail:        extErr.Error(),
-				})
+				// Error de red en búsqueda externa — ignorar silenciosamente
 			}
 		}
 	}
@@ -263,16 +253,11 @@ func (c *Client) SearchUsers(query string) ([]UserSearchResult, error) {
 
 func (c *Client) CreateOneOnOneChat(selfID, targetID string) (Chat, error) {
 	if strings.HasPrefix(targetID, "ext:") {
-		// External/Federated user: we don't need to "create" the chat via an API!
-		// Teams deterministically generates the conversation ID for 1:1 chats
-		// by lexicographically sorting the two Object IDs and joining them.
 		targetUUID := strings.TrimPrefix(targetID, "ext:")
-		
 		u1, u2 := selfID, targetUUID
 		if u1 > u2 {
 			u1, u2 = u2, u1
 		}
-		
 		chatID := fmt.Sprintf("19:%s_%s@unq.gbl.spaces", u1, u2)
 		return Chat{
 			ID:       chatID,
@@ -307,6 +292,12 @@ func (c *Client) CreateOneOnOneChat(selfID, targetID string) (Chat, error) {
 		return Chat{}, err
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode == 403 {
+		// Graph API blocked by tenant — fallback to ChatSvc
+		return c.CreateOneOnOneChatViaChatSvc(selfID, targetID)
+	}
+
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		return Chat{}, fmt.Errorf("create chat error %d", resp.StatusCode)
 	}
@@ -315,6 +306,63 @@ func (c *Client) CreateOneOnOneChat(selfID, targetID string) (Chat, error) {
 		return Chat{}, err
 	}
 	return chat, nil
+}
+
+// CreateOneOnOneChatViaChatSvc creates a 1:1 chat using the Teams ChatSvc API
+// instead of Graph API. This bypasses tenant restrictions on POST /v1.0/chats.
+func (c *Client) CreateOneOnOneChatViaChatSvc(selfID, targetID string) (Chat, error) {
+	payload := fmt.Sprintf(`{
+		"members": [
+			{"id": "8:orgid:%s", "role": "Admin"},
+			{"id": "8:orgid:%s", "role": "Admin"}
+		],
+		"properties": {
+			"threadType": "chat",
+			"fixedRoster": true,
+			"uniquerosterthread": true
+		}
+	}`, selfID, targetID)
+
+	req, err := http.NewRequest("POST",
+		"https://teams.microsoft.com/api/chatsvc/amer/v1/threads",
+		strings.NewReader(payload),
+	)
+	if err != nil {
+		return Chat{}, err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.WebToken)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("behavioroverride", "redirectAs404")
+	req.Header.Set("x-ms-migration", "True")
+	req.Header.Set("x-ms-test-user", "False")
+
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return Chat{}, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 && resp.StatusCode != 201 {
+		return Chat{}, fmt.Errorf("chatsvc create chat error %d", resp.StatusCode)
+	}
+
+	// Extract chat ID from Location header
+	location := resp.Header.Get("Location")
+	// Location: https://amer.ng.msg.teams.microsoft.com/v1/threads/19:xxx@unq.gbl.spaces
+	parts := strings.Split(location, "/threads/")
+	if len(parts) < 2 || parts[1] == "" {
+		return Chat{}, fmt.Errorf("could not extract chat ID from location: %s", location)
+	}
+	chatID := parts[1]
+
+	return Chat{
+		ID:       chatID,
+		ChatType: "oneOnOne",
+		Members: []ChatMember{
+			{UserID: selfID},
+			{UserID: targetID, DisplayName: targetID},
+		},
+	}, nil
 }
 
 // DiscoverSelfChatID brute-forces ChatSvc to find the real
