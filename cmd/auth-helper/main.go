@@ -113,6 +113,8 @@ func main() {
 	renewOnly := ""
 	showBrowser := false
 	forceHeadless := false
+	clearSession := false
+	clearTokens := false
 	args := os.Args[1:]
 	for i := 0; i < len(args); i++ {
 		if args[i] == "--renew" && i+1 < len(args) {
@@ -124,6 +126,36 @@ func main() {
 		if args[i] == "--headless" {
 			forceHeadless = true
 		}
+		if args[i] == "--clear-session" {
+			clearSession = true
+		}
+		if args[i] == "--clear-tokens" {
+			clearTokens = true
+		}
+	}
+
+	if clearSession {
+		fmt.Println("→ Clearing browser session...")
+		if err := os.RemoveAll(sessionDir); err != nil {
+			fmt.Printf("  ⚠ Error clearing session: %v\n", err)
+		} else {
+			fmt.Println("  ✓ Browser session cleared.")
+			fmt.Println("  Next run will require login.")
+		}
+		if !clearTokens {
+			os.Exit(0)
+		}
+	}
+
+	if clearTokens {
+		fmt.Println("→ Clearing saved tokens...")
+		tokensPath := filepath.Join(configDir, "tokens.env")
+		if err := os.Remove(tokensPath); err != nil && !os.IsNotExist(err) {
+			fmt.Printf("  ⚠ Error clearing tokens: %v\n", err)
+		} else {
+			fmt.Println("  ✓ Tokens cleared.")
+		}
+		os.Exit(0)
 	}
 
 	firstRun := !sessionExists(sessionDir)
