@@ -252,7 +252,7 @@ func (c *Client) SearchUsers(query string) ([]UserSearchResult, error) {
 				break
 			}
 			extResp.Body.Close()
-			// status != 200: probar con el siguiente token
+			// status != 200: try the next token
 		}
 	}
 

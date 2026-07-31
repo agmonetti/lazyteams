@@ -247,8 +247,8 @@ func main() {
 		<-sigCh
 		fmt.Println("\n\n[!] Interrupted by user. Saving captured tokens...")
 
-		// Si la captura fue incompleta, limpiar la sesión del browser
-		// para que el próximo run pida login de nuevo
+		// If capture was incomplete, clear the browser session
+		// so the next run forces re-login
 		captured.mu.Lock()
 		incomplete := captured.graphToken == "" || captured.webToken == "" || captured.cookie == ""
 		captured.mu.Unlock()
@@ -709,9 +709,9 @@ func fullRenewal(pw *playwright.Playwright, page playwright.Page, ctx playwright
 	if firstRun {
 		loginTimeout = 5 * time.Minute
 	}
-	// En primer run, esperar a que el interceptor capture el primer token
-	// como señal de que Teams cargó y el login completó.
-	// En runs subsiguientes, simplemente esperar un poco.
+	// On first run, wait for the interceptor to capture the first token
+	// as a signal that Teams loaded and login completed.
+	// On subsequent runs, just wait briefly.
 	if firstRun {
 		if globalSpin != nil {
 			globalSpin.SetLabel("Waiting for you to sign in...")
@@ -719,7 +719,7 @@ func fullRenewal(pw *playwright.Playwright, page playwright.Page, ctx playwright
 		loginDeadline := time.Now().Add(loginTimeout)
 		for time.Now().Before(loginDeadline) {
 			time.Sleep(1 * time.Second)
-			// WebToken o SpacesToken solo aparecen cuando Teams cargó completamente
+			// WebToken or SpacesToken only appear when Teams has fully loaded
 			captured.mu.Lock()
 			hasWeb := captured.webToken != ""
 			hasSpaces := captured.spacesToken != ""
@@ -959,7 +959,7 @@ func fullRenewal(pw *playwright.Playwright, page playwright.Page, ctx playwright
 					}
 				}()
 
-				// Esperar hasta 2 minutos
+				// Wait up to 2 minutes
 				deadline := time.Now().Add(120 * time.Second)
 				for time.Now().Before(deadline) {
 					select {
@@ -1130,7 +1130,7 @@ func tryExtractGraphTokenViaGraphExplorer(page playwright.Page, captured *tokens
 		}
 	}
 
-	// Solo redirigir si ya capturamos el token
+	// Only redirect if token was already captured
 	captured.mu.Lock()
 	hasToken := captured.graphToken != ""
 	captured.mu.Unlock()

@@ -195,7 +195,7 @@ func createDMCmd(client *graph.Client, selfID, targetID, targetDisplayName strin
 		if err != nil {
 			return createDMErrMsg{err}
 		}
-		// Asegurar que el chat tenga el nombre del usuario para que no aparezca como Legacy
+		// Ensure the chat has the user's display name so it doesn't show as Legacy
 		if len(chat.Members) == 0 {
 			chat.Members = []graph.ChatMember{
 				{UserID: selfID},
@@ -827,7 +827,7 @@ func sendPendingMessageCmd(
 	return func() tea.Msg {
 		ctx := context.Background()
 
-		// Upload first image via AMS (soporte para una imagen por ahora)
+		// Upload first image via AMS (only single image supported for now)
 		img, err := client.UploadInlineImage(ctx, conversationID, pending[0].Data, pending[0].ContentType)
 		if err != nil {
 			return errMsg{fmt.Errorf("AMS upload error: %w", err)}
@@ -851,7 +851,7 @@ func readClipboardImageCmd() tea.Cmd {
 
 		return clipboardImageLoadedMsg{
 			Data:        data,
-			ContentType: "image/png", // por ahora fijo; luego puede detectarse
+			ContentType: "image/png", // fixed for now; can be detected later
 		}
 	}
 }
