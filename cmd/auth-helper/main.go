@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"syscall"
@@ -96,6 +97,8 @@ func printTokenStatus(t *tokens) {
 }
 
 func main() {
+	initConsole()
+
 	fmt.Println("╔════════════════════════════════════════════╗")
 	fmt.Println("║            msTTui — Auth Helper -          ║")
 	fmt.Println("╚════════════════════════════════════════════╝")
@@ -177,6 +180,8 @@ func main() {
 			Verbose:  false,
 		})
 	}
+
+	patchWebSocketAsserts()
 
 	pw, err := playwright.Run()
 	if err != nil {
@@ -1367,5 +1372,43 @@ func (s *spinner) Stop(doneMsg string) {
 	time.Sleep(100 * time.Millisecond)
 	if doneMsg != "" {
 		fmt.Println(doneMsg)
+	}
+}
+
+// patchWebSocketAsserts neutralizes the fatal asserts inside the Playwright
+// Firefox websocket handlers. When a page navigates away while a websocket is
+// still in flight, playwright's coreBundle.js throws an uncaught "Assertion
+// error" that kills the Node driver process and makes the auth-helper crash on
+// the next browser action. We replace those asserts with early returns.
+func patchWebSocketAsserts() {
+	// Driver lives at <cache>/ms-playwright-go/<version>/package/lib/coreBundle.js
+	var base string
+	switch runtime.GOOS {
+	case "windows":
+		base = filepath.Join(helpers.HomeDir(), "AppData", "Local", "ms-playwright-go")
+	default:
+		base = filepath.Join(helpers.HomeDir(), ".cache", "ms-playwright-go")
+	}
+
+	matches, err := filepath.Glob(filepath.Join(base, "*", "package", "lib", "coreBundle.js"))
+	if err != nil || len(matches) == 0 {
+		return
+	}
+	bundlePath := matches[len(matches)-1]
+
+	data, err := os.ReadFile(bundlePath)
+	if err != nil {
+		return
+	}
+	orig := string(data)
+	patched := strings.Replace(orig,
+		"const request2 = this._webSocketRequests.get(event.requestId);\n        assert(request2);\n        const response2 = this._webSocketResponses.get(event.requestId);\n        assert(response2);",
+		"const request2 = this._webSocketRequests.get(event.requestId);\n        const response2 = this._webSocketResponses.get(event.requestId);\n        if (!request2 || !response2)\n          return;",
+		1,
+	)
+	if patched != orig {
+		if err := os.WriteFile(bundlePath, []byte(patched), 0o644); err == nil {
+			fmt.Println("  · Patched playwright websocket asserts.")
+		}
 	}
 }
