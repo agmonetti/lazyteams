@@ -59,7 +59,8 @@ TUI client for Microsoft Teams. Runs entirely in the terminal — no Electron, n
 
 - Go 1.24+
 - Microsoft Teams account (university or enterprise)
-- Linux/macOS. Playwright requires Firefox for the `auth-helper`.
+- Linux, macOS, or Windows. Playwright requires Firefox for the `auth-helper`.
+- **Windows**: Windows Terminal strongly recommended (see [Platform Support](/platform)).
 
 ## Quick Start
 
