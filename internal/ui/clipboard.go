@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"runtime"
 )
 
@@ -28,9 +27,15 @@ func getClipboardImage() ([]byte, error) {
 			return out, nil
 		}
 
-		// Native fallback using osascript — no external tools required
-		tmpFile := filepath.Join(os.TempDir(), "msTTui-clipboard.png")
-		defer os.Remove(tmpFile)
+		// Native fallback using osascript — no external tools required.
+		// Use a unique temp file per call to avoid races on rapid Ctrl+P.
+		tmpFile, err := os.CreateTemp("", "msTTui-clipboard-*.png")
+		if err != nil {
+			return nil, fmt.Errorf("no image in clipboard")
+		}
+		tmpPath := tmpFile.Name()
+		tmpFile.Close()
+		defer os.Remove(tmpPath)
 
 		script := fmt.Sprintf(`
         set tmpFile to "%s"
@@ -46,14 +51,14 @@ func getClipboardImage() ([]byte, error) {
             end try
             error "No PNG image in clipboard"
         end try
-    `, tmpFile)
+    `, tmpPath)
 
 		cmd := exec.Command("osascript", "-e", script)
 		if err := cmd.Run(); err != nil {
 			return nil, fmt.Errorf("no image in clipboard")
 		}
 
-		data, err := os.ReadFile(tmpFile)
+		data, err := os.ReadFile(tmpPath)
 		if err != nil || len(data) == 0 {
 			return nil, fmt.Errorf("no image in clipboard")
 		}
