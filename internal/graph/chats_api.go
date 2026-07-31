@@ -200,51 +200,59 @@ func (c *Client) SearchUsers(query string) ([]UserSearchResult, error) {
 
 	// Fallback/additive search for external users by exact email
 	if strings.Contains(query, "@") {
-		extURL := fmt.Sprintf("https://teams.microsoft.com/api/mt/part/amer-02/beta/users/%s/externalsearchv3?includeTFLUsers=true", query)
-		extReq, extErr := http.NewRequest("GET", extURL, nil)
-		if extErr == nil {
-			// WebToken is the primary Teams token
-			extReq.Header.Set("Authorization", "Bearer "+c.WebToken)
+		extURL := fmt.Sprintf("https://teams.microsoft.com/api/mt/part/amer-02/beta/users/%s/externalsearchv3?includeTFLUsers=true", url.PathEscape(query))
+
+		tokens := []string{c.WebToken, c.SpacesToken}
+		for _, token := range tokens {
+			if token == "" {
+				continue
+			}
+			extReq, err := http.NewRequest("GET", extURL, nil)
+			if err != nil {
+				continue
+			}
+			extReq.Header.Set("Authorization", "Bearer "+token)
 			extReq.Header.Set("Accept", "application/json")
 			extReq.Header.Set("x-ms-client-caller", "newChat")
-			extReq.Header.Set("x-ms-client-type", "web")
+			extReq.Header.Set("x-ms-client-type", "cdlworker")
 			extReq.Header.Set("x-ms-migration", "True")
-			
-			extResp, extErr := c.HTTPClient.Do(extReq)
-			if extErr == nil {
-				defer extResp.Body.Close()
-				if extResp.StatusCode == 200 {
-					var extRes []struct {
-						UserPrincipalName string `json:"userPrincipalName"`
-						DisplayName       string `json:"displayName"`
-						MRI               string `json:"mri"`
-						ObjectID          string `json:"objectId"`
-					}
-					if json.NewDecoder(extResp.Body).Decode(&extRes) == nil {
-						for _, ex := range extRes {
-							// Check if we already have this user from Graph
-							exists := false
-							for _, r := range results {
-								if strings.EqualFold(r.Mail, ex.UserPrincipalName) {
-									exists = true
-									break
-								}
+
+			extResp, err := c.HTTPClient.Do(extReq)
+			if err != nil {
+				continue
+			}
+
+			if extResp.StatusCode == 200 {
+				var extRes []struct {
+					UserPrincipalName string `json:"userPrincipalName"`
+					DisplayName       string `json:"displayName"`
+					MRI               string `json:"mri"`
+					ObjectID          string `json:"objectId"`
+				}
+				err := json.NewDecoder(extResp.Body).Decode(&extRes)
+				extResp.Body.Close()
+				if err == nil {
+					for _, ex := range extRes {
+						exists := false
+						for _, r := range results {
+							if strings.EqualFold(r.Mail, ex.UserPrincipalName) {
+								exists = true
+								break
 							}
-							if !exists {
-								// For external users, we pass their raw ObjectID prefixed to synthesize the chat ID later
-								results = append(results, UserSearchResult{
-									ID:          "ext:" + ex.ObjectID,
-									DisplayName: ex.DisplayName + " (External)",
-									Mail:        ex.UserPrincipalName,
-								})
-							}
+						}
+						if !exists {
+							results = append(results, UserSearchResult{
+								ID:          "ext:" + ex.ObjectID,
+								DisplayName: ex.DisplayName + " (External)",
+								Mail:        ex.UserPrincipalName,
+							})
 						}
 					}
 				}
-				// Cualquier status != 200: ignorar silenciosamente
-			} else {
-				// Error de red en búsqueda externa — ignorar silenciosamente
+				break
 			}
+			extResp.Body.Close()
+			// status != 200: probar con el siguiente token
 		}
 	}
 
