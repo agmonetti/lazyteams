@@ -172,7 +172,7 @@ func renderFilesContent(m *Model) string {
 		cursor := "  "
 		style := normalItemStyle
 		if i == m.selectedFile {
-			cursor = "▶ "
+			cursor = symCursor
 			style = selectedItemStyle
 		}
 

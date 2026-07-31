@@ -371,7 +371,7 @@ func (m Model) handleCursorModeTeams(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) 
 		// Scroll to cursor
 		cursorLine := 0
 		for i, line := range strings.Split(content, "\n") {
-			if strings.HasPrefix(line, "▶ ") {
+			if strings.HasPrefix(line, symCursor) {
 				cursorLine = i
 				break
 			}
@@ -394,7 +394,7 @@ func (m Model) handleCursorModeTeams(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) 
 		// Scroll to cursor
 		cursorLine := 0
 		for i, line := range strings.Split(content, "\n") {
-			if strings.HasPrefix(line, "▶ ") {
+			if strings.HasPrefix(line, symCursor) {
 				cursorLine = i
 				break
 			}
@@ -455,7 +455,7 @@ func (m Model) handleCursorModeDMs(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
 		content := formatMessagesDM(m.messages, m.viewport.Width, m.userName, m.selfID, m.messageCursor, m.cursorMode)
 		cursorLine := 0
 		for i, line := range strings.Split(content, "\n") {
-			if strings.HasPrefix(line, "▶ ") {
+			if strings.HasPrefix(line, symCursor) {
 				cursorLine = i
 				break
 			}
@@ -476,7 +476,7 @@ func (m Model) handleCursorModeDMs(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
 		content := formatMessagesDM(m.messages, m.viewport.Width, m.userName, m.selfID, m.messageCursor, m.cursorMode)
 		cursorLine := 0
 		for i, line := range strings.Split(content, "\n") {
-			if strings.HasPrefix(line, "▶ ") {
+			if strings.HasPrefix(line, symCursor) {
 				cursorLine = i
 				break
 			}

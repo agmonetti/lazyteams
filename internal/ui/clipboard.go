@@ -7,27 +7,32 @@ import (
 )
 
 // getClipboardImage tries to extract an image from the system clipboard
-// using standard Linux tools (wl-paste for Wayland, xclip for X11) or macOS pbpaste equivalents.
 func getClipboardImage() ([]byte, error) {
-	if runtime.GOOS == "linux" {
-		// Try Wayland first
+	switch runtime.GOOS {
+	case "linux":
 		out, err := exec.Command("wl-paste", "-t", "image/png").Output()
 		if err == nil && len(out) > 0 {
 			return out, nil
 		}
-		// Try X11
 		out, err = exec.Command("xclip", "-selection", "clipboard", "-t", "image/png", "-o").Output()
 		if err == nil && len(out) > 0 {
 			return out, nil
 		}
-		return nil, fmt.Errorf("no image found in clipboard or wl-paste/xclip not installed")
-	} else if runtime.GOOS == "darwin" {
-		// Try pngpaste on macOS (must be installed via brew)
+		return nil, fmt.Errorf("no image in clipboard (install wl-paste or xclip)")
+	case "darwin":
 		out, err := exec.Command("pngpaste", "-").Output()
 		if err == nil && len(out) > 0 {
 			return out, nil
 		}
-		return nil, fmt.Errorf("no image found in clipboard or pngpaste not installed")
+		return nil, fmt.Errorf("no image in clipboard (install pngpaste via brew)")
+	case "windows":
+		ps := `Add-Type -AssemblyName System.Windows.Forms; $img = [System.Windows.Forms.Clipboard]::GetImage(); if ($img -eq $null) { exit 1 }; $ms = New-Object System.IO.MemoryStream; $img.Save($ms, [System.Drawing.Imaging.ImageFormat]::Png); [Console]::OpenStandardOutput().Write($ms.ToArray(), 0, $ms.Length)`
+		out, err := exec.Command("powershell", "-NoProfile", "-Command", ps).Output()
+		if err == nil && len(out) > 0 {
+			return out, nil
+		}
+		return nil, fmt.Errorf("no image in clipboard")
+	default:
+		return nil, fmt.Errorf("clipboard image pasting not supported on this OS")
 	}
-	return nil, fmt.Errorf("clipboard image pasting not supported on this OS")
 }

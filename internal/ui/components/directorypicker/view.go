@@ -38,7 +38,7 @@ func (m Model) View() string {
 		cursor := "  "
 		style := normalStyle
 		if i == m.cursor {
-			cursor = "▶ "
+			cursor = symCursor
 			style = selectedStyle
 		}
 		icon := "▸" // dir

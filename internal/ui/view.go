@@ -2,7 +2,6 @@ package ui
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
@@ -49,7 +48,7 @@ func renderInfoContent(m *Model) string {
 		for i, member := range m.channelMembers {
 			cursor := "  "
 			if !m.focusLeft && m.viewMode == ModeInfo && i == m.channelMemberCursor {
-				cursor = "▶ "
+				cursor = symCursor
 			}
 			roleIcon := normalItemStyle.Render("Member   ")
 			if member.Role == "Owner" {
@@ -134,9 +133,9 @@ func (m Model) View() string {
 				}
 			}
 
-			dmArrow := "▼"
+			dmArrow := symArrowDown
 			if m.dmSectionCollapsed {
-				dmArrow = "▶"
+				dmArrow = strings.TrimSpace(symCursor)
 			}
 			dmHeaderStyle := metaStyle
 			if m.cursorOnDMHeader && m.focusLeft {
@@ -151,7 +150,7 @@ func (m Model) View() string {
 					style := normalItemStyle
 					if !m.cursorOnDMHeader && !m.cursorOnGroupHeader && i == m.selectedChat {
 						if m.focusLeft {
-							cursor = "▶ "
+							cursor = symCursor
 							style = selectedItemStyle
 						} else {
 							style = style.Copy().Foreground(lipgloss.Color("245"))
@@ -177,9 +176,9 @@ func (m Model) View() string {
 
 			if len(groupChats) > 0 {
 				leftContent += "\n"
-				groupArrow := "▼"
+				groupArrow := symArrowDown
 				if m.groupSectionCollapsed {
-					groupArrow = "▶"
+					groupArrow = strings.TrimSpace(symCursor)
 				}
 				groupHeaderStyle := metaStyle
 				if m.cursorOnGroupHeader && m.focusLeft {
@@ -194,7 +193,7 @@ func (m Model) View() string {
 						style := normalItemStyle
 						if !m.cursorOnDMHeader && !m.cursorOnGroupHeader && i == m.selectedChat {
 							if m.focusLeft {
-								cursor = "▶ "
+								cursor = symCursor
 								style = selectedItemStyle
 							} else {
 								style = style.Copy().Foreground(lipgloss.Color("245"))
@@ -233,7 +232,7 @@ func (m Model) View() string {
 			style := normalItemStyle
 			if ri == m.selectedTeam {
 				if m.focusLeft && m.focusList == 0 {
-					cursor = "▶ "
+					cursor = symCursor
 					style = selectedItemStyle
 				} else {
 					style = style.Copy().Foreground(lipgloss.Color("245"))
@@ -289,7 +288,7 @@ func (m Model) View() string {
 				style := normalItemStyle
 				if ri == m.selectedChan {
 					if m.focusLeft && m.focusList == 1 {
-						cursor = "▶ "
+						cursor = symCursor
 						style = selectedItemStyle
 					} else {
 						style = style.Copy().Foreground(lipgloss.Color("245"))
@@ -371,8 +370,12 @@ func (m Model) View() string {
 		if m.downloadStatus != "" {
 			statusLine = lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Render(m.downloadStatus)
 		}
+		logoLine := ""
+		if rightInnerWidth >= 74 {
+			logoLine = splashLogoStyle.Render(asciiLogo)
+		}
 		splashContent := lipgloss.JoinVertical(lipgloss.Center,
-			splashLogoStyle.Render(asciiLogo),
+			logoLine,
 			"",
 			splashTitleStyle.Render("Microsoft Teams Terminal UI"),
 			splashSubStyle.Render("v1.0.0-beta"),
@@ -394,8 +397,12 @@ func (m Model) View() string {
 		if m.downloadStatus != "" {
 			statusLine = lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Render(m.downloadStatus)
 		}
+		logoLine := ""
+		if rightInnerWidth >= 74 {
+			logoLine = splashLogoStyle.Render(asciiLogo)
+		}
 		splashContent := lipgloss.JoinVertical(lipgloss.Center,
-			splashLogoStyle.Render(asciiLogo),
+			logoLine,
 			"",
 			splashTitleStyle.Render("Microsoft Teams Terminal UI"),
 			splashSubStyle.Render("v1.0.0-beta"),
@@ -445,7 +452,7 @@ func (m Model) View() string {
 				if len([]rune(preview)) > 50 {
 					preview = string([]rune(preview)[:50]) + "..."
 				}
-				replyBar := metaStyle.Render(fmt.Sprintf("↩ Replying to %s: \"%s\"", name, preview))
+				replyBar := metaStyle.Render(fmt.Sprintf("%s Replying to %s: \"%s\"", symReplying, name, preview))
 				rightContent += replyBar + "\n"
 			}
 
@@ -497,7 +504,7 @@ func (m Model) View() string {
 					cursor := "  "
 					style := normalItemStyle
 					if i == m.mentionCursor {
-						cursor = "▶ "
+						cursor = symCursor
 						style = selectedItemStyle
 					}
 					popupLines = append(popupLines, fmt.Sprintf("%s%s", cursor, style.Render(s.DisplayName)))
@@ -568,7 +575,7 @@ func (m Model) View() string {
 			cursor := "  "
 			style := normalItemStyle
 			if i == m.presenceCursor {
-				cursor = "▶ "
+				cursor = symCursor
 				style = selectedItemStyle
 			}
 			menu += fmt.Sprintf("%s%s %s\n", cursor, presenceSymbol(opt), style.Render(opt))
@@ -589,7 +596,7 @@ func (m Model) View() string {
 				cursor := "  "
 				style := normalItemStyle
 				if i == m.newDMCursor {
-					cursor = "▶ "
+					cursor = symCursor
 					style = selectedItemStyle
 				}
 				line := fmt.Sprintf("%s%s\n   %s", cursor, style.Render(u.DisplayName), metaStyle.Render(u.Mail))
@@ -626,7 +633,7 @@ func (m Model) View() string {
 			cursor := "  "
 			style := normalItemStyle
 			if i == m.reactionCursor {
-				cursor = "▶ "
+				cursor = symCursor
 				style = selectedItemStyle
 			}
 			content += fmt.Sprintf("%s%s %s\n", cursor, reactionEmojis[key], style.Render(key))
@@ -661,7 +668,7 @@ func (m Model) View() string {
 				cursor := "  "
 				style := normalItemStyle
 				if t == m.createChannelType {
-					cursor = "▶ "
+					cursor = symCursor
 					style = selectedItemStyle
 				}
 				desc := map[string]string{
@@ -796,7 +803,7 @@ func (m Model) View() string {
 				cursor := "  "
 				nameStyle := normalItemStyle
 				if i == m.membersCursor {
-					cursor = "▶ "
+					cursor = symCursor
 					nameStyle = selectedItemStyle
 				}
 				roleIcon := normalItemStyle.Render("Member   ")
@@ -840,7 +847,7 @@ func (m Model) View() string {
 				cursor := "  "
 				style := normalItemStyle
 				if i == m.addChannelMemberCursor {
-					cursor = "▶ "
+					cursor = symCursor
 					style = selectedItemStyle
 				}
 				content += fmt.Sprintf("%s%s\n   %s\n", cursor, style.Render(u.DisplayName), metaStyle.Render(u.Mail))
@@ -870,7 +877,7 @@ func (m Model) View() string {
 				cursor := "  "
 				style := normalItemStyle
 				if i == m.newDMCursor {
-					cursor = "▶ "
+					cursor = symCursor
 					style = selectedItemStyle
 				}
 				content += fmt.Sprintf("%s%s\n   %s\n", cursor, style.Render(u.DisplayName), metaStyle.Render(u.Mail))
@@ -1012,7 +1019,8 @@ func (m Model) View() string {
 	    BorderForeground(colorBorder).
 	    Border(lipgloss.NormalBorder(), true, false, false, false).
 	    PaddingTop(0).
-	    PaddingLeft(1)
+	    PaddingLeft(1).
+	    Width(m.width - 2)
 	
 	footerLine := footerBorder.Render(m.footerText())
 	
@@ -1167,68 +1175,6 @@ func (m Model) footerText() string {
 	}
 }
 
-func reactionEmoji(key string) string {
-	switch key {
-	// Standard
-	case "like", "yes-tone0":      return "👍"
-	case "heart":                   return "❤️"
-	case "laugh":                   return "😂"
-	case "surprised":               return "😮"
-	case "sad":                     return "😢"
-	case "angry":                   return "😡"
-	// Skin tone variants
-	case "yes-tone1":               return "👍🏻"
-	case "yes-tone2":               return "👍🏼"
-	case "yes-tone3":               return "👍🏽"
-	case "yes-tone4":               return "👍🏾"
-	case "yes-tone5":               return "👍🏿"
-	// Extra
-	case "heartlightblue":          return "💙"
-
-	// Expressions
-	case "speechless":              return "😶"
-	case "fire":                    return "🔥"
-	case "faceinclouds":            return "😶‍🌫️"
-	case "think":                   return "🤔"
-	case "rofl":                    return "🤣"
-	case "fingerscrossed":          return "🤞"
-	case "cool":                    return "😎"
-	case "lipssealed":              return "🤐"
-	case "angryface":               return "😠"
-	case "sweat":                   return "😓"
-	case "diagonalmouth":           return "😑"
-
-	// Gestures
-	case "no", "no-tone0":          return "🙅"
-	case "no-tone1":                return "🙅🏻"
-	case "no-tone2":                return "🙅🏼"
-	case "no-tone3":                return "🙅🏽"
-	case "no-tone4":                return "🙅🏾"
-	case "no-tone5":                return "🙅🏿"
-	case "clappinghands", "clappinghands-tone0": return "👏"
-	case "clappinghands-tone1":     return "👏🏻"
-	case "clappinghands-tone2":     return "👏🏼"
-	case "clappinghands-tone3":     return "👏🏽"
-	case "clappinghands-tone4":     return "👏🏾"
-	case "clappinghands-tone5":     return "👏🏿"
-	case "follow":                  return "👀"
-
-	// Objects / symbols
-	case "soccerball":              return "⚽"
-	case "1f389_partypopper":       return "🎉"
-	case "1f410_goat":              return "🐐"
-
-	default:
-		parts := strings.SplitN(key, "_", 2)
-		if len(parts) >= 1 {
-			if cp, err := strconv.ParseInt(parts[0], 16, 32); err == nil {
-				return string(rune(cp))
-			}
-		}
-		return "●"
-	}
-}
-
 func renderThreadView(m *Model, width, height int) string {
 	var content string
 
@@ -1251,7 +1197,7 @@ func renderThreadView(m *Model, width, height int) string {
 				cursor := "  "
 				style := normalItemStyle
 				if i == m.mentionCursor {
-					cursor = "▶ "
+					cursor = symCursor
 					style = selectedItemStyle
 				}
 				popupLines = append(popupLines, fmt.Sprintf("%s%s", cursor, style.Render(s.DisplayName)))
@@ -1282,7 +1228,7 @@ func formatThread(parent graph.Message, replies []graph.Message, width int, self
 	// Parent message
 	parentCursor := "  "
 	if cursorActive && cursor == 0 {
-		parentCursor = "▶ "
+		parentCursor = symCursor
 	}
 	timeStr := parent.CreatedAt.Local().Format("02/01 15:04")
 	var parentAttStr string
@@ -1340,7 +1286,7 @@ func formatThread(parent graph.Message, replies []graph.Message, width int, self
 	for i, r := range replies {
 		replyCursor := "  "
 		if cursorActive && cursor == i+1 {
-			replyCursor = "▶ "
+			replyCursor = symCursor
 		}
 		timeStr := r.CreatedAt.Local().Format("02/01 15:04")
 		name := r.FromName
@@ -1449,7 +1395,7 @@ func renderNotifList(m Model) string {
 		style := normalItemStyle
 		if origIdx[fi] == m.selectedNotif {
 			if m.focusLeft {
-				cursor = "▶ "
+				cursor = symCursor
 				style = selectedItemStyle
 			} else {
 				style = style.Copy().Foreground(lipgloss.Color("245"))
@@ -1662,7 +1608,7 @@ func renderAssignList(m Model) string {
 		style := normalItemStyle
 		if i == m.selectedAssign {
 			if m.focusLeft {
-				cursor = "▶ "
+				cursor = symCursor
 				style = selectedItemStyle
 			} else {
 				style = style.Copy().Foreground(lipgloss.Color("245"))
@@ -1736,7 +1682,7 @@ func renderAssignDetail(m Model) string {
 		for i, f := range a.RefFiles {
 			cursor := "  "
 			if !m.focusLeft && m.assignFileCursor == i {
-				cursor = "▶ "
+				cursor = symCursor
 			}
 			b.WriteString(cursor + makeClickableLink(f.Name, buildSharePointViewerURL(f.FileUrl)) + "\n")
 		}
@@ -1750,7 +1696,7 @@ func renderAssignDetail(m Model) string {
 		for i, f := range a.MyFiles {
 			cursor := "  "
 			if !m.focusLeft && m.assignFileCursor == len(a.RefFiles)+i {
-				cursor = "▶ "
+				cursor = symCursor
 			}
 			b.WriteString(cursor + makeClickableLink(f.Name, buildSharePointViewerURL(f.FileUrl)) + "\n")
 		}

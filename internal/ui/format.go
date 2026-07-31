@@ -140,7 +140,7 @@ func formatMessagesWithCursor(messages []graph.Message, width, cursor int, curso
 		msg := roots[i]
 		cursorStr := "  "
 		if cursorMode && i == cursor {
-			cursorStr = "▶ "
+			cursorStr = symCursor
 		}
 		timeStr := msg.CreatedAt.Local().Format("02/01 15:04")
 		formattedTime := metaStyle.Render(fmt.Sprintf("[%s]", timeStr))
@@ -171,7 +171,7 @@ func formatMessagesWithCursor(messages []graph.Message, width, cursor int, curso
 
 		count := replyCount(messages, msg.ID)
 		if count > 0 {
-			replyStr := fmt.Sprintf("  ↳ %d repl", count)
+			replyStr := fmt.Sprintf("  %s %d repl", symReply, count)
 			if count == 1 {
 				replyStr += "y"
 			} else {
@@ -318,7 +318,7 @@ func formatMessagesDM(messages []graph.Message, width int, selfName, selfID stri
 
 		cursorStr := "  "
 		if cursorMode && i == cursor {
-			cursorStr = "▶ "
+			cursorStr = symCursor
 		}
 
 		timeStr := msg.CreatedAt.Local().Format("02/01 15:04")
