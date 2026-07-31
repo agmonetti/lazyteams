@@ -299,7 +299,7 @@ func (m Model) View() string {
 				}
 				lock := ""
 				if strings.ToLower(c.MembershipType) == "private" {
-					lock = lipgloss.NewStyle().Foreground(colorMuted).Render(" ")
+					lock = lipgloss.NewStyle().Foreground(colorMuted).Render(symLock)
 				}
 				_ = vi
 				leftContent += fmt.Sprintf("%s%s\n", cursor, style.Render(truncateText(c.DisplayName, leftOuterWidth-6))+lock)
@@ -977,6 +977,23 @@ func (m Model) View() string {
 
 			if len(parts) > 0 {
 				leftBanner = strings.Join(parts, splashSubStyle.Render("  ·  "))
+			} else {
+				// Workspace indicator — shown when nothing urgent is happening
+				workspaceNames := []string{"Teams", "DMs", "Activity", "Assignments"}
+				var wsTabs []string
+				for i, name := range workspaceNames {
+					num := i + 1
+					if Workspace(i) == m.workspace {
+						wsTabs = append(wsTabs, lipgloss.NewStyle().
+							Foreground(colorAccent).Bold(true).
+							Render(fmt.Sprintf("[%d] %s", num, name)))
+					} else {
+						wsTabs = append(wsTabs, lipgloss.NewStyle().
+							Foreground(colorMuted).
+							Render(fmt.Sprintf("%d", num)))
+					}
+				}
+				leftBanner = strings.Join(wsTabs, splashSubStyle.Render("  ·  "))
 			}
 		}
 
@@ -1020,7 +1037,7 @@ func (m Model) View() string {
 	    Border(lipgloss.NormalBorder(), true, false, false, false).
 	    PaddingTop(0).
 	    PaddingLeft(1).
-	    Width(m.width - 2)
+	    MaxWidth(m.width - 2)
 	
 	footerLine := footerBorder.Render(m.footerText())
 	

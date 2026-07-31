@@ -7,10 +7,11 @@ import (
 )
 
 var (
-	symReply    = "↳"
-	symReplying = "↩"
-	symCursor   = "▶ "
+	symReply     = "↳"
+	symReplying  = "↩"
+	symCursor    = "▶ "
 	symArrowDown = "▼"
+	symLock      = "  🔒"
 )
 
 func init() {
@@ -19,6 +20,7 @@ func init() {
 		symReplying = "[Replying]"
 		symCursor = "> "
 		symArrowDown = "v"
+		symLock = " [P]"
 	}
 }
 
