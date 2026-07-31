@@ -74,7 +74,12 @@ go build -o msTTui-auth ./cmd/auth-helper/
 
 # Run
 ./msTTui
+
+# Show CLI help (usage, auth commands, config paths)
+./msTTui --help
 ```
+
+See [Command-line options](https://ms-teams-tui.agmonetti.workers.dev/#command-line-options) for the full list of `msTTui-auth` flags (`--renew`, `--clear-session`, `--clear-tokens`, `--show`, `--headless`).
 
 ## First-time setup
 
