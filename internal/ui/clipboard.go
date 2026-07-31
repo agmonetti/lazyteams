@@ -2,7 +2,6 @@ package ui
 
 import (
 	"fmt"
-	"os"
 	"os/exec"
 	"runtime"
 )
@@ -28,41 +27,12 @@ func getClipboardImage() ([]byte, error) {
 		}
 
 		// Native fallback using osascript — no external tools required.
-		// Use a unique temp file per call to avoid races on rapid Ctrl+P.
-		tmpFile, err := os.CreateTemp("", "msTTui-clipboard-*.png")
-		if err != nil {
-			return nil, fmt.Errorf("no image in clipboard")
+		// osascript prints raw data bytes of the PNG to stdout.
+		out, err = exec.Command("osascript", "-e", "the clipboard as «class PNGf»").Output()
+		if err == nil && isValidPNG(out) {
+			return out, nil
 		}
-		tmpPath := tmpFile.Name()
-		tmpFile.Close()
-		defer os.Remove(tmpPath)
-
-		script := fmt.Sprintf(`
-        set tmpFile to "%s"
-        try
-            set imgData to (the clipboard as «class PNGf»)
-            set f to open for access POSIX file tmpFile with write permission
-            set eof of f to 0
-            write imgData to f
-            close access f
-        on error
-            try
-                close access POSIX file tmpFile
-            end try
-            error "No PNG image in clipboard"
-        end try
-    `, tmpPath)
-
-		cmd := exec.Command("osascript", "-e", script)
-		if err := cmd.Run(); err != nil {
-			return nil, fmt.Errorf("no image in clipboard")
-		}
-
-		data, err := os.ReadFile(tmpPath)
-		if err != nil || len(data) == 0 {
-			return nil, fmt.Errorf("no image in clipboard")
-		}
-		return data, nil
+		return nil, fmt.Errorf("no image in clipboard")
 	case "windows":
 		ps := `Add-Type -AssemblyName System.Windows.Forms; $img = [System.Windows.Forms.Clipboard]::GetImage(); if ($img -eq $null) { exit 1 }; $ms = New-Object System.IO.MemoryStream; $img.Save($ms, [System.Drawing.Imaging.ImageFormat]::Png); [Console]::OpenStandardOutput().Write($ms.ToArray(), 0, $ms.Length)`
 		out, err := exec.Command("powershell", "-NoProfile", "-Command", ps).Output()
@@ -73,4 +43,17 @@ func getClipboardImage() ([]byte, error) {
 	default:
 		return nil, fmt.Errorf("clipboard image pasting not supported on this OS")
 	}
+}
+
+// isValidPNG checks the PNG magic bytes (89 50 4E 47 0D 0A 1A 0A).
+func isValidPNG(data []byte) bool {
+	return len(data) >= 8 &&
+		data[0] == 0x89 &&
+		data[1] == 'P' &&
+		data[2] == 'N' &&
+		data[3] == 'G' &&
+		data[4] == '\r' &&
+		data[5] == '\n' &&
+		data[6] == 0x1a &&
+		data[7] == '\n'
 }
