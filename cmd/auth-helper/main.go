@@ -240,6 +240,16 @@ func main() {
 
 	captured := &tokens{}
 
+	// Detect unexpected browser close and clear session if capture incomplete
+	context.On("close", func() {
+		captured.mu.Lock()
+		incomplete := captured.graphToken == "" || captured.webToken == "" || captured.cookie == ""
+		captured.mu.Unlock()
+		if incomplete {
+			os.RemoveAll(sessionDir)
+		}
+	})
+
 	// Catch Ctrl+C to save tokens before exiting
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
