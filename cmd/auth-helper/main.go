@@ -246,6 +246,18 @@ func main() {
 	go func() {
 		<-sigCh
 		fmt.Println("\n\n[!] Interrupted by user. Saving captured tokens...")
+
+		// Si la captura fue incompleta, limpiar la sesión del browser
+		// para que el próximo run pida login de nuevo
+		captured.mu.Lock()
+		incomplete := captured.graphToken == "" || captured.webToken == "" || captured.cookie == ""
+		captured.mu.Unlock()
+
+		if incomplete {
+			fmt.Println("  ⚠ Incomplete session — clearing browser session to force re-login next run.")
+			os.RemoveAll(sessionDir)
+		}
+
 		if err := saveTokens(captured, configDir); err != nil {
 			fmt.Printf("Error saving tokens: %v\n", err)
 		} else {
@@ -678,50 +690,60 @@ func fullRenewal(pw *playwright.Playwright, page playwright.Page, ctx playwright
 		}
 	}()
 
-	// Open the base URL and wait for network to be idle to ensure auth completes
+	// Open the base URL — no networkidle wait, let the user interact with login
 	_, err := page.Goto("https://teams.microsoft.com",
 		playwright.PageGotoOptions{
-			Timeout:   playwright.Float(90000),
-			WaitUntil: playwright.WaitUntilStateNetworkidle,
+			Timeout: playwright.Float(90000),
 		},
 	)
 	if err != nil {
 		fmt.Println("  ⚠ Teams slow to load or auth required, continuing...")
 	}
 
-	// Wait for Teams to load OR timeout after 10s
 	if globalSpin != nil {
-		globalSpin.SetLabel("Waiting for Teams to load...")
-	}
-	loadDeadline := time.Now().Add(10 * time.Second)
-	for time.Now().Before(loadDeadline) {
-		url := page.URL()
-		if strings.Contains(url, "teams.microsoft.com") &&
-			!strings.Contains(url, "login") {
-			break // Teams loaded, no need to wait more
-		}
-		time.Sleep(500 * time.Millisecond)
+		globalSpin.SetLabel("Waiting for login...")
 	}
 
-	// Navigate to Teams section to trigger SPACES_TOKEN
+	// Wait for login FIRST — up to 5 minutes on first run
+	loginTimeout := 3 * time.Minute
+	if firstRun {
+		loginTimeout = 5 * time.Minute
+	}
+	// En primer run, esperar a que el interceptor capture el primer token
+	// como señal de que Teams cargó y el login completó.
+	// En runs subsiguientes, simplemente esperar un poco.
+	if firstRun {
+		if globalSpin != nil {
+			globalSpin.SetLabel("Waiting for you to sign in...")
+		}
+		loginDeadline := time.Now().Add(loginTimeout)
+		for time.Now().Before(loginDeadline) {
+			time.Sleep(1 * time.Second)
+			// WebToken o SpacesToken solo aparecen cuando Teams cargó completamente
+			captured.mu.Lock()
+			hasWeb := captured.webToken != ""
+			hasSpaces := captured.spacesToken != ""
+			captured.mu.Unlock()
+			if hasWeb || hasSpaces {
+				if globalSpin != nil {
+					globalSpin.SetLabel("Teams loaded!")
+				}
+				time.Sleep(2 * time.Second)
+				break
+			}
+		}
+	} else {
+		time.Sleep(5 * time.Second)
+	}
+
+	// Now navigate to /v2/#/teams/ to trigger tokens
+	if globalSpin != nil {
+		globalSpin.SetLabel("Navigating to Teams to capture tokens...")
+	}
 	page.Goto("https://teams.microsoft.com/v2/#/teams/", playwright.PageGotoOptions{
 		Timeout: playwright.Float(15000),
 	})
 	time.Sleep(5 * time.Second)
-
-	// Wait for login to complete before starting aggressive navigation
-	authDeadline := time.Now().Add(3 * time.Minute) // Give user up to 3 mins to login
-	for time.Now().Before(authDeadline) {
-		url := page.URL()
-		if strings.Contains(url, "login.microsoftonline.com") || strings.Contains(url, "login.live.com") || strings.Contains(url, "login.microsoft.com") {
-			time.Sleep(2 * time.Second)
-			continue
-		}
-
-		// If we're not on a login page, give it a few seconds to load the Teams UI
-		time.Sleep(5 * time.Second)
-		break
-	}
 
 	// Step: try fabric token from storage
 
@@ -1108,10 +1130,15 @@ func tryExtractGraphTokenViaGraphExplorer(page playwright.Page, captured *tokens
 		}
 	}
 
-	// Return to Teams if extraction failed
-	page.Goto("https://teams.microsoft.com/v2/",
-		playwright.PageGotoOptions{Timeout: playwright.Float(15000)},
-	)
+	// Solo redirigir si ya capturamos el token
+	captured.mu.Lock()
+	hasToken := captured.graphToken != ""
+	captured.mu.Unlock()
+	if hasToken {
+		page.Goto("https://teams.microsoft.com/v2/",
+			playwright.PageGotoOptions{Timeout: playwright.Float(15000)},
+		)
+	}
 }
 
 // tryExtractEduTokenFromJS attempts to extract the EDU_TOKEN from
