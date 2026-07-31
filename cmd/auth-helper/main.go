@@ -240,13 +240,22 @@ func main() {
 
 	captured := &tokens{}
 
+	// Signal that the browser was closed unexpectedly
+	browserClosed := make(chan struct{}, 1)
+
 	// Detect unexpected browser close and clear session if capture incomplete
 	context.On("close", func() {
 		captured.mu.Lock()
 		incomplete := captured.graphToken == "" || captured.webToken == "" || captured.cookie == ""
 		captured.mu.Unlock()
 		if incomplete {
+			fmt.Println("\n\n[!] Browser closed before login completed. Clearing session...")
 			os.RemoveAll(sessionDir)
+			fmt.Println("  ✓ Session cleared. Next run will require login.")
+		}
+		select {
+		case browserClosed <- struct{}{}:
+		default:
 		}
 	})
 
@@ -469,7 +478,7 @@ func main() {
 		} else {
 			fmt.Println("→ Teams will load automatically.")
 		}
-		fullRenewal(pw, page, context, captured, sessionDir, firstRun)
+		fullRenewal(pw, page, context, captured, sessionDir, firstRun, browserClosed)
 	}
 
 	fmt.Println()
@@ -690,7 +699,7 @@ func renewEdu(page playwright.Page, captured *tokens) {
 }
 
 // fullRenewal runs the full capture flow (all 5 tokens).
-func fullRenewal(pw *playwright.Playwright, page playwright.Page, ctx playwright.BrowserContext, captured *tokens, sessionDir string, firstRun bool) {
+func fullRenewal(pw *playwright.Playwright, page playwright.Page, ctx playwright.BrowserContext, captured *tokens, sessionDir string, firstRun bool, browserClosed <-chan struct{}) {
 	globalSpin = newSpinner("Connecting to Teams...")
 	globalSpin.Start()
 	defer func() {
@@ -728,6 +737,14 @@ func fullRenewal(pw *playwright.Playwright, page playwright.Page, ctx playwright
 		}
 		loginDeadline := time.Now().Add(loginTimeout)
 		for time.Now().Before(loginDeadline) {
+			// Check if browser was closed
+			select {
+			case <-browserClosed:
+				fmt.Println("\n  · Browser closed — stopping capture.")
+				return
+			default:
+			}
+
 			time.Sleep(1 * time.Second)
 			// WebToken or SpacesToken only appear when Teams has fully loaded
 			captured.mu.Lock()
@@ -763,7 +780,13 @@ func fullRenewal(pw *playwright.Playwright, page playwright.Page, ctx playwright
 	defer ticker.Stop()
 
 	for time.Now().Before(deadline) {
-		<-ticker.C
+		select {
+		case <-browserClosed:
+			fmt.Println("\n  · Browser closed — stopping capture.")
+			return
+		case <-ticker.C:
+			// continue with normal logic
+		}
 		elapsed := time.Since(startTime)
 
 		captured.mu.Lock()
@@ -1455,6 +1478,8 @@ func patchWebSocketAsserts() {
 	switch runtime.GOOS {
 	case "windows":
 		base = filepath.Join(helpers.HomeDir(), "AppData", "Local", "ms-playwright-go")
+	case "darwin":
+		base = filepath.Join(helpers.HomeDir(), "Library", "Caches", "ms-playwright-go")
 	default:
 		base = filepath.Join(helpers.HomeDir(), ".cache", "ms-playwright-go")
 	}
