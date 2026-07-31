@@ -12,6 +12,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"teamsTUI/internal/helpers"
 )
 
 var (
@@ -257,7 +259,7 @@ func (c *Client) doReq(endpoint string) ([]byte, error) {
 }
 
 func (c *Client) ReloadTokens() error {
-	path := filepath.Join(os.Getenv("HOME"), ".config", "teamstui", "tokens.env")
+	path := filepath.Join(helpers.ConfigDir(), "tokens.env")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return err

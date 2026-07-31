@@ -12,7 +12,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/playwright-community/playwright-go"
+	"github.com/mxschmitt/playwright-go"
+
+	"teamsTUI/internal/helpers"
 )
 
 type tokens struct {
@@ -99,7 +101,7 @@ func main() {
 	fmt.Println("╚════════════════════════════════════════════╝")
 	fmt.Println()
 
-	configDir := filepath.Join(os.Getenv("HOME"), ".config", "teamstui")
+	configDir := helpers.ConfigDir()
 	sessionDir := filepath.Join(configDir, "browser-session")
 
 	os.MkdirAll(sessionDir, 0700)
@@ -148,10 +150,16 @@ func main() {
 	fmt.Println("→ Verifying browser...")
 
 	// Check if browser is already installed to avoid re-download
-	playwrightDir := filepath.Join(os.Getenv("HOME"), ".cache", "ms-playwright")
 	browserExists := false
-	if entries, err := os.ReadDir(playwrightDir); err == nil && len(entries) > 0 {
-		browserExists = true
+	// Linux: ~/.cache/ms-playwright, Windows: %USERPROFILE%\AppData\Local\ms-playwright
+	for _, dir := range []string{
+		filepath.Join(helpers.HomeDir(), ".cache", "ms-playwright"),
+		filepath.Join(helpers.HomeDir(), "AppData", "Local", "ms-playwright"),
+	} {
+		if entries, err := os.ReadDir(dir); err == nil && len(entries) > 0 {
+			browserExists = true
+			break
+		}
 	}
 
 	if !browserExists {

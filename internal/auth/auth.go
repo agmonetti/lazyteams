@@ -7,13 +7,15 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"teamsTUI/internal/helpers"
 )
 
 // loadTokensFile reads the tokens file into a map.
 // Environment variables still take precedence when set explicitly.
 func loadTokensFile() map[string]string {
 	result := make(map[string]string)
-	path := filepath.Join(os.Getenv("HOME"), ".config", "teamstui", "tokens.env")
+	path := filepath.Join(helpers.ConfigDir(), "tokens.env")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return result
