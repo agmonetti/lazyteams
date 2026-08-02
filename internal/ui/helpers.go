@@ -469,6 +469,9 @@ func (m *Model) recalculateViewportHeight() {
 		return
 	}
 	panelOuterHeight := m.height - 6
+	if m.mobileMode {
+		panelOuterHeight = m.height - 2
+	}
 	if panelOuterHeight < 2 {
 		panelOuterHeight = 2
 	}
@@ -528,7 +531,11 @@ func (m *Model) recalculateViewportHeight() {
 
 	// Recalculate width according to active mode
 	if m.mobileMode {
-		mobileInnerWidth := mobilePanelWidth - 2 // menos borde
+		mobileWidth := m.width - 2
+		if mobileWidth < 20 {
+			mobileWidth = 20
+		}
+		mobileInnerWidth := mobileWidth - 2 // menos borde
 		m.viewport.Width = mobileInnerWidth
 		m.threadViewport.Width = mobileInnerWidth
 	} else {
@@ -538,4 +545,20 @@ func (m *Model) recalculateViewportHeight() {
 		m.viewport.Width = rightOuterWidth - 2
 		m.threadViewport.Width = rightOuterWidth - 2
 	}
+}
+
+func (m *Model) getMobileWidth() int {
+	w := m.width - 2
+	if w < 10 {
+		return 10
+	}
+	return w
+}
+
+func (m *Model) getMobileHeight() int {
+	h := m.height - 1
+	if h < 5 {
+		return 5
+	}
+	return h
 }

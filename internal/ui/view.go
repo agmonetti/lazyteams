@@ -10,8 +10,6 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-const mobilePanelWidth = 40
-
 const asciiLogo = `
 ████████ ███████  █████  ███    ███ ███████       ████████ ██    ██ ██ 
    ██    ██      ██   ██ ████  ████ ██               ██    ██    ██ ██ 
@@ -19,7 +17,6 @@ const asciiLogo = `
    ██    ██      ██   ██ ██  ██  ██      ██          ██    ██    ██ ██ 
    ██    ███████ ██   ██ ██      ██ ███████          ██     ██████  ██ 
                                                                         `
-
 
 func renderInfoContent(m *Model) string {
 	if m.channelInfo == nil {
@@ -35,13 +32,13 @@ func renderInfoContent(m *Model) string {
 	if len(ch.CreatedDateTime) >= 10 {
 		created = ch.CreatedDateTime[:10]
 	}
-	
+
 	var content string
 	content += fmt.Sprintf(
 		"Name:    %s\n"+
-		"Type:    %s\n"+
-		"Email:   %s\n"+
-		"Created: %s\n",
+			"Type:    %s\n"+
+			"Email:   %s\n"+
+			"Created: %s\n",
 		ch.DisplayName, ch.MembershipType, email, created,
 	)
 
@@ -54,7 +51,7 @@ func renderInfoContent(m *Model) string {
 			}
 			roleIcon := normalItemStyle.Render("Member   ")
 			if member.Role == "Owner" {
-			    roleIcon = lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Render("Owner ★  ")
+				roleIcon = lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Render("Owner ★  ")
 			}
 			content += fmt.Sprintf("%s%s%s  %s\n",
 				cursor,
@@ -104,18 +101,30 @@ func (m Model) View() string {
 		return ""
 	}
 	panelOuterHeight := m.height - 6
+	if m.mobileMode {
+		panelOuterHeight = m.height - 2
+	}
 	if panelOuterHeight < 2 {
 		panelOuterHeight = 2
 	}
 
 	// Width(n) adds 2 cols of border per panel; 1 col of margin for Kitty.
-	available       := m.width - 5
-	leftOuterWidth  := available / 3
+	available := m.width - 5
+	leftOuterWidth := available / 3
 	rightOuterWidth := available - leftOuterWidth
 	if m.mobileMode {
-		// Mobile: single panel at full width, so truncate at full width
-		leftOuterWidth = m.width - 3
-		rightOuterWidth = m.width - 3
+		// Mobile: single centered panel, so truncate at panel width
+		mobileWidth := m.width - 2
+		if mobileWidth < 20 {
+			mobileWidth = 20
+		}
+		leftOuterWidth = mobileWidth
+		rightOuterWidth = mobileWidth
+	}
+
+	leftTruncWidth := leftOuterWidth - 4
+	if m.mobileMode {
+		leftTruncWidth = m.width - 6
 	}
 
 	// INNER dimensions
@@ -249,7 +258,7 @@ func (m Model) View() string {
 				style = style.Copy().Foreground(colorMuted)
 			}
 			_ = vi
-			leftContent += fmt.Sprintf("%s%s\n", cursor, style.Render(truncateText(t.DisplayName, leftOuterWidth-4)))
+			leftContent += fmt.Sprintf("%s%s\n", cursor, style.Render(truncateText(t.DisplayName, leftTruncWidth)))
 		}
 		hiddenCount := 0
 		for _, t := range m.teams {
@@ -309,7 +318,7 @@ func (m Model) View() string {
 					lock = lipgloss.NewStyle().Foreground(colorMuted).Render(symLock)
 				}
 				_ = vi
-				leftContent += fmt.Sprintf("%s%s\n", cursor, style.Render(truncateText(c.DisplayName, leftOuterWidth-6))+lock)
+				leftContent += fmt.Sprintf("%s%s\n", cursor, style.Render(truncateText(c.DisplayName, leftTruncWidth-2))+lock)
 			}
 			hiddenCount := 0
 			for _, c := range m.channels {
@@ -755,7 +764,7 @@ func (m Model) View() string {
 		combined := lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, rightPanel)
 		return lipgloss.Place(lipgloss.Width(combined), lipgloss.Height(combined), lipgloss.Center, lipgloss.Center, popup)
 	}
-	
+
 	if m.showRemoveMemberPopup && m.membersCursor < len(m.teamMembers) {
 		member := m.teamMembers[m.membersCursor]
 		content := fmt.Sprintf("Remove \"%s\" from team?\n\n[Enter/y] Confirm   [Esc/n] Cancel", member.DisplayName)
@@ -815,7 +824,7 @@ func (m Model) View() string {
 				}
 				roleIcon := normalItemStyle.Render("Member   ")
 				if member.Role == "Owner" {
-				    roleIcon = lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Render("Owner ★  ")
+					roleIcon = lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Render("Owner ★  ")
 				}
 				line := fmt.Sprintf("%s%s%s\n   %s",
 					cursor,
@@ -904,7 +913,10 @@ func (m Model) View() string {
 	// Combine panels
 	var ui string
 	if m.mobileMode {
-		mobileWidth := mobilePanelWidth
+		mobileWidth := m.width - 2
+		if mobileWidth < 20 {
+			mobileWidth = 20
+		}
 		mobileInnerWidth := mobileWidth - 2 // border
 		mobileHeight := panelOuterHeight
 
@@ -936,132 +948,157 @@ func (m Model) View() string {
 
 	// Top status bar: unread counts on the left, name + presence on the right
 	if m.ready {
-		name := m.userName
-		if name == "" {
-			name = "Me"
-		}
-		myStatus := "Offline"
-		if s, ok := m.presence[m.selfID]; ok && s != "" {
-			myStatus = s
-		}
-		statusDot := presenceSymbol(myStatus)
-		statusLabel := splashSubStyle.Render(fmt.Sprintf("(%s)", myStatus))
-		userInfo := splashSubStyle.Render(name) + " " + statusDot + " " + statusLabel
-
-		// Build left-side banner — priority: token errors > creating > notification summary
-		var leftBanner string
-
-		if m.tokenRenewing {
-			tokenLabel := m.tokenRenewingType
-			switch tokenLabel {
-			case "graph":
-				tokenLabel = "MS_GRAPH_TOKEN"
-			case "fabric":
-				tokenLabel = "TEAMS_FABRIC_TOKEN"
-			case "web":
-				tokenLabel = "TEAMS_WEB_TOKEN"
-			case "notif":
-				tokenLabel = "TEAMS_NOTIF_TOKEN"
-			case "edu":
-				tokenLabel = "EDU_TOKEN"
+		if m.mobileMode {
+			myStatus := "Offline"
+			if s, ok := m.presence[m.selfID]; ok && s != "" {
+				myStatus = s
 			}
-			msg := "⟳ Renewing tokens..."
-			if tokenLabel != "" {
-				msg = fmt.Sprintf("⟳ Renewing %s...", tokenLabel)
+			statusDot := presenceSymbol(myStatus)
+			workspaceNames := map[Workspace]string{
+				WorkspaceTeams:       "Teams",
+				WorkspaceDMs:         "DMs",
+				WorkspaceActivity:    "Activity",
+				WorkspaceAssignments: "Assignments",
 			}
-			leftBanner = lipgloss.NewStyle().
-				Foreground(colorYellow).Bold(true).
-				Render(msg)
-		} else if m.tokenRenewErr != "" {
-			leftBanner = lipgloss.NewStyle().
-				Foreground(colorRed).Bold(true).
-				Render("⚠ Token renewal failed — run ./msTTui-auth")
-		} else if m.teamCreating {
-			leftBanner = lipgloss.NewStyle().
-				Foreground(colorMuted).
-				Render("⟳ Creating team...")
-		} else {
-			// Notification summary
-			var parts []string
-
-			unreadDMs := 0
-			for _, v := range m.chatUnread {
-				if v {
-					unreadDMs++
-				}
-			}
-			if unreadDMs > 0 {
-				parts = append(parts, lipgloss.NewStyle().
-					Foreground(colorRed).Bold(true).
-					Render(fmt.Sprintf("● (%d) unread DM%s", unreadDMs, pluralS(unreadDMs))))
-			}
-
-			unreadNotifs := 0
-			for _, n := range m.notifications {
-				if !n.IsRead {
-					unreadNotifs++
-				}
-			}
-			if unreadNotifs > 0 {
-				parts = append(parts, lipgloss.NewStyle().
-					Foreground(colorRed).Bold(true).
-					Render(fmt.Sprintf("(%d) activity notification%s", unreadNotifs, pluralS(unreadNotifs))))
-			}
-
-			if m.downloadStatus != "" {
-				parts = append(parts, lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Render(m.downloadStatus))
-			}
-
-			if len(parts) > 0 {
-				leftBanner = strings.Join(parts, splashSubStyle.Render("  ·  "))
-			} else {
-				// Workspace indicator — shown when nothing urgent is happening
-				workspaceNames := []string{"Teams", "DMs", "Activity", "Assignments"}
-				var wsTabs []string
-				for i, name := range workspaceNames {
-					num := i + 1
-					if Workspace(i) == m.workspace {
-						wsTabs = append(wsTabs, lipgloss.NewStyle().
-							Foreground(colorAccent).Bold(true).
-							Render(fmt.Sprintf("[%d] %s", num, name)))
-					} else {
-						wsTabs = append(wsTabs, lipgloss.NewStyle().
-							Foreground(colorMuted).
-							Render(fmt.Sprintf("%d", num)))
-					}
-				}
-				if m.mobileMode {
-					// Add [M] indicator before workspace tabs
-					mobileBadge := lipgloss.NewStyle().Foreground(colorMuted).Render("[M] ")
-					leftBanner = mobileBadge + strings.Join(wsTabs, splashSubStyle.Render("  ·  "))
-				} else {
-					leftBanner = strings.Join(wsTabs, splashSubStyle.Render("  ·  "))
-				}
-			}
-		}
-
-		userInfoW := lipgloss.Width(userInfo)
-		availableW := m.width - 1 - userInfoW - 4
-
-		var topBar string
-		if leftBanner != "" && availableW > 10 {
-			bannerW := lipgloss.Width(leftBanner)
-			padding := availableW - bannerW
+			wsLabel := lipgloss.NewStyle().
+				Foreground(colorAccent).Bold(true).
+				Render("[M] " + workspaceNames[m.workspace])
+			padding := m.width - lipgloss.Width(wsLabel) - lipgloss.Width(statusDot) - 4
 			if padding < 0 {
 				padding = 0
 			}
-			topBar = lipgloss.NewStyle().PaddingLeft(2).Render(leftBanner) +
+			topBar := lipgloss.NewStyle().PaddingLeft(2).Render(wsLabel) +
 				strings.Repeat(" ", padding) +
-				lipgloss.NewStyle().PaddingRight(2).Render(userInfo)
+				lipgloss.NewStyle().PaddingRight(2).Render(statusDot)
+			ui = lipgloss.JoinVertical(lipgloss.Left, topBar, ui)
 		} else {
-			topBar = lipgloss.NewStyle().
-				Width(m.width - 1).
-				Align(lipgloss.Right).
-				PaddingRight(2).
-				Render(userInfo)
-		}
+			name := m.userName
+			if name == "" {
+				name = "Me"
+			}
+			myStatus := "Offline"
+			if s, ok := m.presence[m.selfID]; ok && s != "" {
+				myStatus = s
+			}
+			statusDot := presenceSymbol(myStatus)
+			statusLabel := splashSubStyle.Render(fmt.Sprintf("(%s)", myStatus))
+			userInfo := splashSubStyle.Render(name) + " " + statusDot + " " + statusLabel
 
-		ui = lipgloss.JoinVertical(lipgloss.Left, topBar, ui)
+			// Build left-side banner — priority: token errors > creating > notification summary
+			var leftBanner string
+
+			if m.tokenRenewing {
+				tokenLabel := m.tokenRenewingType
+				switch tokenLabel {
+				case "graph":
+					tokenLabel = "MS_GRAPH_TOKEN"
+				case "fabric":
+					tokenLabel = "TEAMS_FABRIC_TOKEN"
+				case "web":
+					tokenLabel = "TEAMS_WEB_TOKEN"
+				case "notif":
+					tokenLabel = "TEAMS_NOTIF_TOKEN"
+				case "edu":
+					tokenLabel = "EDU_TOKEN"
+				}
+				msg := "⟳ Renewing tokens..."
+				if tokenLabel != "" {
+					msg = fmt.Sprintf("⟳ Renewing %s...", tokenLabel)
+				}
+				leftBanner = lipgloss.NewStyle().
+					Foreground(colorYellow).Bold(true).
+					Render(msg)
+			} else if m.tokenRenewErr != "" {
+				leftBanner = lipgloss.NewStyle().
+					Foreground(colorRed).Bold(true).
+					Render("⚠ Token renewal failed — run ./msTTui-auth")
+			} else if m.teamCreating {
+				leftBanner = lipgloss.NewStyle().
+					Foreground(colorMuted).
+					Render("⟳ Creating team...")
+			} else {
+				// Notification summary
+				var parts []string
+
+				unreadDMs := 0
+				for _, v := range m.chatUnread {
+					if v {
+						unreadDMs++
+					}
+				}
+				if unreadDMs > 0 {
+					parts = append(parts, lipgloss.NewStyle().
+						Foreground(colorRed).Bold(true).
+						Render(fmt.Sprintf("● (%d) unread DM%s", unreadDMs, pluralS(unreadDMs))))
+				}
+
+				unreadNotifs := 0
+				for _, n := range m.notifications {
+					if !n.IsRead {
+						unreadNotifs++
+					}
+				}
+				if unreadNotifs > 0 {
+					parts = append(parts, lipgloss.NewStyle().
+						Foreground(colorRed).Bold(true).
+						Render(fmt.Sprintf("(%d) activity notification%s", unreadNotifs, pluralS(unreadNotifs))))
+				}
+
+				if m.downloadStatus != "" {
+					parts = append(parts, lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Render(m.downloadStatus))
+				}
+
+				if len(parts) > 0 {
+					leftBanner = strings.Join(parts, splashSubStyle.Render("  ·  "))
+				} else {
+					// Workspace indicator — shown when nothing urgent is happening
+					workspaceNames := []string{"Teams", "DMs", "Activity", "Assignments"}
+					var wsTabs []string
+					for i, name := range workspaceNames {
+						num := i + 1
+						if Workspace(i) == m.workspace {
+							wsTabs = append(wsTabs, lipgloss.NewStyle().
+								Foreground(colorAccent).Bold(true).
+								Render(fmt.Sprintf("[%d] %s", num, name)))
+						} else if !m.mobileMode {
+							wsTabs = append(wsTabs, lipgloss.NewStyle().
+								Foreground(colorMuted).
+								Render(fmt.Sprintf("%d", num)))
+						}
+					}
+					if m.mobileMode {
+						// Add [M] indicator before workspace tabs
+						mobileBadge := lipgloss.NewStyle().Foreground(colorMuted).Render("[M] ")
+						leftBanner = mobileBadge + strings.Join(wsTabs, splashSubStyle.Render("  ·  "))
+					} else {
+						leftBanner = strings.Join(wsTabs, splashSubStyle.Render("  ·  "))
+					}
+				}
+			}
+
+			userInfoW := lipgloss.Width(userInfo)
+			availableW := m.width - 1 - userInfoW - 4
+
+			var topBar string
+			if leftBanner != "" && availableW > 10 {
+				bannerW := lipgloss.Width(leftBanner)
+				padding := availableW - bannerW
+				if padding < 0 {
+					padding = 0
+				}
+				topBar = lipgloss.NewStyle().PaddingLeft(2).Render(leftBanner) +
+					strings.Repeat(" ", padding) +
+					lipgloss.NewStyle().PaddingRight(2).Render(userInfo)
+			} else {
+				topBar = lipgloss.NewStyle().
+					Width(m.width - 1).
+					Align(lipgloss.Right).
+					PaddingRight(2).
+					Render(userInfo)
+			}
+
+			ui = lipgloss.JoinVertical(lipgloss.Left, topBar, ui)
+		}
 	}
 
 	if m.showHelp {
@@ -1077,16 +1114,16 @@ func (m Model) View() string {
 
 	// Contextual footer
 	footerBorder := lipgloss.NewStyle().
-	    BorderForeground(colorBorder).
-	    Border(lipgloss.NormalBorder(), true, false, false, false).
-	    PaddingTop(0).
-	    PaddingLeft(1).
-	    MaxWidth(m.width - 2)
+		BorderForeground(colorBorder).
+		Border(lipgloss.NormalBorder(), true, false, false, false).
+		PaddingTop(0).
+		PaddingLeft(1).
+		MaxWidth(m.width - 2)
 
 	if !m.mobileMode {
 		footerLine := footerBorder.Render(m.footerText())
 		if m.presenceError != "" {
-			footerLine += "\n" + lipgloss.NewStyle().Foreground(lipgloss.Color("203")).Render("Presence error: " + m.presenceError)
+			footerLine += "\n" + lipgloss.NewStyle().Foreground(lipgloss.Color("203")).Render("Presence error: "+m.presenceError)
 		}
 		ui = lipgloss.JoinVertical(lipgloss.Left, ui, footerLine)
 	}
@@ -1127,25 +1164,25 @@ func renderTabs(current, active ViewMode, nameA, nameB string) (string, string) 
 
 func renderThreeTabs(current ViewMode, nameA, nameB, nameC string) (string, string, string) {
 	var tabA, tabB, tabC string
-	
+
 	if current == ModeChat {
 		tabA = activeTabStyle.Render("[ " + nameA + " ]")
 	} else {
 		tabA = inactiveTabStyle.Render("[ " + nameA + " ]")
 	}
-	
+
 	if current == ModeFiles {
 		tabB = activeTabStyle.Render("[ " + nameB + " ]")
 	} else {
 		tabB = inactiveTabStyle.Render("[ " + nameB + " ]")
 	}
-	
+
 	if current == ModeInfo {
 		tabC = activeTabStyle.Render("[ " + nameC + " ]")
 	} else {
 		tabC = inactiveTabStyle.Render("[ " + nameC + " ]")
 	}
-	
+
 	return tabA, tabB, tabC
 }
 
@@ -1518,11 +1555,11 @@ func renderNotifDetail(m Model) string {
 	b.WriteString("\n")
 	b.WriteString(metaStyle.Render(formatAge(n.Timestamp)))
 	b.WriteString("\n\n")
-	
+
 	if n.Preview == "" {
-	    b.WriteString(helpStyle.Render("(No preview available — press [o] to go to the channel and see the message.)"))
+		b.WriteString(helpStyle.Render("(No preview available — press [o] to go to the channel and see the message.)"))
 	} else {
-	    b.WriteString(n.Preview)
+		b.WriteString(n.Preview)
 	}
 	b.WriteString("\n\n")
 	b.WriteString(metaStyle.Render("─────────────────────────────────"))

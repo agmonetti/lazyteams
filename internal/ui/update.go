@@ -48,28 +48,51 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		leftInnerWidth   := leftOuterWidth - 2
 		rightInnerWidth  := rightOuterWidth - 2
 		panelOuterHeight := m.height - 6
+		if m.mobileMode {
+			panelOuterHeight = m.height - 2
+		}
+		if panelOuterHeight < 2 {
+			panelOuterHeight = 2
+		}
 		leftInnerHeight  := panelOuterHeight - 2
 		rightInnerHeight := panelOuterHeight - 2
 		
-		m.input.SetWidth(rightInnerWidth - 2)
+		var mobileInnerWidth int
+		if m.mobileMode {
+			mobileWidth := m.width - 2
+			if mobileWidth < 20 {
+				mobileWidth = 20
+			}
+			mobileInnerWidth = mobileWidth - 2
+			m.input.SetWidth(mobileInnerWidth - 2)
+		} else {
+			m.input.SetWidth(rightInnerWidth - 2)
+		}
+		
 		// Max height for textarea to prevent it from covering the whole screen
 		m.input.MaxHeight = rightInnerHeight / 3
 		
 		if !m.ready {
-			m.viewport = viewport.New(rightInnerWidth, 5) // set correctly by recalculate below
-			m.leftVp = viewport.New(leftInnerWidth, leftInnerHeight)
-			m.threadViewport = viewport.New(rightInnerWidth, 5) // set correctly by recalculate below
+			if m.mobileMode {
+				m.viewport = viewport.New(mobileInnerWidth, 5)
+				m.leftVp = viewport.New(mobileInnerWidth, leftInnerHeight)
+				m.threadViewport = viewport.New(mobileInnerWidth, 5)
+			} else {
+				m.viewport = viewport.New(rightInnerWidth, 5)
+				m.leftVp = viewport.New(leftInnerWidth, leftInnerHeight)
+				m.threadViewport = viewport.New(rightInnerWidth, 5)
+			}
 			m.ready = true
 		} else {
 			if m.mobileMode {
-				mobileInnerWidth := mobilePanelWidth - 2 // less border
 				m.viewport.Width = mobileInnerWidth
 				m.threadViewport.Width = mobileInnerWidth
+				m.leftVp.Width = mobileInnerWidth
 			} else {
 				m.viewport.Width = rightInnerWidth
 				m.threadViewport.Width = rightInnerWidth
+				m.leftVp.Width = leftInnerWidth
 			}
-			m.leftVp.Width = leftInnerWidth
 			m.leftVp.Height = leftInnerHeight
 		}
 		

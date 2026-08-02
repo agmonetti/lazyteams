@@ -266,17 +266,39 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "ctrl+b":
 		m.mobileMode = !m.mobileMode
+		
+		panelOuterHeight := m.height - 6
 		if m.mobileMode {
-			mobileInnerWidth := mobilePanelWidth - 2
+			panelOuterHeight = m.height - 2
+		}
+		if panelOuterHeight < 2 {
+			panelOuterHeight = 2
+		}
+		leftInnerHeight := panelOuterHeight - 2
+
+		if m.mobileMode {
+			mobileWidth := m.width - 2
+			if mobileWidth < 20 {
+				mobileWidth = 20
+			}
+			mobileInnerWidth := mobileWidth - 2
 			m.viewport.Width = mobileInnerWidth
 			m.threadViewport.Width = mobileInnerWidth
+			m.leftVp.Width = mobileInnerWidth
+			m.input.SetWidth(mobileInnerWidth - 2)
 		} else {
 			available := m.width - 5
 			leftOuterWidth := available / 3
 			rightOuterWidth := available - leftOuterWidth
-			m.viewport.Width = rightOuterWidth - 2
-			m.threadViewport.Width = rightOuterWidth - 2
+			rightInnerWidth := rightOuterWidth - 2
+			
+			m.viewport.Width = rightInnerWidth
+			m.threadViewport.Width = rightInnerWidth
+			m.leftVp.Width = leftOuterWidth - 2
+			m.input.SetWidth(rightInnerWidth - 2)
 		}
+		m.leftVp.Height = leftInnerHeight
+		m.input.MaxHeight = leftInnerHeight / 3
 		m.recalculateViewportHeight()
 
 	case "tab":

@@ -84,12 +84,12 @@ var HelpData = []HelpCategory{
 	{
 		Title: "Assignments & Tasks",
 		Shortcuts: []Shortcut{
-			{Key: "Enter", Description: "View assignment details"},
-			{Key: "j/k", Description: "Navigate files in detail view"},
+			{Key: "Enter", Description: "View details"},
+			{Key: "j/k", Description: "Navigate files"},
 			{Key: "Enter", Description: "Open file in browser"},
 			{Key: "o", Description: "Download file"},
-			{Key: "u", Description: "Upload file to assignment"},
-			{Key: "Del", Description: "Remove uploaded file"},
+			{Key: "u", Description: "Upload file"},
+			{Key: "Del", Description: "Remove upload"},
 			{Key: "s", Description: "Submit assignment"},
 			{Key: "S", Description: "Undo turn in"},
 		},
@@ -97,9 +97,9 @@ var HelpData = []HelpCategory{
 	{
 		Title: "Mobile Mode",
 		Shortcuts: []Shortcut{
-			{Key: "Ctrl+B", Description: "Toggle mobile mode (or auto <120 cols)"},
-			{Key: "Tab", Description: "Switch between list and content"},
-			{Key: "←/→", Description: "Filter tabs in Activity/Assignments"},
+			{Key: "Ctrl+B", Description: "Toggle mobile mode"},
+			{Key: "Tab", Description: "Switch list/content"},
+			{Key: "←/→", Description: "Filter tabs"},
 			{Key: "1-4", Description: "Switch workspace"},
 		},
 	},
