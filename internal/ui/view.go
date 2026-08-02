@@ -1081,29 +1081,16 @@ func (m Model) View() string {
 				}
 			}
 
-			var wsParts []string
-			for _, ws := range []Workspace{WorkspaceTeams, WorkspaceDMs, WorkspaceActivity, WorkspaceAssignments} {
-				name := workspaceNames[ws]
-				badge := ""
-				if ws == WorkspaceDMs && unreadDMs > 0 {
-					badge = lipgloss.NewStyle().Foreground(colorRed).Bold(true).Render(fmt.Sprintf(" ●%d", unreadDMs))
-				} else if ws == WorkspaceActivity && unreadNotifs > 0 {
-					badge = lipgloss.NewStyle().Foreground(colorRed).Bold(true).Render(fmt.Sprintf(" (%d)", unreadNotifs))
-				}
-
-				if ws == m.workspace {
-					wsParts = append(wsParts, lipgloss.NewStyle().
-						Foreground(colorAccent).Bold(true).
-						Render(name)+badge)
-				} else {
-					wsParts = append(wsParts, lipgloss.NewStyle().
-						Foreground(colorMuted).
-						Render(name)+badge)
-				}
+			name := workspaceNames[m.workspace]
+			badge := ""
+			if m.workspace == WorkspaceDMs && unreadDMs > 0 {
+				badge = lipgloss.NewStyle().Foreground(colorRed).Bold(true).Render(fmt.Sprintf(" ●%d", unreadDMs))
+			} else if m.workspace == WorkspaceActivity && unreadNotifs > 0 {
+				badge = lipgloss.NewStyle().Foreground(colorRed).Bold(true).Render(fmt.Sprintf(" (%d)", unreadNotifs))
 			}
 
 			wsLabel := lipgloss.NewStyle().Foreground(colorMuted).Render("[M] ") +
-				strings.Join(wsParts, lipgloss.NewStyle().Foreground(colorMuted).Render(" · "))
+				lipgloss.NewStyle().Foreground(colorAccent).Bold(true).Render(name) + badge
 			padding := m.width - lipgloss.Width(wsLabel) - lipgloss.Width(statusDot) - 4
 			if padding < 0 {
 				padding = 0
