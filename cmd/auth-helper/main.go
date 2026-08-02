@@ -19,17 +19,25 @@ import (
 )
 
 type tokens struct {
-	mu          sync.Mutex
-	graphToken  string
-	webToken    string
-	notifToken  string
-	eduToken    string
-	cookie      string
-	spacesToken string
-	fabricToken string
+	mu               sync.Mutex
+	graphToken       string
+	webToken         string
+	notifToken       string
+	eduToken         string
+	cookie           string
+	spacesToken      string
+	fabricToken      string
+	intentionalClose bool
 }
 
 var globalSpin *spinner
+
+// captureLoopResult describes what the token capture loop ended with.
+const (
+	captureOK     = "ok"     // all Teams tokens captured (or loop finished)
+	captureStale  = "stale"  // nothing captured headless — session likely expired
+	captureClosed = "closed" // browser was closed by the user
+)
 
 func printBox(lines []string) {
 	width := 47
@@ -62,6 +70,104 @@ func (t *tokens) allCaptured() bool {
 		t.notifToken != "" &&
 		t.eduToken != "" &&
 		t.cookie != ""
+}
+
+// markIntentionalClose flags the context close as deliberate (e.g. reopening
+// visible for Graph Explorer / fabric capture) so the close handler does not
+// clear the session.
+func (t *tokens) markIntentionalClose() {
+	t.mu.Lock()
+	t.intentionalClose = true
+	t.mu.Unlock()
+}
+
+// registerFullInterceptor captures cookies and all Bearer tokens from any
+// context (headless or visible) so token capture keeps working after a
+// context is reopened.
+func registerFullInterceptor(ctx playwright.BrowserContext, captured *tokens) {
+	ctx.On("request", func(req playwright.Request) {
+		url := req.URL()
+		headers := req.Headers()
+
+		// Capture cookies from the Cookie header of each Teams request
+		captured.mu.Lock()
+		if captured.cookie == "" {
+			for k, v := range headers {
+				if strings.ToLower(k) == "cookie" && v != "" {
+					if strings.Contains(url, "teams.microsoft.com") ||
+						strings.Contains(url, "ic3.teams.office.com") ||
+						strings.Contains(url, "graph.microsoft.com") ||
+						strings.Contains(url, "substrate.office.com") ||
+						strings.Contains(url, "sharepoint.com") {
+						captured.cookie = v
+						notifyTokenCaptured("TEAMS_COOKIE")
+					}
+					break
+				}
+			}
+		}
+		captured.mu.Unlock()
+
+		// Capture Bearer tokens
+		authHeader := ""
+		for k, v := range headers {
+			if strings.ToLower(k) == "authorization" {
+				authHeader = v
+				break
+			}
+		}
+
+		if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
+			return
+		}
+
+		token := strings.TrimPrefix(authHeader, "Bearer ")
+		aud := extractAudFromJWT(token)
+
+		captured.mu.Lock()
+		defer captured.mu.Unlock()
+
+		switch {
+		// MS_GRAPH_TOKEN: ONLY from graph.microsoft.com direct requests
+		// SharePoint and substrate tokens don't have the required scopes
+		case (strings.Contains(aud, "graph.microsoft.com") || aud == "00000003-0000-0000-c000-000000000000") &&
+			strings.Contains(url, "graph.microsoft.com") &&
+			captured.graphToken == "":
+			captured.graphToken = token
+			notifyTokenCaptured("MS_GRAPH_TOKEN")
+
+		// TEAMS_NOTIF_TOKEN and TEAMS_WEB_TOKEN
+		case strings.Contains(aud, "ic3.teams.office.com"):
+			if (strings.Contains(url, "48%3Anotifications") ||
+				strings.Contains(url, "48:notifications")) &&
+				captured.notifToken == "" {
+				captured.notifToken = token
+				notifyTokenCaptured("TEAMS_NOTIF_TOKEN")
+			} else if strings.Contains(url, "chatsvc") && captured.webToken == "" {
+				captured.webToken = token
+				notifyTokenCaptured("TEAMS_WEB_TOKEN")
+			}
+
+		// EDU_TOKEN
+		case strings.Contains(aud, "8f348934") && captured.eduToken == "":
+			captured.eduToken = token
+			notifyTokenCaptured("EDU_TOKEN")
+
+		case strings.Contains(url, "assignments.edu.cloud.microsoft") && captured.eduToken == "":
+			captured.eduToken = token
+			notifyTokenCaptured("EDU_TOKEN")
+
+		case strings.Contains(aud, "api.spaces.skype.com") && captured.spacesToken == "":
+			captured.spacesToken = token
+			notifyTokenCaptured("TEAMS_SPACES_TOKEN")
+
+		case strings.Contains(url, "fabric/"):
+			if captured.fabricToken == "" {
+				captured.fabricToken = token
+				notifyTokenCaptured("TEAMS_FABRIC_TOKEN")
+			}
+		}
+	})
 }
 
 func printTokenStatus(t *tokens) {
@@ -244,11 +350,14 @@ func main() {
 	browserClosed := make(chan struct{}, 1)
 
 	// Detect unexpected browser close and clear session if capture incomplete
+	// An intentional close (e.g. reopening visible for Graph Explorer) must not
+	// be treated as an unexpected browser close.
 	context.On("close", func() {
 		captured.mu.Lock()
+		intentional := captured.intentionalClose
 		incomplete := captured.graphToken == "" || captured.webToken == "" || captured.cookie == ""
 		captured.mu.Unlock()
-		if incomplete {
+		if !intentional && incomplete {
 			fmt.Println("\n\n[!] Browser closed before login completed. Clearing session...")
 			os.RemoveAll(sessionDir)
 			fmt.Println("  ✓ Session cleared. Next run will require login.")
@@ -285,90 +394,7 @@ func main() {
 		os.Exit(1)
 	}()
 
-	context.On("request", func(req playwright.Request) {
-		url := req.URL()
-		headers := req.Headers()
-
-		// Capture cookies from the Cookie header of each Teams request
-		captured.mu.Lock()
-		if captured.cookie == "" {
-			for k, v := range headers {
-				if strings.ToLower(k) == "cookie" && v != "" {
-					if strings.Contains(url, "teams.microsoft.com") ||
-						strings.Contains(url, "ic3.teams.office.com") ||
-						strings.Contains(url, "graph.microsoft.com") ||
-						strings.Contains(url, "substrate.office.com") ||
-						strings.Contains(url, "sharepoint.com") {
-						captured.cookie = v
-						notifyTokenCaptured("TEAMS_COOKIE")
-					}
-					break
-				}
-			}
-		}
-		captured.mu.Unlock()
-
-		// Capture Bearer tokens
-		authHeader := ""
-		for k, v := range headers {
-			if strings.ToLower(k) == "authorization" {
-				authHeader = v
-				break
-			}
-		}
-
-		if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
-			return
-		}
-
-		token := strings.TrimPrefix(authHeader, "Bearer ")
-		aud := extractAudFromJWT(token)
-
-		captured.mu.Lock()
-		defer captured.mu.Unlock()
-
-		switch {
-		// MS_GRAPH_TOKEN: ONLY from graph.microsoft.com direct requests
-		// SharePoint and substrate tokens don't have the required scopes
-		case (strings.Contains(aud, "graph.microsoft.com") || aud == "00000003-0000-0000-c000-000000000000") &&
-			strings.Contains(url, "graph.microsoft.com") &&
-			captured.graphToken == "":
-			captured.graphToken = token
-			notifyTokenCaptured("MS_GRAPH_TOKEN")
-
-		// TEAMS_NOTIF_TOKEN and TEAMS_WEB_TOKEN
-		case strings.Contains(aud, "ic3.teams.office.com"):
-			if (strings.Contains(url, "48%3Anotifications") ||
-				strings.Contains(url, "48:notifications")) &&
-				captured.notifToken == "" {
-				captured.notifToken = token
-				notifyTokenCaptured("TEAMS_NOTIF_TOKEN")
-			} else if strings.Contains(url, "chatsvc") && captured.webToken == "" {
-				captured.webToken = token
-				notifyTokenCaptured("TEAMS_WEB_TOKEN")
-			}
-
-		// EDU_TOKEN
-		case strings.Contains(aud, "8f348934") && captured.eduToken == "":
-			captured.eduToken = token
-			notifyTokenCaptured("EDU_TOKEN")
-
-		case strings.Contains(url, "assignments.edu.cloud.microsoft") && captured.eduToken == "":
-			captured.eduToken = token
-			notifyTokenCaptured("EDU_TOKEN")
-
-		case strings.Contains(aud, "api.spaces.skype.com") && captured.spacesToken == "":
-			captured.spacesToken = token
-			notifyTokenCaptured("TEAMS_SPACES_TOKEN")
-
-		case strings.Contains(url, "fabric/"):
-			if captured.fabricToken == "" {
-				captured.fabricToken = token
-				notifyTokenCaptured("TEAMS_FABRIC_TOKEN")
-			}
-
-		}
-	})
+	registerFullInterceptor(context, captured)
 
 	// Use the page that the persistent context already opened
 	pages := context.Pages()
@@ -398,11 +424,13 @@ func main() {
 
 	case "fabric":
 		fmt.Println("→ Renewing FABRIC token...")
+		captured.markIntentionalClose()
 		context.Close()
 		manualFabricTokenCapture(pw, sessionDir, captured)
 
 	case "graph":
 		fmt.Println("→ Renewing GRAPH token...")
+		captured.markIntentionalClose()
 		context.Close()
 		visibleCtx, err := pw.Firefox.LaunchPersistentContext(
 			sessionDir,
@@ -767,98 +795,10 @@ func fullRenewal(pw *playwright.Playwright, page playwright.Page, ctx playwright
 	if globalSpin != nil {
 		globalSpin.SetLabel("Navigating to Teams to capture tokens...")
 	}
-	page.Goto("https://teams.microsoft.com/v2/#/teams/", playwright.PageGotoOptions{
-		Timeout: playwright.Float(15000),
-	})
-	time.Sleep(5 * time.Second)
 
-	// Step: try fabric token from storage
-
-	startTime := time.Now()
-	deadline := startTime.Add(90 * time.Second)
-	ticker := time.NewTicker(3 * time.Second)
-	defer ticker.Stop()
-
-	for time.Now().Before(deadline) {
-		select {
-		case <-browserClosed:
-			fmt.Println("\n  · Browser closed — stopping capture.")
-			return
-		case <-ticker.C:
-			// continue with normal logic
-		}
-		elapsed := time.Since(startTime)
-
-		captured.mu.Lock()
-		hasGraph := captured.graphToken != ""
-		hasWeb := captured.webToken != ""
-		hasNotif := captured.notifToken != ""
-		hasEdu := captured.eduToken != ""
-		hasCookie := captured.cookie != ""
-		hasFabric := captured.fabricToken != ""
-		hasSpaces := captured.spacesToken != ""
-		captured.mu.Unlock()
-
-		if hasGraph && hasWeb && hasNotif && hasEdu && hasCookie && hasSpaces && hasFabric {
-			notifyTokenCaptured("All tokens")
-			break
-		}
-
-		if hasWeb && hasNotif && hasEdu && hasCookie && hasSpaces && !hasGraph {
-			break // Exit loop early, go straight to Graph Explorer
-		}
-
-		// Step 2 (20s): trigger TEAMS_NOTIF_TOKEN
-		if elapsed > 20*time.Second && !hasNotif {
-			globalSpin.SetLabel("Navigating to Activity to trigger notifications token...")
-			page.Goto("https://teams.microsoft.com/v2/",
-				playwright.PageGotoOptions{Timeout: playwright.Float(15000)},
-			)
-			time.Sleep(2 * time.Second)
-			captured.mu.Lock()
-			webTok := captured.webToken
-			captured.mu.Unlock()
-			if webTok != "" {
-				page.Evaluate(`(token) => {
-					fetch("https://teams.microsoft.com/api/chatsvc/amer/v1/users/ME/conversations/48:notifications/messages?startTime=0&pageSize=1&view=msnp24Equivalent&targetType=Passport", {
-						headers: {
-							"Authorization": "Bearer " + token,
-							"X-Ms-Client-Type": "web"
-						}
-					})
-				}`, webTok)
-				time.Sleep(2 * time.Second)
-			}
-		}
-
-		// Step 3 (40s): trigger EDU_TOKEN
-		if elapsed > 40*time.Second && !hasEdu {
-			globalSpin.SetLabel("Navigating to Assignments...")
-			page.Goto("https://teams.microsoft.com/v2/",
-				playwright.PageGotoOptions{
-					Timeout:   playwright.Float(15000),
-					WaitUntil: playwright.WaitUntilStateNetworkidle,
-				},
-			)
-			time.Sleep(5 * time.Second)
-
-			page.Locator(`[role="navigation"] span:text-is("Assignments")`).First().Click(
-				playwright.LocatorClickOptions{Timeout: playwright.Float(5000)},
-			)
-			time.Sleep(5 * time.Second)
-		}
-
-		// Step 4 (55s): try to extract EDU_TOKEN from JS
-		// Step 5 (70s): Navigate to private channel to get FabricToken
-		if elapsed > 70*time.Second && !hasFabric && hasGraph {
-			globalSpin.SetLabel("Automating TEAMS_FABRIC_TOKEN capture...")
-			manualFabricTokenCapture(pw, sessionDir, captured)
-		}
-
-		if elapsed > 55*time.Second && !hasEdu {
-			globalSpin.SetLabel("Attempting to extract EDU_TOKEN from JS memory...")
-			tryExtractEduTokenFromJS(page, captured)
-		}
+	captureResult := captureLoop(page, pw, sessionDir, captured, browserClosed)
+	if captureResult == captureClosed {
+		return
 	}
 
 	// TEAMS_NOTIF_TOKEN = TEAMS_WEB_TOKEN
@@ -868,6 +808,79 @@ func fullRenewal(pw *playwright.Playwright, page playwright.Page, ctx playwright
 		notifyTokenCaptured("TEAMS_NOTIF_TOKEN")
 	}
 	captured.mu.Unlock()
+
+	// If nothing was captured headless, the saved session is stale — the
+	// Microsoft login expired even though the browser cookies are alive.
+	// Reopen the browser visibly so the user can sign in again.
+	if captureResult == captureStale {
+		fmt.Println()
+		fmt.Println("→ Session may have expired — opening browser for re-login...")
+		fmt.Println()
+
+		captured.markIntentionalClose()
+		ctx.Close()
+
+		visibleCtx, err := pw.Firefox.LaunchPersistentContext(
+			sessionDir,
+			playwright.BrowserTypeLaunchPersistentContextOptions{
+				Headless: playwright.Bool(false),
+				SlowMo:   playwright.Float(0),
+				Args:     []string{"--no-first-run"},
+			},
+		)
+		if err != nil {
+			fmt.Printf("  ⚠ Could not open browser: %v\n", err)
+		} else {
+			registerFullInterceptor(visibleCtx, captured)
+
+			// Wait for the user to sign in — Teams is loaded once a web/spaces
+			// token shows up.
+			pages := visibleCtx.Pages()
+			var visiblePage playwright.Page
+			if len(pages) > 0 {
+				visiblePage = pages[0]
+			} else {
+				visiblePage, _ = visibleCtx.NewPage()
+			}
+			visiblePage.SetViewportSize(1280, 800)
+
+			visiblePage.Goto("https://teams.microsoft.com",
+				playwright.PageGotoOptions{Timeout: playwright.Float(90000)},
+			)
+			if globalSpin != nil {
+				globalSpin.SetLabel("Waiting for you to sign in...")
+			}
+
+			loginDeadline := time.Now().Add(5 * time.Minute)
+			for time.Now().Before(loginDeadline) {
+				select {
+				case <-browserClosed:
+					fmt.Println("\n  · Browser closed — stopping capture.")
+					visibleCtx.Close()
+					return
+				default:
+				}
+				time.Sleep(1 * time.Second)
+				captured.mu.Lock()
+				hasWeb := captured.webToken != ""
+				hasSpaces := captured.spacesToken != ""
+				captured.mu.Unlock()
+				if hasWeb || hasSpaces {
+					if globalSpin != nil {
+						globalSpin.SetLabel("Teams loaded!")
+					}
+					time.Sleep(2 * time.Second)
+					break
+				}
+			}
+
+			captureResult = captureLoop(visiblePage, pw, sessionDir, captured, browserClosed)
+			visibleCtx.Close()
+			if captureResult == captureClosed {
+				return
+			}
+		}
+	}
 
 	// Plan B: Graph Explorer for MS_GRAPH_TOKEN
 	captured.mu.Lock()
@@ -888,6 +901,7 @@ func fullRenewal(pw *playwright.Playwright, page playwright.Page, ctx playwright
 		fmt.Println()
 
 		// Close headless context and reopen visible
+		captured.markIntentionalClose()
 		ctx.Close()
 
 		visibleCtx, err := pw.Firefox.LaunchPersistentContext(
@@ -914,7 +928,7 @@ func fullRenewal(pw *playwright.Playwright, page playwright.Page, ctx playwright
 					return
 				}
 				token := strings.TrimPrefix(authHeader, "Bearer ")
-				
+
 				// 1. Check for Graph Token
 				aud := extractAudFromJWT(token)
 				if strings.Contains(aud, "graph.microsoft.com") || aud == "00000003-0000-0000-c000-000000000000" {
@@ -968,7 +982,7 @@ func fullRenewal(pw *playwright.Playwright, page playwright.Page, ctx playwright
 					"Action required: TEAMS_FABRIC_TOKEN",
 					"1. Go to any Private or Shared Channel.",
 					"2. Go to the 'Members' tab.",
-					"3. Try to change your own role", 
+					"3. Try to change your own role",
 					"	(e.g., Owner -> Member)",
 					"   (It will fail if you are the only owner, but",
 					"   the token will be captured instantly!)",
@@ -1048,9 +1062,121 @@ func fullRenewal(pw *playwright.Playwright, page playwright.Page, ctx playwright
 	}
 
 	if captured.fabricToken == "" {
+		captured.markIntentionalClose()
 		ctx.Close()
 		manualFabricTokenCapture(pw, sessionDir, captured)
 	}
+}
+
+// captureLoop navigates Teams and runs the 90-second token capture loop.
+// It returns:
+//   - captureOK when Teams loaded and tokens were captured (or the loop
+//     finished without detecting a stale session)
+//   - captureStale when nothing was captured within 25s (Teams never loaded —
+//     the saved session's Microsoft login expired)
+//   - captureClosed when the browser was closed by the user
+func captureLoop(page playwright.Page, pw *playwright.Playwright, sessionDir string, captured *tokens, browserClosed <-chan struct{}) string {
+	page.Goto("https://teams.microsoft.com/v2/#/teams/", playwright.PageGotoOptions{
+		Timeout: playwright.Float(15000),
+	})
+	time.Sleep(5 * time.Second)
+
+	startTime := time.Now()
+	deadline := startTime.Add(90 * time.Second)
+	ticker := time.NewTicker(3 * time.Second)
+	defer ticker.Stop()
+
+	for time.Now().Before(deadline) {
+		select {
+		case <-browserClosed:
+			fmt.Println("\n  · Browser closed — stopping capture.")
+			return captureClosed
+		case <-ticker.C:
+			// continue with normal logic
+		}
+		elapsed := time.Since(startTime)
+
+		captured.mu.Lock()
+		hasGraph := captured.graphToken != ""
+		hasWeb := captured.webToken != ""
+		hasNotif := captured.notifToken != ""
+		hasEdu := captured.eduToken != ""
+		hasCookie := captured.cookie != ""
+		hasFabric := captured.fabricToken != ""
+		hasSpaces := captured.spacesToken != ""
+		captured.mu.Unlock()
+
+		if hasGraph && hasWeb && hasNotif && hasEdu && hasCookie && hasSpaces && hasFabric {
+			notifyTokenCaptured("All tokens")
+			break
+		}
+
+		if hasWeb && hasNotif && hasEdu && hasCookie && hasSpaces && !hasGraph {
+			break // Exit loop early, go straight to Graph Explorer
+		}
+
+		// Nothing captured headless after 25s → the Microsoft session expired,
+		// Teams never loaded, and the user must sign in again.
+		// (The cookie can still be captured on a stale session, so web/spaces —
+		// which only appear once Teams fully loads — are the reliable signal.)
+		if elapsed > 25*time.Second && !hasWeb && !hasSpaces {
+			return captureStale
+		}
+
+		// Step 2 (20s): trigger TEAMS_NOTIF_TOKEN
+		if elapsed > 20*time.Second && !hasNotif {
+			globalSpin.SetLabel("Navigating to Activity to trigger notifications token...")
+			page.Goto("https://teams.microsoft.com/v2/",
+				playwright.PageGotoOptions{Timeout: playwright.Float(15000)},
+			)
+			time.Sleep(2 * time.Second)
+			captured.mu.Lock()
+			webTok := captured.webToken
+			captured.mu.Unlock()
+			if webTok != "" {
+				page.Evaluate(`(token) => {
+					fetch("https://teams.microsoft.com/api/chatsvc/amer/v1/users/ME/conversations/48:notifications/messages?startTime=0&pageSize=1&view=msnp24Equivalent&targetType=Passport", {
+						headers: {
+							"Authorization": "Bearer " + token,
+							"X-Ms-Client-Type": "web"
+						}
+					})
+				}`, webTok)
+				time.Sleep(2 * time.Second)
+			}
+		}
+
+		// Step 3 (40s): trigger EDU_TOKEN
+		if elapsed > 40*time.Second && !hasEdu {
+			globalSpin.SetLabel("Navigating to Assignments...")
+			page.Goto("https://teams.microsoft.com/v2/",
+				playwright.PageGotoOptions{
+					Timeout:   playwright.Float(15000),
+					WaitUntil: playwright.WaitUntilStateNetworkidle,
+				},
+			)
+			time.Sleep(5 * time.Second)
+
+			page.Locator(`[role="navigation"] span:text-is("Assignments")`).First().Click(
+				playwright.LocatorClickOptions{Timeout: playwright.Float(5000)},
+			)
+			time.Sleep(5 * time.Second)
+		}
+
+		// Step 4 (55s): try to extract EDU_TOKEN from JS
+		// Step 5 (70s): Navigate to private channel to get FabricToken
+		if elapsed > 70*time.Second && !hasFabric && hasGraph {
+			globalSpin.SetLabel("Automating TEAMS_FABRIC_TOKEN capture...")
+			manualFabricTokenCapture(pw, sessionDir, captured)
+		}
+
+		if elapsed > 55*time.Second && !hasEdu {
+			globalSpin.SetLabel("Attempting to extract EDU_TOKEN from JS memory...")
+			tryExtractEduTokenFromJS(page, captured)
+		}
+	}
+
+	return captureOK
 }
 
 func extractAudFromJWT(token string) string {
@@ -1235,7 +1361,7 @@ func manualFabricTokenCapture(pw *playwright.Playwright, sessionDir string, capt
 		"Action required: TEAMS_FABRIC_TOKEN",
 		"1. Go to any Private or Shared Channel.",
 		"2. Go to the 'Members' tab.",
-		"3. Try to change your own role", 
+		"3. Try to change your own role",
 		"	(e.g., Owner -> Member)",
 		"   (It will fail if you are the only owner, but",
 		"   the token will be captured instantly!)",
