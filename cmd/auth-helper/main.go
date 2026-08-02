@@ -55,10 +55,10 @@ func printBox(lines []string) {
 
 func notifyTokenCaptured(name string) {
 	if globalSpin != nil {
-		fmt.Printf("\r\033[K  ✓  %-25s\n", name)
+		fmt.Printf("\r\033[K  ✓  %-45s\n", name)
 		globalSpin.SetLabel("Waiting for next token...")
 	} else {
-		fmt.Printf("  ✓  %-25s\n", name)
+		fmt.Printf("  ✓  %-45s\n", name)
 	}
 }
 
@@ -1072,7 +1072,7 @@ func fullRenewal(pw *playwright.Playwright, page playwright.Page, ctx playwright
 // It returns:
 //   - captureOK when Teams loaded and tokens were captured (or the loop
 //     finished without detecting a stale session)
-//   - captureStale when nothing was captured within 25s (Teams never loaded —
+//   - captureStale when nothing was captured within 45s (Teams never loaded —
 //     the saved session's Microsoft login expired)
 //   - captureClosed when the browser was closed by the user
 func captureLoop(page playwright.Page, pw *playwright.Playwright, sessionDir string, captured *tokens, browserClosed <-chan struct{}) string {
@@ -1115,11 +1115,11 @@ func captureLoop(page playwright.Page, pw *playwright.Playwright, sessionDir str
 			break // Exit loop early, go straight to Graph Explorer
 		}
 
-		// Nothing captured headless after 25s → the Microsoft session expired,
+		// Nothing captured headless after 45s → the Microsoft session expired,
 		// Teams never loaded, and the user must sign in again.
 		// (The cookie can still be captured on a stale session, so web/spaces —
 		// which only appear once Teams fully loads — are the reliable signal.)
-		if elapsed > 25*time.Second && !hasWeb && !hasSpaces {
+		if elapsed > 45*time.Second && !hasWeb && !hasSpaces {
 			return captureStale
 		}
 
