@@ -155,7 +155,7 @@ func (m Model) handleThreadView(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
 			m.isReplyTyping = false
 			m.input.Blur()
 			m.input.Reset()
-			// Restaurar threadViewport
+			// Restore threadViewport
 			if m.ready {
 				rightInnerHeight := m.height - 6 - 2
 				m.threadViewport.Height = rightInnerHeight - 12
@@ -167,7 +167,7 @@ func (m Model) handleThreadView(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
 				m.input.Reset()
 				m.isReplyTyping = false
 				m.input.Blur()
-				// Restaurar threadViewport
+				// Restore threadViewport
 				if m.ready {
 					rightInnerHeight := m.height - 6 - 2
 					m.threadViewport.Height = rightInnerHeight - 12

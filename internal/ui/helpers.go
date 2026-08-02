@@ -535,7 +535,7 @@ func (m *Model) recalculateViewportHeight() {
 		if mobileWidth < 20 {
 			mobileWidth = 20
 		}
-		mobileInnerWidth := mobileWidth - 2 // menos borde
+		mobileInnerWidth := mobileWidth - 2 // minus border
 		m.viewport.Width = mobileInnerWidth
 		m.threadViewport.Width = mobileInnerWidth
 	} else {

@@ -40,7 +40,7 @@ type TeamMember struct {
 	ID          string
 	DisplayName string
 	Mail        string
-	Role        string // "Owner" o "Member"
+	Role        string // "Owner" or "Member"
 }
 
 // GetJoinedTeams fetches the teams the user is a member of.

@@ -897,7 +897,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case channelMembersErrMsg:
-		// silencioso
+		// silently ignore
 		return m, nil
 
 	case teamMembersMsg:

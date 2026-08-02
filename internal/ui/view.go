@@ -100,6 +100,7 @@ func (m Model) View() string {
 	if m.width == 0 || m.height == 0 {
 		return ""
 	}
+	mobilePopupRendered := false
 	panelOuterHeight := m.height - 6
 	if m.mobileMode {
 		panelOuterHeight = m.height - 2
@@ -562,6 +563,10 @@ func (m Model) View() string {
 	}
 	rightPanel := rStyle.Render(rightContent)
 
+	// ui is filled later during panel combination; it may also be set here
+	// directly by mobile-mode popups (e.g. presence menu) before combination.
+	var ui string
+
 	// Popups: centered using the REAL rendered dimensions of the panel,
 	// not "raw" vpWidth/vpHeight — so they never collide with paneStyle's border/padding.
 	if m.showDirPicker {
@@ -583,7 +588,13 @@ func (m Model) View() string {
 			actions,
 		)
 		popup := popupStyle.Render(question)
-		rightPanel = lipgloss.Place(lipgloss.Width(rightPanel), lipgloss.Height(rightPanel), lipgloss.Center, lipgloss.Center, popup)
+		if m.mobileMode {
+			mobilePopupRendered = true
+			ui = buildMobileUI(&m, leftContent, rightContent, panelOuterHeight)
+			ui = lipgloss.Place(m.width, lipgloss.Height(ui), lipgloss.Center, lipgloss.Center, popup)
+		} else {
+			rightPanel = lipgloss.Place(lipgloss.Width(rightPanel), lipgloss.Height(rightPanel), lipgloss.Center, lipgloss.Center, popup)
+		}
 	} else if m.showPresenceMenu {
 		var menu string
 		menu += titleStyle.Render("Set Status") + "\n\n"
@@ -597,7 +608,19 @@ func (m Model) View() string {
 			menu += fmt.Sprintf("%s%s %s\n", cursor, presenceSymbol(opt), style.Render(opt))
 		}
 		popup := presencePopupStyle.Render(menu)
-		rightPanel = lipgloss.Place(lipgloss.Width(rightPanel), lipgloss.Height(rightPanel), lipgloss.Center, lipgloss.Center, popup)
+		if m.mobileMode {
+			mobilePopupRendered = true
+			if m.focusLeft {
+				fullStyle := focusedPaneStyle.Width(m.width - 3).Height(panelOuterHeight - 2)
+				ui = fullStyle.Render(leftContent)
+			} else {
+				fullStyle := focusedPaneStyle.Width(m.width - 3).Height(panelOuterHeight - 2)
+				ui = fullStyle.Render(rightContent)
+			}
+			ui = lipgloss.Place(m.width, lipgloss.Height(ui), lipgloss.Center, lipgloss.Center, popup)
+		} else {
+			rightPanel = lipgloss.Place(lipgloss.Width(rightPanel), lipgloss.Height(rightPanel), lipgloss.Center, lipgloss.Center, popup)
+		}
 	} else if m.showNewDMPopup {
 		var popupContent string
 		popupContent += titleStyle.Render("New Direct Message") + "\n\n"
@@ -623,21 +646,39 @@ func (m Model) View() string {
 		popupContent += "\n" + helpStyle.Render("[↑/↓] Navigate  [Enter] Open DM  [Esc] Cancel")
 
 		popup := popupStyle.Render(popupContent)
-		rightPanel = lipgloss.Place(lipgloss.Width(rightPanel), lipgloss.Height(rightPanel), lipgloss.Center, lipgloss.Center, popup)
+		if m.mobileMode {
+			mobilePopupRendered = true
+			ui = buildMobileUI(&m, leftContent, rightContent, panelOuterHeight)
+			ui = lipgloss.Place(m.width, lipgloss.Height(ui), lipgloss.Center, lipgloss.Center, popup)
+		} else {
+			rightPanel = lipgloss.Place(lipgloss.Width(rightPanel), lipgloss.Height(rightPanel), lipgloss.Center, lipgloss.Center, popup)
+		}
 	} else if m.showDeleteMsgPopup {
 		popup := lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(lipgloss.Color("#E74C3C")).
 			Padding(1, 3).
 			Render("Delete this message?\n\n[Enter/y] Confirm   [Esc/n] Cancel")
-		rightPanel = lipgloss.Place(lipgloss.Width(rightPanel), lipgloss.Height(rightPanel), lipgloss.Center, lipgloss.Center, popup)
+		if m.mobileMode {
+			mobilePopupRendered = true
+			ui = buildMobileUI(&m, leftContent, rightContent, panelOuterHeight)
+			ui = lipgloss.Place(m.width, lipgloss.Height(ui), lipgloss.Center, lipgloss.Center, popup)
+		} else {
+			rightPanel = lipgloss.Place(lipgloss.Width(rightPanel), lipgloss.Height(rightPanel), lipgloss.Center, lipgloss.Center, popup)
+		}
 	} else if m.showEditPopup {
 		var content string
 		content += titleStyle.Render("Edit Message") + "\n\n"
 		content += m.editInput.View() + "\n\n"
 		content += helpStyle.Render("[Enter] Save   [Esc] Cancel")
 		popup := popupStyle.Render(content)
-		rightPanel = lipgloss.Place(lipgloss.Width(rightPanel), lipgloss.Height(rightPanel), lipgloss.Center, lipgloss.Center, popup)
+		if m.mobileMode {
+			mobilePopupRendered = true
+			ui = buildMobileUI(&m, leftContent, rightContent, panelOuterHeight)
+			ui = lipgloss.Place(m.width, lipgloss.Height(ui), lipgloss.Center, lipgloss.Center, popup)
+		} else {
+			rightPanel = lipgloss.Place(lipgloss.Width(rightPanel), lipgloss.Height(rightPanel), lipgloss.Center, lipgloss.Center, popup)
+		}
 	} else if m.showReactionPicker {
 		reactionEmojis := map[string]string{}
 		for _, k := range m.reactionOptions {
@@ -656,7 +697,13 @@ func (m Model) View() string {
 		}
 		content += "\n" + helpStyle.Render("[↑/↓] Navigate  [Enter] React  [Esc] Cancel")
 		popup := popupStyle.Render(content)
-		rightPanel = lipgloss.Place(lipgloss.Width(rightPanel), lipgloss.Height(rightPanel), lipgloss.Center, lipgloss.Center, popup)
+		if m.mobileMode {
+			mobilePopupRendered = true
+			ui = buildMobileUI(&m, leftContent, rightContent, panelOuterHeight)
+			ui = lipgloss.Place(m.width, lipgloss.Height(ui), lipgloss.Center, lipgloss.Center, popup)
+		} else {
+			rightPanel = lipgloss.Place(lipgloss.Width(rightPanel), lipgloss.Height(rightPanel), lipgloss.Center, lipgloss.Center, popup)
+		}
 	} else if m.showCreateTeamPopup {
 		var content string
 		content += titleStyle.Render("New Team") + "\n\n"
@@ -666,7 +713,13 @@ func (m Model) View() string {
 		}
 		content += helpStyle.Render("[Enter] Create   [Esc] Cancel")
 		popup := popupStyle.Render(content)
-		rightPanel = lipgloss.Place(lipgloss.Width(rightPanel), lipgloss.Height(rightPanel), lipgloss.Center, lipgloss.Center, popup)
+		if m.mobileMode {
+			mobilePopupRendered = true
+			ui = buildMobileUI(&m, leftContent, rightContent, panelOuterHeight)
+			ui = lipgloss.Place(m.width, lipgloss.Height(ui), lipgloss.Center, lipgloss.Center, popup)
+		} else {
+			rightPanel = lipgloss.Place(lipgloss.Width(rightPanel), lipgloss.Height(rightPanel), lipgloss.Center, lipgloss.Center, popup)
+		}
 	} else if m.showCreateChannelPopup {
 		var content string
 		content += titleStyle.Render("New Channel") + "\n\n"
@@ -698,7 +751,13 @@ func (m Model) View() string {
 		}
 
 		popup := popupStyle.Render(content)
-		rightPanel = lipgloss.Place(lipgloss.Width(rightPanel), lipgloss.Height(rightPanel), lipgloss.Center, lipgloss.Center, popup)
+		if m.mobileMode {
+			mobilePopupRendered = true
+			ui = buildMobileUI(&m, leftContent, rightContent, panelOuterHeight)
+			ui = lipgloss.Place(m.width, lipgloss.Height(ui), lipgloss.Center, lipgloss.Center, popup)
+		} else {
+			rightPanel = lipgloss.Place(lipgloss.Width(rightPanel), lipgloss.Height(rightPanel), lipgloss.Center, lipgloss.Center, popup)
+		}
 	} else if m.showDeleteChannelPopup && m.selectedChan < len(m.channels) {
 		ch := m.channels[m.selectedChan].DisplayName
 		popupContent := fmt.Sprintf("Delete channel \"%s\"?\n\n[Enter/y] Confirm   [Esc/n] Cancel", ch)
@@ -707,7 +766,13 @@ func (m Model) View() string {
 			BorderForeground(lipgloss.Color("#E74C3C")).
 			Padding(1, 3).
 			Render(popupContent)
-		rightPanel = lipgloss.Place(lipgloss.Width(rightPanel), lipgloss.Height(rightPanel), lipgloss.Center, lipgloss.Center, popup)
+		if m.mobileMode {
+			mobilePopupRendered = true
+			ui = buildMobileUI(&m, leftContent, rightContent, panelOuterHeight)
+			ui = lipgloss.Place(m.width, lipgloss.Height(ui), lipgloss.Center, lipgloss.Center, popup)
+		} else {
+			rightPanel = lipgloss.Place(lipgloss.Width(rightPanel), lipgloss.Height(rightPanel), lipgloss.Center, lipgloss.Center, popup)
+		}
 	} else if m.showDeleteTeamPopup && m.selectedTeam < len(m.teams) {
 		team := m.teams[m.selectedTeam].DisplayName
 		popupContent := fmt.Sprintf("Delete team \"%s\"?\n\n[Enter/y] Confirm   [Esc/n] Cancel", team)
@@ -716,7 +781,13 @@ func (m Model) View() string {
 			BorderForeground(lipgloss.Color("#E74C3C")).
 			Padding(1, 3).
 			Render(popupContent)
-		rightPanel = lipgloss.Place(lipgloss.Width(rightPanel), lipgloss.Height(rightPanel), lipgloss.Center, lipgloss.Center, popup)
+		if m.mobileMode {
+			mobilePopupRendered = true
+			ui = buildMobileUI(&m, leftContent, rightContent, panelOuterHeight)
+			ui = lipgloss.Place(m.width, lipgloss.Height(ui), lipgloss.Center, lipgloss.Center, popup)
+		} else {
+			rightPanel = lipgloss.Place(lipgloss.Width(rightPanel), lipgloss.Height(rightPanel), lipgloss.Center, lipgloss.Center, popup)
+		}
 	} else if m.showDeleteFilePopup && m.selectedFile < len(m.files) {
 		target := m.files[m.selectedFile]
 		popupContent := fmt.Sprintf("Delete \"%s\"?\n\n[Enter/y] Confirm   [Esc/n] Cancel", target.Name)
@@ -725,7 +796,13 @@ func (m Model) View() string {
 			BorderForeground(lipgloss.Color("#E74C3C")).
 			Padding(1, 3).
 			Render(popupContent)
-		rightPanel = lipgloss.Place(lipgloss.Width(rightPanel), lipgloss.Height(rightPanel), lipgloss.Center, lipgloss.Center, popup)
+		if m.mobileMode {
+			mobilePopupRendered = true
+			ui = buildMobileUI(&m, leftContent, rightContent, panelOuterHeight)
+			ui = lipgloss.Place(m.width, lipgloss.Height(ui), lipgloss.Center, lipgloss.Center, popup)
+		} else {
+			rightPanel = lipgloss.Place(lipgloss.Width(rightPanel), lipgloss.Height(rightPanel), lipgloss.Center, lipgloss.Center, popup)
+		}
 	} else if m.showCreateFolderPopup {
 		var content string
 		content += titleStyle.Render("New Folder") + "\n\n"
@@ -735,7 +812,13 @@ func (m Model) View() string {
 		}
 		content += helpStyle.Render("[Enter] Create   [Esc] Cancel")
 		popup := popupStyle.Render(content)
-		rightPanel = lipgloss.Place(lipgloss.Width(rightPanel), lipgloss.Height(rightPanel), lipgloss.Center, lipgloss.Center, popup)
+		if m.mobileMode {
+			mobilePopupRendered = true
+			ui = buildMobileUI(&m, leftContent, rightContent, panelOuterHeight)
+			ui = lipgloss.Place(m.width, lipgloss.Height(ui), lipgloss.Center, lipgloss.Center, popup)
+		} else {
+			rightPanel = lipgloss.Place(lipgloss.Width(rightPanel), lipgloss.Height(rightPanel), lipgloss.Center, lipgloss.Center, popup)
+		}
 	}
 
 	if m.showTeamInfo && m.teamInfo != nil {
@@ -761,6 +844,10 @@ func (m Model) View() string {
 			Padding(1, 3).
 			Width(60).
 			Render(content)
+		if m.mobileMode {
+			mobileUI := buildMobileUI(&m, leftContent, rightContent, panelOuterHeight)
+			return lipgloss.Place(m.width, lipgloss.Height(mobileUI), lipgloss.Center, lipgloss.Center, popup)
+		}
 		combined := lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, rightPanel)
 		return lipgloss.Place(lipgloss.Width(combined), lipgloss.Height(combined), lipgloss.Center, lipgloss.Center, popup)
 	}
@@ -773,6 +860,10 @@ func (m Model) View() string {
 			BorderForeground(lipgloss.Color("#E74C3C")).
 			Padding(1, 3).
 			Render(content)
+		if m.mobileMode {
+			mobileUI := buildMobileUI(&m, leftContent, rightContent, panelOuterHeight)
+			return lipgloss.Place(m.width, lipgloss.Height(mobileUI), lipgloss.Center, lipgloss.Center, popup)
+		}
 		combined := lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, rightPanel)
 		return lipgloss.Place(lipgloss.Width(combined), lipgloss.Height(combined), lipgloss.Center, lipgloss.Center, popup)
 	}
@@ -785,6 +876,10 @@ func (m Model) View() string {
 			BorderForeground(lipgloss.Color("#E74C3C")).
 			Padding(1, 3).
 			Render(content)
+		if m.mobileMode {
+			mobileUI := buildMobileUI(&m, leftContent, rightContent, panelOuterHeight)
+			return lipgloss.Place(m.width, lipgloss.Height(mobileUI), lipgloss.Center, lipgloss.Center, popup)
+		}
 		combined := lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, rightPanel)
 		return lipgloss.Place(lipgloss.Width(combined), lipgloss.Height(combined), lipgloss.Center, lipgloss.Center, popup)
 	}
@@ -845,6 +940,10 @@ func (m Model) View() string {
 			Padding(1, 3).
 			Width(55).
 			Render(content)
+		if m.mobileMode {
+			mobileUI := buildMobileUI(&m, leftContent, rightContent, panelOuterHeight)
+			return lipgloss.Place(m.width, lipgloss.Height(mobileUI), lipgloss.Center, lipgloss.Center, popup)
+		}
 		combined := lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, rightPanel)
 		return lipgloss.Place(lipgloss.Width(combined), lipgloss.Height(combined), lipgloss.Center, lipgloss.Center, popup)
 	}
@@ -876,6 +975,10 @@ func (m Model) View() string {
 			Padding(1, 3).
 			Width(50).
 			Render(content)
+		if m.mobileMode {
+			mobileUI := buildMobileUI(&m, leftContent, rightContent, panelOuterHeight)
+			return lipgloss.Place(m.width, lipgloss.Height(mobileUI), lipgloss.Center, lipgloss.Center, popup)
+		}
 		combined := lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, rightPanel)
 		return lipgloss.Place(lipgloss.Width(combined), lipgloss.Height(combined), lipgloss.Center, lipgloss.Center, popup)
 	}
@@ -906,44 +1009,49 @@ func (m Model) View() string {
 			Padding(1, 3).
 			Width(50).
 			Render(content)
+		if m.mobileMode {
+			mobileUI := buildMobileUI(&m, leftContent, rightContent, panelOuterHeight)
+			return lipgloss.Place(m.width, lipgloss.Height(mobileUI), lipgloss.Center, lipgloss.Center, popup)
+		}
 		combined := lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, rightPanel)
 		return lipgloss.Place(lipgloss.Width(combined), lipgloss.Height(combined), lipgloss.Center, lipgloss.Center, popup)
 	}
 
 	// Combine panels
-	var ui string
-	if m.mobileMode {
-		mobileWidth := m.width - 2
-		if mobileWidth < 20 {
-			mobileWidth = 20
-		}
-		mobileInnerWidth := mobileWidth - 2 // border
-		mobileHeight := panelOuterHeight
+	if !mobilePopupRendered {
+		if m.mobileMode {
+			mobileWidth := m.width - 2
+			if mobileWidth < 20 {
+				mobileWidth = 20
+			}
+			mobileInnerWidth := mobileWidth - 2 // border
+			mobileHeight := panelOuterHeight
 
-		var mobileContent string
-		if m.focusLeft {
-			mobileContent = leftContent
+			var mobileContent string
+			if m.focusLeft {
+				mobileContent = leftContent
+			} else {
+				mobileContent = rightContent
+			}
+
+			mobileStyle := focusedPaneStyle.
+				Width(mobileWidth).
+				Height(mobileHeight - 2)
+
+			mobilePanel := mobileStyle.Render(mobileContent)
+
+			// Center the mobile panel in the full terminal width
+			ui = lipgloss.Place(
+				m.width,
+				mobileHeight,
+				lipgloss.Center,
+				lipgloss.Center,
+				mobilePanel,
+			)
+			_ = mobileInnerWidth
 		} else {
-			mobileContent = rightContent
+			ui = lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, rightPanel)
 		}
-
-		mobileStyle := focusedPaneStyle.
-			Width(mobileWidth).
-			Height(mobileHeight - 2)
-
-		mobilePanel := mobileStyle.Render(mobileContent)
-
-		// Center the mobile panel in the full terminal width
-		ui = lipgloss.Place(
-			m.width,
-			mobileHeight,
-			lipgloss.Center,
-			lipgloss.Center,
-			mobilePanel,
-		)
-		_ = mobileInnerWidth
-	} else {
-		ui = lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, rightPanel)
 	}
 
 	// Top status bar: unread counts on the left, name + presence on the right
@@ -960,9 +1068,42 @@ func (m Model) View() string {
 				WorkspaceActivity:    "Activity",
 				WorkspaceAssignments: "Assignments",
 			}
-			wsLabel := lipgloss.NewStyle().
-				Foreground(colorAccent).Bold(true).
-				Render("[M] " + workspaceNames[m.workspace])
+			unreadDMs := 0
+			for _, v := range m.chatUnread {
+				if v {
+					unreadDMs++
+				}
+			}
+			unreadNotifs := 0
+			for _, n := range m.notifications {
+				if !n.IsRead {
+					unreadNotifs++
+				}
+			}
+
+			var wsParts []string
+			for _, ws := range []Workspace{WorkspaceTeams, WorkspaceDMs, WorkspaceActivity, WorkspaceAssignments} {
+				name := workspaceNames[ws]
+				badge := ""
+				if ws == WorkspaceDMs && unreadDMs > 0 {
+					badge = lipgloss.NewStyle().Foreground(colorRed).Bold(true).Render(fmt.Sprintf(" ●%d", unreadDMs))
+				} else if ws == WorkspaceActivity && unreadNotifs > 0 {
+					badge = lipgloss.NewStyle().Foreground(colorRed).Bold(true).Render(fmt.Sprintf(" (%d)", unreadNotifs))
+				}
+
+				if ws == m.workspace {
+					wsParts = append(wsParts, lipgloss.NewStyle().
+						Foreground(colorAccent).Bold(true).
+						Render(name)+badge)
+				} else {
+					wsParts = append(wsParts, lipgloss.NewStyle().
+						Foreground(colorMuted).
+						Render(name)+badge)
+				}
+			}
+
+			wsLabel := lipgloss.NewStyle().Foreground(colorMuted).Render("[M] ") +
+				strings.Join(wsParts, lipgloss.NewStyle().Foreground(colorMuted).Render(" · "))
 			padding := m.width - lipgloss.Width(wsLabel) - lipgloss.Width(statusDot) - 4
 			if padding < 0 {
 				padding = 0
@@ -1859,6 +2000,14 @@ func renderAssignDetail(m Model) string {
 	}
 
 	return b.String()
+}
+
+func buildMobileUI(m *Model, leftContent, rightContent string, panelOuterHeight int) string {
+	fullStyle := focusedPaneStyle.Width(m.width - 3).Height(panelOuterHeight - 2)
+	if m.focusLeft {
+		return fullStyle.Render(leftContent)
+	}
+	return fullStyle.Render(rightContent)
 }
 
 func truncateText(text string, maxWidth int) string {
