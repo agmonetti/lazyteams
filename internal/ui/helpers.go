@@ -525,4 +525,17 @@ func (m *Model) recalculateViewportHeight() {
 	}
 	m.viewport.Height = newVpHeight
 	m.threadViewport.Height = newVpHeight - 6
+
+	// Recalculate width according to active mode
+	if m.mobileMode {
+		mobileInnerWidth := mobilePanelWidth - 2 // menos borde
+		m.viewport.Width = mobileInnerWidth
+		m.threadViewport.Width = mobileInnerWidth
+	} else {
+		available := m.width - 5
+		leftOuterWidth := available / 3
+		rightOuterWidth := available - leftOuterWidth
+		m.viewport.Width = rightOuterWidth - 2
+		m.threadViewport.Width = rightOuterWidth - 2
+	}
 }

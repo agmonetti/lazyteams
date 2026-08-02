@@ -266,6 +266,7 @@ type Model struct {
 	selectedNotif      int
 	notifErr           error
 	activityFilter     NotifFilter
+	mobileMode         bool
 
 
 	// Assignments / Tasks

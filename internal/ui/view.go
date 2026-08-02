@@ -10,6 +10,8 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+const mobilePanelWidth = 40
+
 const asciiLogo = `
 ████████ ███████  █████  ███    ███ ███████       ████████ ██    ██ ██ 
    ██    ██      ██   ██ ████  ████ ██               ██    ██    ██ ██ 
@@ -110,6 +112,11 @@ func (m Model) View() string {
 	available       := m.width - 5
 	leftOuterWidth  := available / 3
 	rightOuterWidth := available - leftOuterWidth
+	if m.mobileMode {
+		// Mobile: single panel at full width, so truncate at full width
+		leftOuterWidth = m.width - 3
+		rightOuterWidth = m.width - 3
+	}
 
 	// INNER dimensions
 	rightInnerWidth := rightOuterWidth - 2
@@ -895,7 +902,37 @@ func (m Model) View() string {
 	}
 
 	// Combine panels
-	ui := lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, rightPanel)
+	var ui string
+	if m.mobileMode {
+		mobileWidth := mobilePanelWidth
+		mobileInnerWidth := mobileWidth - 2 // border
+		mobileHeight := panelOuterHeight
+
+		var mobileContent string
+		if m.focusLeft {
+			mobileContent = leftContent
+		} else {
+			mobileContent = rightContent
+		}
+
+		mobileStyle := focusedPaneStyle.
+			Width(mobileWidth).
+			Height(mobileHeight - 2)
+
+		mobilePanel := mobileStyle.Render(mobileContent)
+
+		// Center the mobile panel in the full terminal width
+		ui = lipgloss.Place(
+			m.width,
+			mobileHeight,
+			lipgloss.Center,
+			lipgloss.Center,
+			mobilePanel,
+		)
+		_ = mobileInnerWidth
+	} else {
+		ui = lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, rightPanel)
+	}
 
 	// Top status bar: unread counts on the left, name + presence on the right
 	if m.ready {
@@ -993,7 +1030,13 @@ func (m Model) View() string {
 							Render(fmt.Sprintf("%d", num)))
 					}
 				}
-				leftBanner = strings.Join(wsTabs, splashSubStyle.Render("  ·  "))
+				if m.mobileMode {
+					// Add [M] indicator before workspace tabs
+					mobileBadge := lipgloss.NewStyle().Foreground(colorMuted).Render("[M] ")
+					leftBanner = mobileBadge + strings.Join(wsTabs, splashSubStyle.Render("  ·  "))
+				} else {
+					leftBanner = strings.Join(wsTabs, splashSubStyle.Render("  ·  "))
+				}
 			}
 		}
 
@@ -1027,6 +1070,7 @@ func (m Model) View() string {
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(lipgloss.Color("#0078D4")).
 			Padding(1, 2).
+			Width(m.width - 10).
 			Render(helpContent)
 		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, popup, lipgloss.WithWhitespaceChars(" "))
 	}
@@ -1038,13 +1082,14 @@ func (m Model) View() string {
 	    PaddingTop(0).
 	    PaddingLeft(1).
 	    MaxWidth(m.width - 2)
-	
-	footerLine := footerBorder.Render(m.footerText())
-	
-	if m.presenceError != "" {
-		footerLine += "\n" + lipgloss.NewStyle().Foreground(lipgloss.Color("203")).Render("Presence error: " + m.presenceError)
+
+	if !m.mobileMode {
+		footerLine := footerBorder.Render(m.footerText())
+		if m.presenceError != "" {
+			footerLine += "\n" + lipgloss.NewStyle().Foreground(lipgloss.Color("203")).Render("Presence error: " + m.presenceError)
+		}
+		ui = lipgloss.JoinVertical(lipgloss.Left, ui, footerLine)
 	}
-	ui = lipgloss.JoinVertical(lipgloss.Left, ui, footerLine)
 
 	return ui
 }
@@ -1384,6 +1429,17 @@ func renderNotifList(m Model) string {
 		{"@Mentions", NotifFilterMentions},
 		{"Tags", NotifFilterTagMentions},
 	}
+	if m.mobileMode {
+		filterNames = []struct {
+			label  string
+			filter NotifFilter
+		}{
+			{"All", NotifFilterAll},
+			{"Unrd", NotifFilterUnread},
+			{"@", NotifFilterMentions},
+			{"Tags", NotifFilterTagMentions},
+		}
+	}
 	var tabs []string
 	for _, f := range filterNames {
 		if f.filter == m.activityFilter {
@@ -1436,7 +1492,14 @@ func renderNotifList(m Model) string {
 		if !n.IsRead {
 			unreadDot = lipgloss.NewStyle().Foreground(colorRed).Render("● ")
 		}
-		line := fmt.Sprintf("%s%s%s%s %s\n   %s", cursor, unreadDot, label, style.Render(title), metaStyle.Render(age), preview)
+		var line string
+		if m.mobileMode {
+			title = truncate(n.SenderName, 14)
+			age = truncate(formatAge(n.Timestamp), 8)
+			line = fmt.Sprintf("%s%s%s %s", cursor, unreadDot, label+style.Render(title), metaStyle.Render(age))
+		} else {
+			line = fmt.Sprintf("%s%s%s%s %s\n   %s", cursor, unreadDot, label, style.Render(title), metaStyle.Render(age), preview)
+		}
 		lines = append(lines, line)
 	}
 	return header + strings.Join(lines, "\n")
@@ -1610,6 +1673,16 @@ func renderAssignList(m Model) string {
 		{"Upcoming", FilterUpcoming},
 		{"Past due", FilterOverdue},
 		{"Completed", FilterCompleted},
+	}
+	if m.mobileMode {
+		tabsInfo = []struct {
+			name   string
+			filter ActivityFilter
+		}{
+			{"Up", FilterUpcoming},
+			{"Late", FilterOverdue},
+			{"Done", FilterCompleted},
+		}
 	}
 	var tabs []string
 	for _, t := range tabsInfo {

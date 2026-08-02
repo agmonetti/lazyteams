@@ -34,6 +34,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		// After setting m.width and m.height:
+		if m.width < 120 {
+			m.mobileMode = true
+		} else {
+			m.mobileMode = false
+		}
 		// Width: real overhead = 2 per panel (border) × 2 panels = 4
 		// + 1 col margin for Kitty = 5 total
 		available        := m.width - 5
@@ -55,10 +61,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.threadViewport = viewport.New(rightInnerWidth, 5) // set correctly by recalculate below
 			m.ready = true
 		} else {
-			m.viewport.Width = rightInnerWidth
+			if m.mobileMode {
+				mobileInnerWidth := mobilePanelWidth - 2 // less border
+				m.viewport.Width = mobileInnerWidth
+				m.threadViewport.Width = mobileInnerWidth
+			} else {
+				m.viewport.Width = rightInnerWidth
+				m.threadViewport.Width = rightInnerWidth
+			}
 			m.leftVp.Width = leftInnerWidth
 			m.leftVp.Height = leftInnerHeight
-			m.threadViewport.Width = rightInnerWidth
 		}
 		
 		m.recalculateViewportHeight()
@@ -633,6 +645,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.selectedChat = i
 				m.loadedConvID = ch.ID
 				m.focusLeft = false
+				m.recalculateViewportHeight()
 				m.viewMode = ModeChat
 				m.loading = true
 				m.messagesBackwardLink = ""
@@ -645,6 +658,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.selectedChat = 0
 		m.loadedConvID = msg.chat.ID
 		m.focusLeft = false
+		m.recalculateViewportHeight()
 		m.viewMode = ModeChat
 		m.loading = true
 		m.messagesBackwardLink = ""

@@ -264,8 +264,25 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 
+	case "ctrl+b":
+		m.mobileMode = !m.mobileMode
+		if m.mobileMode {
+			mobileInnerWidth := mobilePanelWidth - 2
+			m.viewport.Width = mobileInnerWidth
+			m.threadViewport.Width = mobileInnerWidth
+		} else {
+			available := m.width - 5
+			leftOuterWidth := available / 3
+			rightOuterWidth := available - leftOuterWidth
+			m.viewport.Width = rightOuterWidth - 2
+			m.threadViewport.Width = rightOuterWidth - 2
+		}
+		m.recalculateViewportHeight()
+
 	case "tab":
-		m.focusLeft = !m.focusLeft
+		if !m.mobileMode {
+			m.focusLeft = !m.focusLeft
+		}
 
 	case "1":
 		m.workspace = WorkspaceTeams
@@ -332,6 +349,7 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.previewContent = ""
 			m.previewFileName = ""
 			m.downloadStatus = ""
+			m.recalculateViewportHeight()
 			m.viewport.SetContent(renderFilesContent(&m))
 			return m, nil
 		}
@@ -795,6 +813,7 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 						}
 						m.workspace = WorkspaceTeams
 						m.focusLeft = false
+						m.recalculateViewportHeight()
 						m.viewMode = ModeChat
 						m.loadedConvID = n.SourceThread
 						m.loading = true
@@ -1034,6 +1053,7 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		} else if m.focusLeft && m.workspace == WorkspaceDMs && len(m.chats) > 0 {
 			m.loading = true
 			m.focusLeft = false
+			m.recalculateViewportHeight()
 			m.replyToMsg = nil
 			m.isTyping = false
 			m.viewMode = ModeChat // MUST RESET
@@ -1056,6 +1076,7 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		} else if m.focusLeft && m.focusList == 1 && len(m.channels) > 0 {
 			m.loading = true
 			m.focusLeft = false
+			m.recalculateViewportHeight()
 			m.replyToMsg = nil
 			m.isTyping = false
 			m.viewMode = ModeChat // MUST RESET
