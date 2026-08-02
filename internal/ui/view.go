@@ -1375,13 +1375,21 @@ func renderNotifList(m Model) string {
 	}
 
 	// Filter tabs
-	filterNames := []string{"All", "Unread", "Overdue", "Upcoming"}
+	filterNames := []struct {
+		label  string
+		filter NotifFilter
+	}{
+		{"All", NotifFilterAll},
+		{"Unread", NotifFilterUnread},
+		{"@Mentions", NotifFilterMentions},
+		{"Tags", NotifFilterTagMentions},
+	}
 	var tabs []string
-	for i, name := range filterNames {
-		if ActivityFilter(i) == m.activityFilter {
-			tabs = append(tabs, activeTabStyle.Render("[ "+name+" ]"))
+	for _, f := range filterNames {
+		if f.filter == m.activityFilter {
+			tabs = append(tabs, activeTabStyle.Render("[ "+f.label+" ]"))
 		} else {
-			tabs = append(tabs, inactiveTabStyle.Render("[ "+name+" ]"))
+			tabs = append(tabs, inactiveTabStyle.Render("[ "+f.label+" ]"))
 		}
 	}
 	header := strings.Join(tabs, " ") + "\n"
@@ -1447,7 +1455,12 @@ func renderNotifDetail(m Model) string {
 	b.WriteString("\n")
 	b.WriteString(metaStyle.Render(formatAge(n.Timestamp)))
 	b.WriteString("\n\n")
-	b.WriteString(n.Preview)
+	
+	if n.Preview == "" {
+	    b.WriteString(helpStyle.Render("(No preview available — press [o] to go to the channel and see the message.)"))
+	} else {
+	    b.WriteString(n.Preview)
+	}
 	b.WriteString("\n\n")
 	b.WriteString(metaStyle.Render("─────────────────────────────────"))
 	b.WriteString("\n")
@@ -1497,26 +1510,21 @@ func truncate(s string, max int) string {
 }
 
 func (m Model) filteredNotifications() []graph.NotificationItem {
-	if m.activityFilter == FilterAll {
-		return m.notifications
-	}
-	now := time.Now()
-	weekFromNow := now.Add(7 * 24 * time.Hour)
 	var result []graph.NotificationItem
 	for _, n := range m.notifications {
 		switch m.activityFilter {
-		case FilterUpcoming:
-			if n.Subtype == "assignmentPublishedNotification" || n.Subtype == "assignmentDueDateNotification" {
+		case NotifFilterAll:
+			result = append(result, n)
+		case NotifFilterUnread:
+			if !n.IsRead {
 				result = append(result, n)
 			}
-		case FilterOverdue:
-			if (n.Subtype == "assignmentPublishedNotification" || n.Subtype == "assignmentDueDateNotification") && n.Timestamp.Before(now) && n.Timestamp.After(weekFromNow) == false {
-				if containsPastDate(n.Preview, now) {
-					result = append(result, n)
-				}
+		case NotifFilterMentions:
+			if n.ActivityType == "mention" {
+				result = append(result, n)
 			}
-		case FilterUnread:
-			if !n.IsRead {
+		case NotifFilterTagMentions:
+			if n.ActivityType == "tagMention" {
 				result = append(result, n)
 			}
 		}

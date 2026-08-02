@@ -617,7 +617,7 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "left", "h":
 		if m.focusLeft && m.workspace == WorkspaceActivity {
-			if m.activityFilter > FilterAll {
+			if m.activityFilter > NotifFilterAll {
 				m.activityFilter--
 				m.selectedNotif = 0
 			}
@@ -677,7 +677,7 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "right", "l":
 		if m.focusLeft && m.workspace == WorkspaceActivity {
-			if m.activityFilter < FilterOverdue {
+			if m.activityFilter < NotifFilterTagMentions {
 				m.activityFilter++
 				m.selectedNotif = 0
 			}

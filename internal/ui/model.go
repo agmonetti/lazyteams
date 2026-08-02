@@ -115,6 +115,15 @@ const (
 	FilterCompleted                // Completed/Submitted
 )
 
+type NotifFilter int
+
+const (
+	NotifFilterAll NotifFilter = iota
+	NotifFilterUnread
+	NotifFilterMentions    // activityType == "mention"
+	NotifFilterTagMentions // activityType == "tagMention"
+)
+
 type Workspace int
 
 const (
@@ -256,7 +265,7 @@ type Model struct {
 	notifLoaded        bool
 	selectedNotif      int
 	notifErr           error
-	activityFilter     ActivityFilter
+	activityFilter     NotifFilter
 
 
 	// Assignments / Tasks
