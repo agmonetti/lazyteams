@@ -29,7 +29,7 @@ TUI client for Microsoft Teams. Runs entirely in the terminal — no Electron, n
 
 ## Features
 
-- **Global UI**: Top status bar with global unread summary, customizable pane layout, a full-screen interactive Cheat Sheet (`?`), and a **Mobile Mode** (fixed 40-col centered panel, `Ctrl+B` or auto for narrow terminals).
+- **Global UI**: Top status bar with global unread summary, customizable pane layout, a full-screen interactive Cheat Sheet (`?`), and a **Mobile Mode** (responsive single-panel display for narrow terminals — `Ctrl+B` or auto below 120 cols, adapts to window size).
 - **4 Workspaces**: Teams and Channels (1), DMs and Group Chats (2), Activity/Notifications (3), Education Assignments (4).
 - **Activity filters**: All / Unread / @Mentions / Tags (tagged mentions).
 - **Chat & Messaging**: 
