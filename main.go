@@ -7,10 +7,14 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"teamsTUI/internal/auth"
 	"teamsTUI/internal/graph"
+	"teamsTUI/internal/helpers"
 	"teamsTUI/internal/ui"
 )
 
 func main() {
+	// Kill any stale browser holding our profile from a previous crashed run.
+	helpers.KillZombieBrowser()
+
 	// Handle --help flag
 	for _, arg := range os.Args[1:] {
 		if arg == "--help" || arg == "-h" {
