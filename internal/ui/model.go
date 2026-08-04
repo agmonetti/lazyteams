@@ -417,7 +417,9 @@ func New(client *graph.Client, userName string) Model {
 	editInput.CharLimit = 4000
 	editInput.Width = 60
 
-	return Model{
+	prefs := loadPrefs()
+
+	m := Model{
 		client:                client,
 		focusLeft:             true,
 		focusList:             0,
@@ -433,7 +435,7 @@ func New(client *graph.Client, userName string) Model {
 		addMemberInput:        addMemberInput,
 		addChannelMemberInput: addChannelMemberInput,
 		assignFilter:          FilterUpcoming,
-		prefs:                 loadPrefs(),
+		prefs:                 prefs,
 		chatUnread:            make(map[string]bool),
 		presence:              make(map[string]string),
 		selectedFiles:         make(map[int]bool),
@@ -443,6 +445,8 @@ func New(client *graph.Client, userName string) Model {
 		presenceOptions:       []string{"Available", "Busy", "DoNotDisturb", "BeRightBack", "Away", "Reset (Automatic)"},
 		reactionOptions:       []string{"like", "heart", "laugh", "surprised", "sad", "angry"},
 	}
+	loadPrefsIntoModel(&m, prefs)
+	return m
 }
 
 func (m Model) Init() tea.Cmd {

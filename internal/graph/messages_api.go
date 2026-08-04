@@ -412,68 +412,6 @@ func (c *Client) GetMessagesFromLink(link string) (MessagePage, error) {
 	return MessagePage{Messages: msgs, BackwardLink: res.Metadata.BackwardLink}, nil
 }
 
-func (c *Client) SendMessageWithFile(channelID, content string, mentions []MentionedUser, file DriveItem) error {
-	url := fmt.Sprintf("https://teams.microsoft.com/api/chatsvc/amer/v1/users/ME/conversations/%s/messages", channelID)
-
-	htmlContent := content
-	if htmlContent == "" {
-		htmlContent = "Pasted image"
-	}
-	htmlContent = "<p>" + html.EscapeString(htmlContent) + "</p>"
-	
-	// Teams expects the file in the properties["files"] array
-	// and sometimes an <attachment> tag in the HTML, but often just the properties array is enough for a file card.
-	filesJSON := fmt.Sprintf(`[{"id":"%s", "name":"%s", "fileUrl":"%s", "type":"pcf", "title":"%s"}]`, file.ID, file.Name, file.WebUrl, file.Name)
-
-	properties := map[string]string{
-		"importance": "",
-		"subject":    "",
-		"title":      "",
-		"cards":      "[]",
-		"links":      "[]",
-		"files":      filesJSON,
-		"mentions":   "[]",
-	}
-
-	if len(mentions) > 0 {
-		var mentionsJSON string
-		htmlContent, mentionsJSON = BuildMentionContent(content, mentions)
-		properties["mentions"] = mentionsJSON
-	}
-	
-	// Add attachment tag to HTML just in case
-	htmlContent += fmt.Sprintf(`<attachment id="%s"></attachment>`, file.ID)
-
-	payload := map[string]interface{}{
-		"content":     htmlContent,
-		"messagetype": "RichText/Html",
-		"contenttype": "Text",
-		"properties":  properties,
-	}
-	bodyBytes, _ := json.Marshal(payload)
-
-	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(bodyBytes))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Authorization", "Bearer "+c.WebToken)
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json, text/plain, */*")
-	req.Header.Set("behavioroverride", "redirectAs404")
-	req.Header.Set("x-ms-migration", "True")
-
-	resp, err := c.HTTPClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
-		b, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("chatsvc send error %d: %s", resp.StatusCode, string(b))
-	}
-	return nil
-}
-
 // SendMessage sends a text message to the specified channel using the internal API.
 // If replyTo is non-nil, the message includes a quoted reply blockquote.
 func (c *Client) SendMessage(channelID, content string, mentions []MentionedUser, replyTo *Message) error {

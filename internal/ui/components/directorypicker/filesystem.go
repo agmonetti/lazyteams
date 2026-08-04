@@ -78,14 +78,6 @@ func homeDir() string {
 	return home
 }
 
-func expandTilde(path string) string {
-	if strings.HasPrefix(path, "~/") {
-		home := homeDir()
-		return filepath.Join(home, path[2:])
-	}
-	return path
-}
-
 func pathExists(path string) bool {
 	info, err := os.Stat(path)
 	return err == nil && info.IsDir()

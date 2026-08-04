@@ -171,11 +171,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case tokenRenewingMsg:
-		m.tokenRenewing = true
-		m.tokenRenewingType = "web"
-		return m, authHelperRenewal(&m, "web")
-
 	case tokenRenewedMsg:
 		m.renewalProc = nil
 		if msg.err != nil {
@@ -643,20 +638,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Batch(cmds...)
 
-	case imagePastedMsg:
-		m.downloading = false
-		if msg.err != nil {
-			m.downloadStatus = "✗ " + msg.err.Error()
-		} else {
-			m.downloadStatus = "✓ Image pasted successfully"
-			m.input.Reset()
-			// Reload messages to show the new one
-			cmds = append(cmds, loadMessagesCmd(m.client, "", m.activeConversationID(), 200))
-		}
-		m.downloadStatusID++
-		cmds = append(cmds, clearStatusAfter(m.downloadStatusID))
-		return m, tea.Batch(cmds...)
-
 	case downloadDoneMsg:
 		m.downloading = false
 		m.downloadStatus = strings.Join(msg.results, " | ")
@@ -665,11 +646,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.viewport.SetContent(renderFilesContent(&m))
 			m.viewport.GotoBottom()
 		}
-		return m, clearStatusAfter(m.downloadStatusID)
-
-	case statusMsg:
-		m.downloadStatus = msg.text
-		m.downloadStatusID++
 		return m, clearStatusAfter(m.downloadStatusID)
 
 	case clearDownloadStatusMsg:
@@ -852,14 +828,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			reloadCurrentFolderCmd(m.client, m.teams[m.selectedTeam].ID, m.folderStack[len(m.folderStack)-1]),
 			clearStatusAfter(m.downloadStatusID),
 		)
-
-	case dirPickerResultMsg:
-		m.showDirPicker = false
-		if msg.path != "" {
-			m.prefs.DownloadDir = msg.path
-			savePrefs(m.prefs)
-		}
-		return m, nil
 
 	case createTeamMsg:
 		if msg.err != nil {

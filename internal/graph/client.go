@@ -203,10 +203,6 @@ type Client struct {
 	HTTPClient  *http.Client
 }
 
-func (c *Client) GetSelfID() string {
-	return c.SelfID
-}
-
 func NewClient(graphToken, webToken, notifToken, eduToken, cookie, eduCookie, spacesToken, fabricToken string) *Client {
 	return &Client{
 		GraphToken:  graphToken,

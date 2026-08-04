@@ -1310,16 +1310,6 @@ func renderThreeTabs(current ViewMode, nameA, nameB, nameC string) (string, stri
 	return tabA, tabB, tabC
 }
 
-func (m Model) unreadCount() int {
-	count := 0
-	for _, n := range m.notifications {
-		if !n.IsRead {
-			count++
-		}
-	}
-	return count
-}
-
 func (m Model) footerText() string {
 	dim := lipgloss.NewStyle().Foreground(colorMuted)
 
@@ -1754,43 +1744,6 @@ func (m Model) filteredNotifications() []graph.NotificationItem {
 		}
 	}
 	return result
-}
-
-func containsPastDate(preview string, now time.Time) bool {
-	lower := strings.ToLower(preview)
-	months := map[string]time.Month{
-		"january": time.January, "february": time.February, "march": time.March,
-		"april": time.April, "may": time.May, "june": time.June,
-		"july": time.July, "august": time.August, "september": time.September,
-		"october": time.October, "november": time.November, "december": time.December,
-		// Spanish month names for backwards compatibility with existing data
-		"enero": time.January, "febrero": time.February, "marzo": time.March,
-		"abril": time.April, "mayo": time.May, "junio": time.June,
-		"julio": time.July, "agosto": time.August, "septiembre": time.September,
-		"octubre": time.October, "noviembre": time.November, "diciembre": time.December,
-	}
-	for keyword, month := range months {
-		idx := strings.Index(lower, keyword)
-		if idx > 0 {
-			start := idx - 5
-			if start < 0 {
-				start = 0
-			}
-			prefix := preview[start:idx]
-			for _, w := range strings.Fields(prefix) {
-				day := 0
-				fmt.Sscanf(w, "%d", &day)
-				if day > 0 && day <= 31 {
-					year := now.Year()
-					date := time.Date(year, month, day, 0, 0, 0, 0, time.Local)
-					if date.Before(now) {
-						return true
-					}
-				}
-			}
-		}
-	}
-	return false
 }
 
 func filteredAssignments(m Model) []graph.Assignment {

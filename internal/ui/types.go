@@ -30,7 +30,6 @@ type navigateToThreadMsg struct {
 }
 type markNotifReadMsg struct{ err error }
 
-type tokenExpiredMsg struct{ token string }
 type tokenRenewedMsg struct {
 	tokenType string
 	err       error
@@ -39,7 +38,6 @@ type tokenRenewedMsg struct {
 type tokenCheckDoneMsg struct {
 	expired []string
 }
-type tokenRenewingMsg struct{}
 
 type searchUsersMsg struct{ results []graph.UserSearchResult }
 type searchUsersErrMsg struct{ err error }
@@ -53,10 +51,6 @@ type channelRootMsg struct {
 type uploadDoneMsg struct {
 	item graph.DriveItem
 	err  error
-}
-
-type dirPickerResultMsg struct {
-	path string
 }
 
 type createTeamMsg struct{ err error }
@@ -107,10 +101,6 @@ type setPresenceMsg struct {
 
 type downloadDoneMsg struct {
 	results []string
-}
-
-type statusMsg struct {
-	text string
 }
 
 type clearDownloadStatusMsg struct{ id int }
