@@ -184,6 +184,7 @@ type Model struct {
 	downloadStatusID    int                          // increments with each download, prevents an old clear from erasing a new status
 	downloading         bool                         // true while downloading
 	folderCache         map[string][]graph.DriveItem // folder cache: folderID → contents
+	filesRefreshing     bool                         // true while a background files auto-refresh is in flight
 
 	// channelID → teamID map for navigation from notifications
 	channelToTeam map[string]string
@@ -452,6 +453,8 @@ func (m Model) Init() tea.Cmd {
 		loadMeCmd(m.client),
 		refreshTickCmd(),
 		initialPresenceTickCmd(),
+		unreadSweepCmd(),
+		filesRefreshTickCmd(),
 		loadNotificationsCmd(m.client),
 	)
 }

@@ -9,6 +9,9 @@ type messageSendErrMsg struct{ err error }
 type filesMsg struct {
 	files    []graph.DriveItem
 	folderID string
+	// preserve keeps the current file selection and scroll position when this
+	// is a background auto-refresh instead of a fresh navigation.
+	preserve bool
 }
 type filesErrMsg struct{ err error }
 type chatsMsg struct{ chats []graph.Chat }
@@ -28,9 +31,9 @@ type navigateToThreadMsg struct {
 type markNotifReadMsg struct{ err error }
 
 type tokenExpiredMsg struct{ token string }
-type tokenRenewedMsg struct{ 
+type tokenRenewedMsg struct {
 	tokenType string
-	err       error 
+	err       error
 }
 
 type tokenCheckDoneMsg struct {
@@ -78,8 +81,14 @@ type teamMembersMsg struct{ members []graph.TeamMember }
 type teamMembersErrMsg struct{ err error }
 type addMemberMsg struct{ err error }
 type removeMemberMsg struct{ err error }
-type addChannelMemberMsg struct{ err error; member graph.TeamMember }
-type removeChannelMemberMsg struct{ err error; userID string }
+type addChannelMemberMsg struct {
+	err    error
+	member graph.TeamMember
+}
+type removeChannelMemberMsg struct {
+	err    error
+	userID string
+}
 
 type delayedReloadChannelsMsg struct{}
 type delayedReloadTeamsMsg struct{}
@@ -133,4 +142,19 @@ type previewResultMsg struct {
 	err         error
 	openBrowser bool
 	status      string
+}
+
+// unreadSweepMsg fires a periodic re-check of every chat's consumption
+// horizon so DMs arriving in existing conversations surface the unread badge.
+type unreadSweepMsg struct{}
+
+// filesRefreshMsg fires a periodic auto-refresh of the currently shown
+// drive folder so files uploaded by others appear without restarting.
+type filesRefreshMsg struct{}
+
+// filesRefreshErrMsg is a background files auto-refresh failure. It is
+// handled silently (the previous list stays visible) to avoid interrupting
+// the user during a transient network hiccup.
+type filesRefreshErrMsg struct {
+	err error
 }

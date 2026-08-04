@@ -19,6 +19,8 @@ import (
 
 const pollInterval = 3
 const presenceInterval = 60
+const unreadSweepInterval = 30
+const filesRefreshInterval = 30
 
 func reloadChannelsAfterDelayCmd() tea.Cmd {
 	return tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
@@ -284,6 +286,22 @@ func detectExpiredToken(err error) string {
 func refreshTickCmd() tea.Cmd {
 	return tea.Tick(pollInterval*time.Second, func(t time.Time) tea.Msg {
 		return tickMsg{}
+	})
+}
+
+// unreadSweepCmd periodically re-checks every chat's consumption horizon so a
+// new DM surfaces the unread badge without a restart.
+func unreadSweepCmd() tea.Cmd {
+	return tea.Tick(unreadSweepInterval*time.Second, func(t time.Time) tea.Msg {
+		return unreadSweepMsg{}
+	})
+}
+
+// filesRefreshTickCmd periodically reloads the currently shown drive folder
+// so files uploaded by teammates appear without a restart.
+func filesRefreshTickCmd() tea.Cmd {
+	return tea.Tick(filesRefreshInterval*time.Second, func(t time.Time) tea.Msg {
+		return filesRefreshMsg{}
 	})
 }
 
@@ -772,6 +790,40 @@ func loadFilesCmd(client *graph.Client, teamID, channelName, channelID string) t
 			return filesErrMsg{err}
 		}
 		return filesMsg{files: files, folderID: "root:" + channelID}
+	}
+}
+
+// refreshFilesCmd is loadFilesCmd for background auto-refresh: it keeps the
+// current selection instead of resetting to the top of the list.
+func refreshFilesCmd(client *graph.Client, teamID, channelName, channelID string) tea.Cmd {
+	return func() tea.Msg {
+		files, err := client.GetChannelFiles(teamID, channelName)
+		if err != nil {
+			return filesRefreshErrMsg{err: err}
+		}
+		return filesMsg{files: files, folderID: "root:" + channelID, preserve: true}
+	}
+}
+
+// refreshFolderCmd is loadFolderCmd for background auto-refresh: it keeps the
+// current selection instead of resetting to the top of the list.
+func refreshFolderCmd(client *graph.Client, teamID string, node FolderNode) tea.Cmd {
+	cacheKey := node.ID
+	if node.DriveID != "" {
+		return func() tea.Msg {
+			items, err := client.GetItemChildren(node.DriveID, node.ID)
+			if err != nil {
+				return filesRefreshErrMsg{err: err}
+			}
+			return filesMsg{files: items, folderID: cacheKey, preserve: true}
+		}
+	}
+	return func() tea.Msg {
+		items, err := client.GetFolderChildren(teamID, node.ID)
+		if err != nil {
+			return filesRefreshErrMsg{err: err}
+		}
+		return filesMsg{files: items, folderID: cacheKey, preserve: true}
 	}
 }
 

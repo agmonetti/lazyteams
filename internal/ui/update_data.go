@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"strings"
+	"teamsTUI/internal/graph"
 	"teamsTUI/internal/teams"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -34,7 +35,7 @@ func (m Model) handleMessagesMsg(msg messagesMsg) (tea.Model, tea.Cmd) {
 			m.viewport.GotoBottom()
 			m.forceScrollBottom = false
 		}
-		
+
 		if m.showThread {
 			replies := repliesFor(m.messages, m.threadParentID)
 			threadContent := formatThread(m.threadParentMsg, replies, m.threadViewport.Width, m.userName, m.threadCursor, true)
@@ -47,10 +48,25 @@ func (m Model) handleMessagesMsg(msg messagesMsg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, markAsReadCmd(m.client, m.loadedConvID, lastMsg))
 		}
 	} else if m.viewMode == ModeFiles {
+		atBottom := m.viewport.AtBottom()
+		curID := ""
+		if m.selectedFile >= 0 && m.selectedFile < len(m.files) {
+			curID = m.files[m.selectedFile].ID
+		}
 		m.files = teams.AggregateChatAttachments(m.messages)
 		m.selectedFile = 0
+		if curID != "" {
+			for i, f := range m.files {
+				if f.ID == curID {
+					m.selectedFile = i
+					break
+				}
+			}
+		}
 		m.viewport.SetContent(renderFilesContent(&m))
-		m.viewport.GotoTop()
+		if atBottom {
+			m.viewport.GotoBottom()
+		}
 	}
 	return m, tea.Batch(cmds...)
 }
@@ -150,6 +166,16 @@ func (m Model) handleChannelsMsg(msg channelsMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleFilesMsg(msg filesMsg) (tea.Model, tea.Cmd) {
+	// Keep the current selection when this is a background auto-refresh
+	var prevID, prevRemoteID string
+	preserving := msg.preserve && m.selectedFile >= 0 && m.selectedFile < len(m.files)
+	if preserving {
+		prevID = m.files[m.selectedFile].ID
+		if m.files[m.selectedFile].RemoteItem != nil {
+			prevRemoteID = m.files[m.selectedFile].RemoteItem.ID
+		}
+	}
+
 	// Discard stale responses from a previous folder level
 	if msg.folderID != "" {
 		expectedKey := ""
@@ -168,7 +194,20 @@ func (m Model) handleFilesMsg(msg filesMsg) (tea.Model, tea.Cmd) {
 
 	m.files = msg.files
 	m.loading = false
+	m.filesRefreshing = false
 	m.selectedFile = 0
+	if preserving && prevID != "" {
+		for i, f := range msg.files {
+			match := f.ID == prevID
+			if prevRemoteID != "" && f.RemoteItem != nil && f.RemoteItem.ID == prevRemoteID {
+				match = true
+			}
+			if match {
+				m.selectedFile = i
+				break
+			}
+		}
+	}
 	m.selectedFiles = make(map[int]bool)
 
 	m.viewport.SetContent(renderFilesContent(&m))
@@ -180,8 +219,10 @@ func (m Model) handleTickMsg(msg tickMsg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 	// Poll: refresh chats if we're in DMs and the loaded conversation is still open
 	cmds = append(cmds, pollChatsCmd(m.client))
-	// Refresh messages if a conversation is open and the user isn't typing
-	if m.loadedConvID != "" && m.viewMode == ModeChat && !m.isTyping && !m.focusLeft {
+	// Refresh messages if a conversation is open and the user isn't typing.
+	// DM files are aggregated from messages, so they refresh together.
+	if m.loadedConvID != "" && !m.isTyping && !m.focusLeft &&
+		(m.viewMode == ModeChat || (m.viewMode == ModeFiles && m.workspace == WorkspaceDMs)) {
 		m.messagesBackwardLink = ""
 		m.loadingMore = false
 		cmds = append(cmds, loadMessagesCmd(m.client, "", m.loadedConvID, 200))
@@ -234,7 +275,74 @@ func (m Model) handleNotificationsMsg(msg notificationsMsg) (tea.Model, tea.Cmd)
 }
 
 func (m Model) handlePollChatsMsg(msg pollChatsMsg) (tea.Model, tea.Cmd) {
-	// Update the chat list with fresh data
-	// (no badge: lastModifiedDateTime is not available on this tenant)
-	return m, nil
+	if len(msg.chats) == 0 {
+		return m, nil
+	}
+
+	// Preserve the currently selected chat across the refresh
+	var currID string
+	if m.selectedChat >= 0 && m.selectedChat < len(m.chats) {
+		currID = m.chats[m.selectedChat].ID
+	}
+
+	// Detect chats that did not exist in the previous poll (new DMs)
+	oldChats := m.chats
+	existing := make(map[string]struct{}, len(oldChats))
+	for _, c := range oldChats {
+		existing[c.ID] = struct{}{}
+	}
+	var newChats []graph.Chat
+	for _, c := range msg.chats {
+		if _, ok := existing[c.ID]; !ok {
+			newChats = append(newChats, c)
+		}
+	}
+
+	m.chats = msg.chats
+	selfChatID := ""
+	if m.selfID != "" {
+		selfChatID = fmt.Sprintf("19:%s_%s@unq.gbl.spaces", m.selfID, m.selfID)
+
+		// Re-apply the discovered "Personal notes" chat ID: GetChats returns the
+		// placeholder id, and the hot-update from selfChatDiscoveredMsg would
+		// otherwise be lost on every poll.
+		if cachedID := m.prefs.SelfChatIDs[m.selfID]; cachedID != "" {
+			for i := range m.chats {
+				if m.chats[i].Topic == "Personal notes (You)" && m.chats[i].ID != cachedID {
+					m.chats[i].ID = cachedID
+				}
+			}
+		}
+	}
+
+	// Merge back chats that exist locally but not yet in the Graph response
+	// (e.g. a DM just created by the app) so they don't blink out of the list.
+	inFresh := make(map[string]struct{}, len(m.chats))
+	for _, c := range m.chats {
+		inFresh[c.ID] = struct{}{}
+	}
+	for _, c := range oldChats {
+		if _, ok := inFresh[c.ID]; !ok {
+			m.chats = append(m.chats, c)
+			inFresh[c.ID] = struct{}{}
+		}
+	}
+
+	sortChats(m.chats, m.chatUnread, selfChatID)
+	if currID != "" {
+		for i, c := range m.chats {
+			if c.ID == currID {
+				m.selectedChat = i
+				break
+			}
+		}
+	}
+
+	var cmds []tea.Cmd
+	if m.selfID != "" {
+		for _, ch := range newChats {
+			cmds = append(cmds, checkUnreadCmd(m.client, ch))
+		}
+	}
+	return m, tea.Batch(cmds...)
 }

@@ -393,6 +393,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case filesErrMsg:
 		m.viewport.SetContent(fmt.Sprintf("Error loading files: %v", msg.err))
 		m.loading = false
+		m.filesRefreshing = false
+		return m, nil
+
+	case filesRefreshErrMsg:
+		// Background refresh failed: keep the current list, just retry later.
+		m.filesRefreshing = false
 		return m, nil
 
 	case channelRootMsg:
@@ -509,6 +515,40 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case presenceTickResultMsg:
 		return m.handlePresenceResultMsg(msg)
+
+	case unreadSweepMsg:
+		var cmds []tea.Cmd
+		if m.selfID != "" && len(m.chats) > 0 {
+			for _, ch := range m.chats {
+				cmds = append(cmds, checkUnreadCmd(m.client, ch))
+			}
+		}
+		cmds = append(cmds, unreadSweepCmd())
+		return m, tea.Batch(cmds...)
+
+	case filesRefreshMsg:
+		var cmds []tea.Cmd
+		// Auto-refresh the drive files so uploads by teammates show up without
+		// a restart. DM files come from messages and are already covered by the
+		// 3s poll, so only Teams drive folders need this.
+		if m.viewMode == ModeFiles &&
+			m.workspace == WorkspaceTeams &&
+			!m.filesRefreshing &&
+			!m.confirmingDownload && !m.previewing &&
+			!m.showDeleteFilePopup && !m.showCreateFolderPopup &&
+			len(m.teams) > 0 && m.selectedChan < len(m.channels) {
+			m.filesRefreshing = true
+			teamID := m.teams[m.selectedTeam].ID
+			if len(m.folderStack) > 1 {
+				node := m.folderStack[len(m.folderStack)-1]
+				cmds = append(cmds, refreshFolderCmd(m.client, teamID, node))
+			} else {
+				ch := m.channels[m.selectedChan]
+				cmds = append(cmds, refreshFilesCmd(m.client, teamID, ch.DisplayName, ch.ID))
+			}
+		}
+		cmds = append(cmds, filesRefreshTickCmd())
+		return m, tea.Batch(cmds...)
 
 	case notificationsMsg:
 		return m.handleNotificationsMsg(msg)
