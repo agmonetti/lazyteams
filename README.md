@@ -138,6 +138,20 @@ The client requires 8 distinct tokens/cookies to talk to the many internal APIs 
 
 Tokens are saved to `~/.config/teamstui/tokens.env`. The TUI automatically renews most expired tokens in the background via the auth helper.
 
+## Data Persistence
+
+The app stores all persistent state under `~/.config/teamstui/` (Linux/macOS) or `%APPDATA%\teamstui\` (Windows). A detailed, security-focused description of these files is available in [`SECURITY.md`](SECURITY.md).
+
+| Path | Purpose | Created by |
+|------|---------|------------|
+| `tokens.env` | JWT access tokens and the session cookie the client needs to talk to Teams APIs | `msTTui-auth` |
+| `prefs.json` | UI preferences: download directory, hidden teams/channels, self-chat ID cache | `msTTui` |
+| `browser-session/` | Persistent Playwright/Firefox profile — keeps you logged into Microsoft between runs | `msTTui-auth` |
+
+- All three are intentionally git-ignored and treated as a secret store (similar to `~/.ssh/`): don't commit them, share them, or paste their contents in issues.
+- If login breaks, run `./msTTui-auth --clear-session` to wipe the browser profile (forces a fresh sign-in), or `--clear-tokens` to delete `tokens.env`.
+- On Linux, `tokens.env` and `prefs.json` default to `0600` and `browser-session/` to `0700`.
+
 ## Architecture
 
 ```

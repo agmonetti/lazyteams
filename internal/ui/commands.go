@@ -136,24 +136,32 @@ func reloadTeamsAfterDelayCmd() tea.Cmd {
 	})
 }
 
-func launchAuthHelperCmd(expiredToken string) tea.Cmd {
+// authHelperRenewal starts a background msTTui-auth --renew process, records
+// it on the model (so it is killed on quit), and returns a cmd that resolves
+// with the result once the process exits.
+func authHelperRenewal(m *Model, expiredToken string) tea.Cmd {
+	exe, err := os.Executable()
+	if err != nil {
+		return func() tea.Msg { return tokenRenewedMsg{tokenType: expiredToken, err: err} }
+	}
+	authHelper := filepath.Join(filepath.Dir(exe), "msTTui-auth")
+
+	args := []string{"--renew", expiredToken}
+	// graph and fabric require visible browser — all others run headless
+	if expiredToken != "graph" && expiredToken != "fabric" {
+		args = append(args, "--headless")
+	}
+
+	cmd := exec.Command(authHelper, args...)
+	cmd.Stdout = nil
+	cmd.Stderr = nil
+	if err := cmd.Start(); err != nil {
+		return func() tea.Msg { return tokenRenewedMsg{tokenType: expiredToken, err: err} }
+	}
+	m.renewalProc = cmd.Process
+
 	return func() tea.Msg {
-		exe, err := os.Executable()
-		if err != nil {
-			return tokenRenewedMsg{tokenType: expiredToken, err: err}
-		}
-		authHelper := filepath.Join(filepath.Dir(exe), "msTTui-auth")
-
-		args := []string{"--renew", expiredToken}
-		// graph and fabric require visible browser — all others run headless
-		if expiredToken != "graph" && expiredToken != "fabric" {
-			args = append(args, "--headless")
-		}
-
-		cmd := exec.Command(authHelper, args...)
-		cmd.Stdout = nil
-		cmd.Stderr = nil
-		if err := cmd.Run(); err != nil {
+		if err := cmd.Wait(); err != nil {
 			return tokenRenewedMsg{tokenType: expiredToken, err: err}
 		}
 		return tokenRenewedMsg{tokenType: expiredToken, err: nil}
@@ -505,11 +513,11 @@ func openAttachmentsCmd(client *graph.Client, attachments []graph.Attachment) te
 				results = append(results, fmt.Sprintf("✗ %s: %v", att.Name, ferr))
 				continue
 			}
-			
+
 			_, cerr := io.Copy(out, body)
 			body.Close()
 			out.Close()
-			
+
 			if cerr != nil {
 				results = append(results, fmt.Sprintf("✗ %s: %v", att.Name, cerr))
 			} else {

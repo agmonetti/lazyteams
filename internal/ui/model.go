@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"os"
+
 	"teamsTUI/internal/graph"
 	"teamsTUI/internal/ui/components/directorypicker"
 
@@ -108,7 +110,7 @@ const (
 type ActivityFilter int
 
 const (
-	FilterAll      ActivityFilter = iota
+	FilterAll       ActivityFilter = iota
 	FilterUnread                   // Not read
 	FilterUpcoming                 // Upcoming (due in ≤7 days)
 	FilterOverdue                  // Overdue
@@ -127,15 +129,15 @@ const (
 type Workspace int
 
 const (
-	WorkspaceTeams       Workspace = iota
+	WorkspaceTeams Workspace = iota
 	WorkspaceDMs
 	WorkspaceActivity
 	WorkspaceAssignments
 )
 
 type FolderNode struct {
-	ID      string
-	Name    string
+	ID   string
+	Name string
 	// DriveID, if not empty, indicates this node lives in a different
 	// Drive than the Team's (shortcut/remoteItem case, e.g. Class Materials).
 	DriveID string
@@ -174,13 +176,13 @@ type Model struct {
 	folderStack []FolderNode // Stack of nodes for navigating back in subfolders and building the path
 
 	// File downloads
-	currentFilesDriveID string          // "" = default team drive; otherwise explicit drive ID
-	selectedFiles       map[int]bool    // indices marked for multi-download
-	confirmingDownload  bool            // true while the confirmation popup is showing
+	currentFilesDriveID string       // "" = default team drive; otherwise explicit drive ID
+	selectedFiles       map[int]bool // indices marked for multi-download
+	confirmingDownload  bool         // true while the confirmation popup is showing
 	downloadTargets     []graph.DriveItem
-	downloadStatus      string          // result message
-	downloadStatusID    int             // increments with each download, prevents an old clear from erasing a new status
-	downloading         bool            // true while downloading
+	downloadStatus      string                       // result message
+	downloadStatusID    int                          // increments with each download, prevents an old clear from erasing a new status
+	downloading         bool                         // true while downloading
 	folderCache         map[string][]graph.DriveItem // folder cache: folderID → contents
 
 	// channelID → teamID map for navigation from notifications
@@ -190,14 +192,14 @@ type Model struct {
 	teamThreadID string
 
 	// Thread view
-	messageCursor    int
-	cursorMode       bool
-	showThread       bool
-	threadParentID   string
-	threadParentMsg  graph.Message
-	threadViewport   viewport.Model
-	threadCursor     int // 0 = parent, 1..N = replies
-	isReplyTyping    bool
+	messageCursor   int
+	cursorMode      bool
+	showThread      bool
+	threadParentID  string
+	threadParentMsg graph.Message
+	threadViewport  viewport.Model
+	threadCursor    int // 0 = parent, 1..N = replies
+	isReplyTyping   bool
 
 	// Reactions
 	showReactionPicker bool
@@ -221,7 +223,7 @@ type Model struct {
 	mentionSuggestions []graph.TeamMember // filtered list
 	mentionCursor      int                // selected index in the popup
 	showMentionPopup   bool
-	mentionAtPos       int                // position of the @ in the textarea value
+	mentionAtPos       int // position of the @ in the textarea value
 
 	// Pagination
 	messagesBackwardLink string // URL for loading older messages
@@ -244,9 +246,10 @@ type Model struct {
 	searchQuery string
 
 	// Token renewal
-	tokenRenewing bool
+	tokenRenewing     bool
 	tokenRenewingType string // "graph", "fabric", "web", "notif", "edu"
-	tokenRenewErr string
+	tokenRenewErr     string
+	renewalProc       *os.Process // running msTTui-auth child, killed on quit
 
 	// User
 	userName string
@@ -261,13 +264,12 @@ type Model struct {
 	presenceError    string
 
 	// Activity / Notifications
-	notifications      []graph.NotificationItem
-	notifLoaded        bool
-	selectedNotif      int
-	notifErr           error
-	activityFilter     NotifFilter
-	mobileMode         bool
-
+	notifications  []graph.NotificationItem
+	notifLoaded    bool
+	selectedNotif  int
+	notifErr       error
+	activityFilter NotifFilter
+	mobileMode     bool
 
 	// Assignments / Tasks
 	assignments      []graph.Assignment
@@ -278,32 +280,32 @@ type Model struct {
 	assignFilter     ActivityFilter
 
 	// DM polling
-	chatUnread              map[string]bool   // chatID → has unread messages
-	presence                map[string]string  // userID → Availability (Available, Busy, Away, Offline, etc.)
-	dmSectionCollapsed      bool
-	groupSectionCollapsed   bool
-	cursorOnDMHeader        bool
-	cursorOnGroupHeader     bool
+	chatUnread            map[string]bool   // chatID → has unread messages
+	presence              map[string]string // userID → Availability (Available, Busy, Away, Offline, etc.)
+	dmSectionCollapsed    bool
+	groupSectionCollapsed bool
+	cursorOnDMHeader      bool
+	cursorOnGroupHeader   bool
 
 	// File preview
-	previewing     bool   // true while showing file preview
-	previewContent string // file content to display
+	previewing      bool   // true while showing file preview
+	previewContent  string // file content to display
 	previewFileName string // name of the file being previewed
 
 	// New DM creation
-	showNewDMPopup    bool
-	newDMQuery        textinput.Model
-	newDMResults      []graph.UserSearchResult
-	newDMCursor       int
-	newDMErr          string
+	showNewDMPopup bool
+	newDMQuery     textinput.Model
+	newDMResults   []graph.UserSearchResult
+	newDMCursor    int
+	newDMErr       string
 
 	// File upload
-	uploading        bool
+	uploading bool
 
 	// Directory picker
-	showDirPicker   bool
-	dirPicker       directorypicker.Model
-	pickerPurpose   string // "download" or "upload"
+	showDirPicker bool
+	dirPicker     directorypicker.Model
+	pickerPurpose string // "download" or "upload"
 
 	// Create team
 	showCreateTeamPopup bool
@@ -334,16 +336,16 @@ type Model struct {
 	showDeleteTeamPopup    bool
 
 	// Info panels
-	showTeamInfo    bool
-	teamInfo        *graph.Team
-	channelInfo     *graph.Channel
+	showTeamInfo bool
+	teamInfo     *graph.Team
+	channelInfo  *graph.Channel
 
 	// Team members
-	showMembersPopup  bool
-	teamMembers       []graph.TeamMember
-	membersLoading    bool
-	membersLoadSilent bool // true when loading members for mention resolution, not for display
-	membersCursor     int
+	showMembersPopup      bool
+	teamMembers           []graph.TeamMember
+	membersLoading        bool
+	membersLoadSilent     bool // true when loading members for mention resolution, not for display
+	membersCursor         int
 	showRemoveMemberPopup bool
 
 	// Add member (team)
@@ -415,30 +417,30 @@ func New(client *graph.Client, userName string) Model {
 	editInput.Width = 60
 
 	return Model{
-		client:       client,
-		focusLeft:    true,
-		focusList:    0,
-		loading:      true,
-		input:        ta,
-		searchInput:  searchInput,
-		editInput:    editInput,
-		createFolderInput: createFolderInput,
-		newDMQuery:   newDMInput,
-		createTeamInput: createTeamInput,
-		createChannelInput: createChannelInput,
-		createChannelType: "Standard",
-		addMemberInput: addMemberInput,
+		client:                client,
+		focusLeft:             true,
+		focusList:             0,
+		loading:               true,
+		input:                 ta,
+		searchInput:           searchInput,
+		editInput:             editInput,
+		createFolderInput:     createFolderInput,
+		newDMQuery:            newDMInput,
+		createTeamInput:       createTeamInput,
+		createChannelInput:    createChannelInput,
+		createChannelType:     "Standard",
+		addMemberInput:        addMemberInput,
 		addChannelMemberInput: addChannelMemberInput,
-		assignFilter: FilterUpcoming,
-		prefs:        loadPrefs(),
-		chatUnread:   make(map[string]bool),
-		presence:     make(map[string]string),
-		selectedFiles: make(map[int]bool),
-		folderCache:  make(map[string][]graph.DriveItem),
-		channelToTeam: make(map[string]string),
-		userName:     userName,
-		presenceOptions: []string{"Available", "Busy", "DoNotDisturb", "BeRightBack", "Away", "Reset (Automatic)"},
-		reactionOptions: []string{"like", "heart", "laugh", "surprised", "sad", "angry"},
+		assignFilter:          FilterUpcoming,
+		prefs:                 loadPrefs(),
+		chatUnread:            make(map[string]bool),
+		presence:              make(map[string]string),
+		selectedFiles:         make(map[int]bool),
+		folderCache:           make(map[string][]graph.DriveItem),
+		channelToTeam:         make(map[string]string),
+		userName:              userName,
+		presenceOptions:       []string{"Available", "Busy", "DoNotDisturb", "BeRightBack", "Away", "Reset (Automatic)"},
+		reactionOptions:       []string{"like", "heart", "laugh", "surprised", "sad", "angry"},
 	}
 }
 

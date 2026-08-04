@@ -627,17 +627,17 @@ func (m Model) handleAddChannelMemberPopup(msg tea.KeyMsg) (tea.Model, tea.Cmd, 
 		m.addChannelMemberInput.Reset()
 		m.addChannelMemberResults = nil
 		m.addChannelMemberErr = ""
-	case "up", "k":
+	case "up":
 		if m.addChannelMemberCursor > 0 {
 			m.addChannelMemberCursor--
 		}
-	case "down", "j":
+	case "down":
 		if m.addChannelMemberCursor < len(m.addChannelMemberResults)-1 {
 			m.addChannelMemberCursor++
 		}
-	case "g", "home":
+	case "home":
 		m.addChannelMemberCursor = 0
-	case "G", "end":
+	case "end":
 		if len(m.addChannelMemberResults) > 0 {
 			m.addChannelMemberCursor = len(m.addChannelMemberResults) - 1
 		}
@@ -691,17 +691,17 @@ func (m Model) handleAddMemberPopup(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
 		m.addMemberInput.Reset()
 		m.newDMResults = nil
 		m.addMemberErr = ""
-	case "up", "k":
+	case "up":
 		if m.newDMCursor > 0 {
 			m.newDMCursor--
 		}
-	case "down", "j":
+	case "down":
 		if m.newDMCursor < len(m.newDMResults)-1 {
 			m.newDMCursor++
 		}
-	case "g", "home":
+	case "home":
 		m.newDMCursor = 0
-	case "G", "end":
+	case "end":
 		if len(m.newDMResults) > 0 {
 			m.newDMCursor = len(m.newDMResults) - 1
 		}
@@ -878,17 +878,17 @@ func (m Model) handleNewDMPopup(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
 		m.newDMResults = nil
 		m.newDMErr = ""
 		return m, nil, true
-	case "up", "k":
+	case "up":
 		if m.newDMCursor > 0 {
 			m.newDMCursor--
 		}
-	case "down", "j":
+	case "down":
 		if m.newDMCursor < len(m.newDMResults)-1 {
 			m.newDMCursor++
 		}
-	case "g", "home":
+	case "home":
 		m.newDMCursor = 0
-	case "G", "end":
+	case "end":
 		if len(m.newDMResults) > 0 {
 			m.newDMCursor = len(m.newDMResults) - 1
 		}

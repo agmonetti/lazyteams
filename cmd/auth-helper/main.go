@@ -328,6 +328,26 @@ func main() {
 	}
 	defer pw.Stop()
 
+	// Ensure the browser is torn down if the TUI is killed (Ctrl+C / q) while
+	// a background renewal is running — otherwise Firefox is left orphaned and
+	// blocks the next launch with "Firefox is already running".
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+	signalStop := make(chan struct{})
+	go func() {
+		select {
+		case <-sigChan:
+			fmt.Println("\n  · Interrupted — closing browser...")
+			pw.Stop()
+			os.Exit(1)
+		case <-signalStop:
+		}
+	}()
+	defer func() {
+		close(signalStop)
+		signal.Stop(sigChan)
+	}()
+
 	context, err := pw.Firefox.LaunchPersistentContext(
 		sessionDir,
 		playwright.BrowserTypeLaunchPersistentContextOptions{
@@ -984,8 +1004,8 @@ func fullRenewal(pw *playwright.Playwright, page playwright.Page, ctx playwright
 					"2. Go to the 'Members' tab.",
 					"3. Try to change your own role",
 					"	(e.g., Owner -> Member)",
-					"   (It will fail if you are the only owner, but",
-					"   the token will be captured instantly!)",
+					"   (It will fail if you are the only owner",
+					"but the token will be captured instantly!)",
 					"Press [Enter] in this terminal to skip.",
 				})
 
@@ -1363,8 +1383,8 @@ func manualFabricTokenCapture(pw *playwright.Playwright, sessionDir string, capt
 		"2. Go to the 'Members' tab.",
 		"3. Try to change your own role",
 		"	(e.g., Owner -> Member)",
-		"   (It will fail if you are the only owner, but",
-		"   the token will be captured instantly!)",
+		"   (It will fail if you are the only owner",
+		"but the token will be captured instantly!)",
 		"Press [Enter] in this terminal to skip.",
 	})
 	fmt.Println()

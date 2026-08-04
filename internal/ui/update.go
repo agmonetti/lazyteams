@@ -42,11 +42,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// Width: real overhead = 2 per panel (border) × 2 panels = 4
 		// + 1 col margin for Kitty = 5 total
-		available        := m.width - 5
-		leftOuterWidth   := available / 3
-		rightOuterWidth  := available - leftOuterWidth
-		leftInnerWidth   := leftOuterWidth - 2
-		rightInnerWidth  := rightOuterWidth - 2
+		available := m.width - 5
+		leftOuterWidth := available / 3
+		rightOuterWidth := available - leftOuterWidth
+		leftInnerWidth := leftOuterWidth - 2
+		rightInnerWidth := rightOuterWidth - 2
 		panelOuterHeight := m.height - 6
 		if m.mobileMode {
 			panelOuterHeight = m.height - 2
@@ -54,9 +54,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if panelOuterHeight < 2 {
 			panelOuterHeight = 2
 		}
-		leftInnerHeight  := panelOuterHeight - 2
+		leftInnerHeight := panelOuterHeight - 2
 		rightInnerHeight := panelOuterHeight - 2
-		
+
 		var mobileInnerWidth int
 		if m.mobileMode {
 			mobileWidth := m.width - 2
@@ -68,10 +68,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.input.SetWidth(rightInnerWidth - 2)
 		}
-		
+
 		// Max height for textarea to prevent it from covering the whole screen
 		m.input.MaxHeight = rightInnerHeight / 3
-		
+
 		if !m.ready {
 			if m.mobileMode {
 				m.viewport = viewport.New(mobileInnerWidth, 5)
@@ -95,7 +95,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.leftVp.Height = leftInnerHeight
 		}
-		
+
 		m.recalculateViewportHeight()
 
 		// Re-wrap existing content with the new width
@@ -153,7 +153,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if !m.tokenRenewing {
 				m.tokenRenewing = true
 				m.tokenRenewingType = which
-				return m, launchAuthHelperCmd(which)
+				return m, authHelperRenewal(&m, which)
 			}
 			return m, nil
 		}
@@ -166,7 +166,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if !m.tokenRenewing {
 				m.tokenRenewing = true
 				m.tokenRenewingType = tokenType
-				return m, launchAuthHelperCmd(tokenType)
+				return m, authHelperRenewal(&m, tokenType)
 			}
 		}
 		return m, nil
@@ -174,9 +174,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tokenRenewingMsg:
 		m.tokenRenewing = true
 		m.tokenRenewingType = "web"
-		return m, launchAuthHelperCmd("web")
+		return m, authHelperRenewal(&m, "web")
 
 	case tokenRenewedMsg:
+		m.renewalProc = nil
 		if msg.err != nil {
 			m.tokenRenewErr = msg.err.Error()
 			m.tokenRenewing = false
@@ -186,7 +187,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, reloadTokensCmd(m.client, msg.tokenType)
 		}
 		return m, nil
-		
+
 	case tokensReloadedMsg:
 		m.tokenRenewing = false
 		m.tokenRenewingType = ""
@@ -254,7 +255,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if !m.tokenRenewing {
 				m.tokenRenewing = true
 				m.tokenRenewingType = which
-				return m, launchAuthHelperCmd(which)
+				return m, authHelperRenewal(&m, which)
 			}
 		} else {
 			m.viewport.SetContent(fmt.Sprintf("Error loading messages: %v", msg.err))
@@ -297,8 +298,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, clearStatusAfter(m.downloadStatusID)
 		}
 		m.messagesBackwardLink = ""
-			m.loadingMore = false
-			return m, loadMessagesCmd(m.client, "", m.activeConversationID(), 200)
+		m.loadingMore = false
+		return m, loadMessagesCmd(m.client, "", m.activeConversationID(), 200)
 
 	case deleteMessageMsg:
 		m.showDeleteMsgPopup = false
@@ -308,8 +309,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, clearStatusAfter(m.downloadStatusID)
 		}
 		m.messagesBackwardLink = ""
-			m.loadingMore = false
-			return m, loadMessagesCmd(m.client, "", m.activeConversationID(), 200)
+		m.loadingMore = false
+		return m, loadMessagesCmd(m.client, "", m.activeConversationID(), 200)
 
 	case addReactionMsg:
 		m.reactionPending = false
@@ -444,7 +445,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if !m.tokenRenewing {
 				m.tokenRenewing = true
 				m.tokenRenewingType = detectExpiredToken(msg.err)
-				return m, launchAuthHelperCmd(detectExpiredToken(msg.err))
+				return m, authHelperRenewal(&m, detectExpiredToken(msg.err))
 			}
 		} else {
 			m.err = msg.err
@@ -517,7 +518,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if !m.tokenRenewing {
 				m.tokenRenewing = true
 				m.tokenRenewingType = "notif"
-				return m, launchAuthHelperCmd("notif")
+				return m, authHelperRenewal(&m, "notif")
 			}
 		} else {
 			m.notifErr = msg.err
@@ -536,7 +537,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if !m.tokenRenewing {
 				m.tokenRenewing = true
 				m.tokenRenewingType = "edu"
-				return m, launchAuthHelperCmd("edu")
+				return m, authHelperRenewal(&m, "edu")
 			}
 		}
 		m.assignErr = msg.err
@@ -641,8 +642,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handlePollChatsMsg(msg)
 
 	case markNotifReadMsg:
-	    // silent — local state already updated optimistically
-	    return m, nil
+		// silent — local state already updated optimistically
+		return m, nil
 
 	case searchUsersMsg:
 		m.newDMResults = msg.results
@@ -655,7 +656,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if !m.tokenRenewing {
 				m.tokenRenewing = true
 				m.tokenRenewingType = detectExpiredToken(msg.err)
-				return m, launchAuthHelperCmd(detectExpiredToken(msg.err))
+				return m, authHelperRenewal(&m, detectExpiredToken(msg.err))
 			}
 		} else {
 			m.newDMErr = msg.err.Error()
@@ -1065,7 +1066,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case directorypicker.CancelledMsg:
 		m.showDirPicker = false
 		return m, nil
-	    
+
 	case markAsReadMsg:
 		return m, nil
 

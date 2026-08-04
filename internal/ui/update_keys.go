@@ -68,6 +68,10 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case "q", "ctrl+c":
+		if m.renewalProc != nil {
+			m.renewalProc.Kill()
+			m.renewalProc = nil
+		}
 		return m, tea.Quit
 
 	case "?":
@@ -266,7 +270,7 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "ctrl+b":
 		m.mobileMode = !m.mobileMode
-		
+
 		panelOuterHeight := m.height - 6
 		if m.mobileMode {
 			panelOuterHeight = m.height - 2
@@ -291,7 +295,7 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			leftOuterWidth := available / 3
 			rightOuterWidth := available - leftOuterWidth
 			rightInnerWidth := rightOuterWidth - 2
-			
+
 			m.viewport.Width = rightInnerWidth
 			m.threadViewport.Width = rightInnerWidth
 			m.leftVp.Width = leftOuterWidth - 2
@@ -302,11 +306,17 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.recalculateViewportHeight()
 
 	case "tab":
+		if m.cursorMode {
+			return m, nil
+		}
 		if !m.mobileMode {
 			m.focusLeft = !m.focusLeft
 		}
 
 	case "1":
+		if m.cursorMode {
+			return m, nil
+		}
 		m.workspace = WorkspaceTeams
 		m.focusLeft = true
 		m.focusList = 0
@@ -314,6 +324,9 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.cursorOnGroupHeader = false
 
 	case "2":
+		if m.cursorMode {
+			return m, nil
+		}
 		m.workspace = WorkspaceDMs
 		m.focusLeft = true
 		m.cursorOnDMHeader = true
@@ -344,6 +357,9 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case "3":
+		if m.cursorMode {
+			return m, nil
+		}
 		m.workspace = WorkspaceActivity
 		m.focusLeft = true
 		m.cursorOnDMHeader = false
@@ -355,6 +371,9 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case "4":
+		if m.cursorMode {
+			return m, nil
+		}
 		m.workspace = WorkspaceAssignments
 		m.focusLeft = true
 		m.cursorOnDMHeader = false
@@ -869,43 +888,43 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-		case "v":
-			// File preview: text in TUI, rest in browser
-			if !m.focusLeft && m.viewMode == ModeChat && len(m.messages) > 0 {
-				if !m.cursorMode {
-					m.downloadStatus = "Press 'c' to enter Cursor Mode and select the message first"
+	case "v":
+		// File preview: text in TUI, rest in browser
+		if !m.focusLeft && m.viewMode == ModeChat && len(m.messages) > 0 {
+			if !m.cursorMode {
+				m.downloadStatus = "Press 'c' to enter Cursor Mode and select the message first"
+				m.downloadStatusID++
+				return m, clearStatusAfter(m.downloadStatusID)
+			}
+
+			var msg graph.Message
+			if m.workspace == WorkspaceDMs {
+				validMsgs := validDMMessages(m.messages)
+				if m.messageCursor >= 0 && m.messageCursor < len(validMsgs) {
+					msg = validMsgs[m.messageCursor]
+				}
+			} else {
+				roots := rootMessages(m.messages)
+				if m.messageCursor >= 0 && m.messageCursor < len(roots) {
+					msg = roots[m.messageCursor]
+				}
+			}
+
+			if msg.ID != "" {
+				if len(msg.Attachments) > 0 {
+					m.downloadStatus = "Downloading attachments..."
+					m.downloadStatusID++
+					return m, tea.Batch(
+						openAttachmentsCmd(m.client, msg.Attachments),
+						clearStatusAfter(m.downloadStatusID),
+					)
+				} else {
+					m.downloadStatus = "No attachments in selected message"
 					m.downloadStatusID++
 					return m, clearStatusAfter(m.downloadStatusID)
 				}
-				
-				var msg graph.Message
-				if m.workspace == WorkspaceDMs {
-					validMsgs := validDMMessages(m.messages)
-					if m.messageCursor >= 0 && m.messageCursor < len(validMsgs) {
-						msg = validMsgs[m.messageCursor]
-					}
-				} else {
-					roots := rootMessages(m.messages)
-					if m.messageCursor >= 0 && m.messageCursor < len(roots) {
-						msg = roots[m.messageCursor]
-					}
-				}
-
-				if msg.ID != "" {
-					if len(msg.Attachments) > 0 {
-						m.downloadStatus = "Downloading attachments..."
-						m.downloadStatusID++
-						return m, tea.Batch(
-							openAttachmentsCmd(m.client, msg.Attachments),
-							clearStatusAfter(m.downloadStatusID),
-						)
-					} else {
-						m.downloadStatus = "No attachments in selected message"
-						m.downloadStatusID++
-						return m, clearStatusAfter(m.downloadStatusID)
-					}
-				}
-			} else if !m.focusLeft && m.viewMode == ModeFiles && len(m.files) > 0 && !m.previewing {
+			}
+		} else if !m.focusLeft && m.viewMode == ModeFiles && len(m.files) > 0 && !m.previewing {
 			if len(m.selectedFiles) > 1 {
 				m.downloadStatus = "Only one file can be previewed at a time"
 				m.downloadStatusID++
