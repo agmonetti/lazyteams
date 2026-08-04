@@ -575,7 +575,6 @@ func (m Model) handleSearching(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
 		m.viewport.SetContent(content)
 		return m, cmd, true
 	}
-	return m, nil, true
 }
 
 func (m Model) handleDirPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
@@ -609,7 +608,6 @@ func (m Model) handleCreateTeamPopup(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) 
 		m.createTeamInput, cmd = m.createTeamInput.Update(msg)
 		return m, cmd, true
 	}
-	return m, nil, true
 }
 
 func (m Model) handleTeamInfo(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
@@ -975,7 +973,6 @@ func (m Model) handleCreateFolderPopup(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool
 		m.createFolderInput, cmd = m.createFolderInput.Update(msg)
 		return m, cmd, true
 	}
-	return m, nil, true
 }
 
 func (m Model) handleDeleteFilePopup(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
