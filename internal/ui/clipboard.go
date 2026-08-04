@@ -1,9 +1,12 @@
 package ui
 
 import (
+	"encoding/base64"
 	"fmt"
+	"os"
 	"os/exec"
 	"runtime"
+	"strings"
 )
 
 // getClipboardImage tries to extract an image from the system clipboard
@@ -26,11 +29,44 @@ func getClipboardImage() ([]byte, error) {
 			return out, nil
 		}
 
-		// Native fallback using osascript — no external tools required.
-		// osascript prints raw data bytes of the PNG to stdout.
-		out, err = exec.Command("osascript", "-e", "the clipboard as «class PNGf»").Output()
-		if err == nil && isValidPNG(out) {
-			return out, nil
+		// Native JXA fallback using NSPasteboard — no external tools required.
+		// Most macOS apps publish public.tiff (not public.png), so we read both
+		// types and convert TIFF to PNG with sips when needed.
+		out, err = exec.Command("osascript", "-l", "JavaScript", "-e", `
+ObjC.import('AppKit');
+const pb = $.NSPasteboard.generalPasteboard;
+const png = pb.dataForType('public.png');
+if (png) {
+    'PNG:' + png.base64EncodedStringWithOptions(0).js;
+} else {
+    const tiff = pb.dataForType('public.tiff');
+    if (tiff) {
+        'TIFF:' + tiff.base64EncodedStringWithOptions(0).js;
+    } else {
+        '';
+    }
+}`).Output()
+		if err != nil {
+			return nil, fmt.Errorf("no image in clipboard")
+		}
+		encoded := strings.TrimSpace(string(out))
+		if encoded == "" {
+			return nil, fmt.Errorf("no image in clipboard")
+		}
+
+		switch {
+		case strings.HasPrefix(encoded, "PNG:"):
+			data, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(encoded, "PNG:"))
+			if err == nil && isValidPNG(data) {
+				return data, nil
+			}
+			return nil, fmt.Errorf("no image in clipboard")
+		case strings.HasPrefix(encoded, "TIFF:"):
+			data, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(encoded, "TIFF:"))
+			if err != nil {
+				return nil, fmt.Errorf("no image in clipboard")
+			}
+			return convertTIFFToPNG(data)
 		}
 		return nil, fmt.Errorf("no image in clipboard")
 	case "windows":
@@ -56,4 +92,47 @@ func isValidPNG(data []byte) bool {
 		data[5] == '\n' &&
 		data[6] == 0x1a &&
 		data[7] == '\n'
+}
+
+// convertTIFFToPNG converts raw TIFF bytes to PNG using the system sips tool.
+// Temp files are always removed so a failed conversion never leaks into /tmp.
+func convertTIFFToPNG(tiff []byte) ([]byte, error) {
+	convertErr := func(err error) ([]byte, error) {
+		return nil, fmt.Errorf("failed to convert clipboard TIFF to PNG: %w", err)
+	}
+
+	in, err := os.CreateTemp("", "msTTui-clipboard-*.tiff")
+	if err != nil {
+		return convertErr(err)
+	}
+	inName := in.Name()
+	defer os.Remove(inName)
+	if _, err := in.Write(tiff); err != nil {
+		in.Close()
+		return convertErr(err)
+	}
+	if err := in.Close(); err != nil {
+		return convertErr(err)
+	}
+
+	out, err := os.CreateTemp("", "msTTui-clipboard-*.png")
+	if err != nil {
+		return convertErr(err)
+	}
+	outName := out.Name()
+	out.Close()
+	defer os.Remove(outName)
+
+	if err := exec.Command("sips", "-s", "format", "png", inName, "--out", outName).Run(); err != nil {
+		return convertErr(err)
+	}
+
+	data, err := os.ReadFile(outName)
+	if err != nil {
+		return convertErr(err)
+	}
+	if !isValidPNG(data) {
+		return convertErr(fmt.Errorf("converted output is not a valid PNG"))
+	}
+	return data, nil
 }
