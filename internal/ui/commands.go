@@ -20,6 +20,8 @@ import (
 const pollInterval = 3
 const presenceInterval = 60
 const unreadSweepInterval = 30
+const unreadSweepBatchSize = 8
+const unreadSweepDelay = 500 * time.Millisecond
 const filesRefreshInterval = 30
 
 func reloadChannelsAfterDelayCmd() tea.Cmd {
@@ -295,6 +297,32 @@ func unreadSweepCmd() tea.Cmd {
 	return tea.Tick(unreadSweepInterval*time.Second, func(t time.Time) tea.Msg {
 		return unreadSweepMsg{}
 	})
+}
+
+// unreadSweepWaveCmd checks chats in batches of unreadSweepBatchSize, delayed by
+// unreadSweepDelay between batches. This avoids opening dozens of simultaneous
+// connections to the chat service when the user has many DMs/groups; if a batch
+// hits a rate limit the remaining batches still run.
+func unreadSweepWaveCmd(client *graph.Client, chats []graph.Chat) tea.Cmd {
+	if len(chats) == 0 {
+		return nil
+	}
+	n := len(chats)
+	if n > unreadSweepBatchSize {
+		n = unreadSweepBatchSize
+	}
+	var cmds []tea.Cmd
+	for _, ch := range chats[:n] {
+		cmds = append(cmds, checkUnreadCmd(client, ch))
+	}
+	if len(chats) > n {
+		cmds = append(cmds,
+			tea.Tick(unreadSweepDelay, func(t time.Time) tea.Msg {
+				return unreadSweepWaveMsg{chats: chats[n:]}
+			}),
+		)
+	}
+	return tea.Batch(cmds...)
 }
 
 // filesRefreshTickCmd periodically reloads the currently shown drive folder

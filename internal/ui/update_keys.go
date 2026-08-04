@@ -761,7 +761,10 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					m.folderStack = nil
 					m.currentFilesDriveID = ""
 					m.loading = true
+					// Start a fresh auto-refresh timer on entering Files so the
+					// first background refresh happens 30s after entering.
 					cmds = append(cmds, loadChannelRootCmd(m.client, m.teams[m.selectedTeam].ID, m.channels[m.selectedChan].DisplayName))
+					cmds = append(cmds, filesRefreshTickCmd())
 				} else {
 					m.viewMode = ModeChat
 					m.loading = true

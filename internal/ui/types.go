@@ -148,6 +148,12 @@ type previewResultMsg struct {
 // horizon so DMs arriving in existing conversations surface the unread badge.
 type unreadSweepMsg struct{}
 
+// unreadSweepWaveMsg carries the next batch of chats to check for unread
+// DM activity. It is produced by unreadSweepWaveCmd to back off the fan-out.
+type unreadSweepWaveMsg struct {
+	chats []graph.Chat
+}
+
 // filesRefreshMsg fires a periodic auto-refresh of the currently shown
 // drive folder so files uploaded by others appear without restarting.
 type filesRefreshMsg struct{}

@@ -519,12 +519,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case unreadSweepMsg:
 		var cmds []tea.Cmd
 		if m.selfID != "" && len(m.chats) > 0 {
-			for _, ch := range m.chats {
-				cmds = append(cmds, checkUnreadCmd(m.client, ch))
-			}
+			cmds = append(cmds, unreadSweepWaveCmd(m.client, m.chats))
 		}
 		cmds = append(cmds, unreadSweepCmd())
 		return m, tea.Batch(cmds...)
+
+	case unreadSweepWaveMsg:
+		return m, unreadSweepWaveCmd(m.client, msg.chats)
 
 	case filesRefreshMsg:
 		var cmds []tea.Cmd
@@ -546,8 +547,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				ch := m.channels[m.selectedChan]
 				cmds = append(cmds, refreshFilesCmd(m.client, teamID, ch.DisplayName, ch.ID))
 			}
+			// Re-arm the ticker only while the files view is active, so the
+			// refresh loop dies as soon as the user leaves Files.
+			cmds = append(cmds, filesRefreshTickCmd())
 		}
-		cmds = append(cmds, filesRefreshTickCmd())
 		return m, tea.Batch(cmds...)
 
 	case notificationsMsg:

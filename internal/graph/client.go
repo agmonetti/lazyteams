@@ -219,6 +219,11 @@ func NewClient(graphToken, webToken, notifToken, eduToken, cookie, eduCookie, sp
 		FabricToken: fabricToken,
 		HTTPClient: &http.Client{
 			Timeout: 10 * time.Second,
+			Transport: &http.Transport{
+				MaxConnsPerHost: 10,
+				MaxIdleConns:    12,
+				IdleConnTimeout: 90 * time.Second,
+			},
 		},
 	}
 }
