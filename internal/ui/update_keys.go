@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"teamsTUI/internal/graph"
+	"teamsTUI/internal/helpers"
 	"teamsTUI/internal/teams"
 	"teamsTUI/internal/ui/components/directorypicker"
 
@@ -69,7 +70,7 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "q", "ctrl+c":
 		if m.renewalProc != nil {
-			m.renewalProc.Kill()
+			helpers.SignalAuthProcess(m.renewalProc)
 			m.renewalProc = nil
 		}
 		return m, tea.Quit
