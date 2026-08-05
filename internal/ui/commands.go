@@ -12,6 +12,7 @@ import (
 	"runtime"
 	"strings"
 	"teamsTUI/internal/graph"
+	"teamsTUI/internal/helpers"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -140,6 +141,17 @@ func reloadTeamsAfterDelayCmd() tea.Cmd {
 	})
 }
 
+func renewalTimeout(tokenType string) time.Duration {
+	switch tokenType {
+	case "edu":
+		return 180 * time.Second
+	case "web", "notif":
+		return 90 * time.Second
+	default:
+		return 0
+	}
+}
+
 // authHelperRenewal starts a background msTTui-auth --renew process, records
 // it on the model (so it is killed on quit), and returns a cmd that resolves
 // with the result once the process exits.
@@ -156,19 +168,58 @@ func authHelperRenewal(m *Model, expiredToken string) tea.Cmd {
 		args = append(args, "--headless")
 	}
 
+	if err := os.MkdirAll(helpers.ConfigDir(), 0700); err != nil {
+		return func() tea.Msg { return tokenRenewedMsg{tokenType: expiredToken, err: err} }
+	}
+	logPath := filepath.Join(helpers.ConfigDir(), "auth-helper.log")
+	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
+	if err != nil {
+		return func() tea.Msg { return tokenRenewedMsg{tokenType: expiredToken, err: err} }
+	}
+
 	cmd := exec.Command(authHelper, args...)
-	cmd.Stdout = nil
-	cmd.Stderr = nil
+	cmd.Stdout = logFile
+	cmd.Stderr = logFile
 	if err := cmd.Start(); err != nil {
+		logFile.Close()
 		return func() tea.Msg { return tokenRenewedMsg{tokenType: expiredToken, err: err} }
 	}
 	m.renewalProc = cmd.Process
 
 	return func() tea.Msg {
-		if err := cmd.Wait(); err != nil {
+		waitDone := make(chan error, 1)
+		go func() {
+			waitDone <- cmd.Wait()
+		}()
+
+		timeout := renewalTimeout(expiredToken)
+		if timeout == 0 {
+			err := <-waitDone
+			logFile.Close()
 			return tokenRenewedMsg{tokenType: expiredToken, err: err}
 		}
-		return tokenRenewedMsg{tokenType: expiredToken, err: nil}
+
+		timer := time.NewTimer(timeout)
+		defer timer.Stop()
+		select {
+		case err := <-waitDone:
+			logFile.Close()
+			return tokenRenewedMsg{tokenType: expiredToken, err: err}
+		case <-timer.C:
+			helpers.SignalAuthProcess(cmd.Process)
+			select {
+			case <-waitDone:
+			case <-time.After(5 * time.Second):
+				_ = cmd.Process.Kill()
+				<-waitDone
+			}
+			helpers.KillZombieBrowser()
+			logFile.Close()
+			return tokenRenewedMsg{
+				tokenType: expiredToken,
+				err:       fmt.Errorf("token renewal timed out after %s (see %s)", timeout, logPath),
+			}
+		}
 	}
 }
 

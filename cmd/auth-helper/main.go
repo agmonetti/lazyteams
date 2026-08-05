@@ -437,6 +437,7 @@ func main() {
 		fmt.Printf("Error setting viewport: %v\n", err)
 	}
 
+	var renewalErr error
 	switch renewOnly {
 	case "web", "notif":
 		fmt.Println("→ Renewing WEB + NOTIF tokens...")
@@ -444,7 +445,7 @@ func main() {
 
 	case "edu":
 		fmt.Println("→ Renewing EDU token...")
-		renewEdu(page, captured)
+		renewalErr = renewEdu(page, captured)
 
 	case "fabric":
 		fmt.Println("→ Renewing FABRIC token...")
@@ -543,6 +544,12 @@ func main() {
 
 	if err := saveTokens(captured, configDir); err != nil {
 		fmt.Printf("Error saving tokens: %v\n", err)
+		os.Exit(1)
+	}
+	if renewalErr != nil {
+		fmt.Printf("Renewal failed: %v\n", renewalErr)
+		context.Close()
+		pw.Stop()
 		os.Exit(1)
 	}
 
@@ -705,12 +712,12 @@ func renewWebNotif(page playwright.Page, ctx playwright.BrowserContext, captured
 }
 
 // renewEdu navigates Teams to trigger EDU token request.
-func renewEdu(page playwright.Page, captured *tokens) {
+func renewEdu(page playwright.Page, captured *tokens) error {
 	_, err := page.Goto("https://teams.microsoft.com/v2/",
 		playwright.PageGotoOptions{Timeout: playwright.Float(60000)},
 	)
 	if err != nil {
-		fmt.Println("  ⚠ Teams slow to load, continuing...")
+		return fmt.Errorf("navigate to Teams: %w", err)
 	}
 
 	time.Sleep(3 * time.Second)
@@ -722,6 +729,7 @@ func renewEdu(page playwright.Page, captured *tokens) {
 	}
 
 	clicked := false
+	clickErrors := make([]string, 0, len(selectors))
 	for _, sel := range selectors {
 		err := page.Locator(sel).First().Click(playwright.LocatorClickOptions{
 			Timeout: playwright.Float(3000),
@@ -731,23 +739,43 @@ func renewEdu(page playwright.Page, captured *tokens) {
 			clicked = true
 
 			deadline := time.Now().Add(12 * time.Second)
+			assignmentsLoaded := false
 			for time.Now().Before(deadline) {
 				time.Sleep(500 * time.Millisecond)
 				if strings.Contains(page.URL(), "assignments.edu.cloud.microsoft") {
 					time.Sleep(2 * time.Second)
+					assignmentsLoaded = true
 					break
 				}
 			}
+			if !assignmentsLoaded {
+				return fmt.Errorf("Assignments page did not load after clicking %s (url: %s)", sel, page.URL())
+			}
 			break
 		}
+		clickErrors = append(clickErrors, fmt.Sprintf("%s: %v", sel, err))
 	}
 
 	if !clicked {
-		time.Sleep(15 * time.Second)
+		return fmt.Errorf("could not click Assignments: %s", strings.Join(clickErrors, "; "))
 	}
 
 	// Try JS extraction
-	tryExtractEduTokenFromJS(page, captured)
+	if err := tryExtractEduTokenFromJS(page, captured); err != nil {
+		return fmt.Errorf("extract EDU token from browser storage: %w", err)
+	}
+
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		captured.mu.Lock()
+		hasEdu := captured.eduToken != ""
+		captured.mu.Unlock()
+		if hasEdu {
+			return nil
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	return fmt.Errorf("EDU token was not captured after loading Assignments")
 }
 
 // fullRenewal runs the full capture flow (all 5 tokens).
@@ -1196,7 +1224,9 @@ func captureLoop(page playwright.Page, pw *playwright.Playwright, sessionDir str
 
 		if elapsed > 55*time.Second && !hasEdu {
 			globalSpin.SetLabel("Attempting to extract EDU_TOKEN from JS memory...")
-			tryExtractEduTokenFromJS(page, captured)
+			if err := tryExtractEduTokenFromJS(page, captured); err != nil {
+				fmt.Printf("  ⚠ EDU token JS extraction failed: %v\n", err)
+			}
 		}
 	}
 
@@ -1326,7 +1356,7 @@ func tryExtractGraphTokenViaGraphExplorer(page playwright.Page, captured *tokens
 
 // tryExtractEduTokenFromJS attempts to extract the EDU_TOKEN from
 // Teams' localStorage/sessionStorage (MSAL cache for Assignments).
-func tryExtractEduTokenFromJS(page playwright.Page, captured *tokens) {
+func tryExtractEduTokenFromJS(page playwright.Page, captured *tokens) error {
 	scripts := []string{
 		`(function() {
 			for (let k of Object.keys(localStorage)) {
@@ -1352,9 +1382,13 @@ func tryExtractEduTokenFromJS(page playwright.Page, captured *tokens) {
 		})()`,
 	}
 
+	var lastErr error
+	failedEvaluations := 0
 	for _, script := range scripts {
 		result, err := page.Evaluate(script)
 		if err != nil {
+			lastErr = err
+			failedEvaluations++
 			continue
 		}
 		if token, ok := result.(string); ok && len(token) > 100 {
@@ -1366,10 +1400,14 @@ func tryExtractEduTokenFromJS(page playwright.Page, captured *tokens) {
 					notifyTokenCaptured("EDU_TOKEN")
 				}
 				captured.mu.Unlock()
-				return
+				return nil
 			}
 		}
 	}
+	if failedEvaluations == len(scripts) && lastErr != nil {
+		return fmt.Errorf("all browser storage evaluations failed: %w", lastErr)
+	}
+	return nil
 }
 
 // Step: try to extract FabricToken from browser storage
