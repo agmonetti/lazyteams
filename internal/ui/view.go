@@ -1116,19 +1116,7 @@ func (m Model) View() string {
 			var leftBanner string
 
 			if m.tokenRenewing {
-				tokenLabel := m.tokenRenewingType
-				switch tokenLabel {
-				case "graph":
-					tokenLabel = "MS_GRAPH_TOKEN"
-				case "fabric":
-					tokenLabel = "TEAMS_FABRIC_TOKEN"
-				case "web":
-					tokenLabel = "TEAMS_WEB_TOKEN"
-				case "notif":
-					tokenLabel = "TEAMS_NOTIF_TOKEN"
-				case "edu":
-					tokenLabel = "EDU_TOKEN"
-				}
+				tokenLabel := tokenDisplayName(m.tokenRenewingType)
 				msg := "⟳ Renewing tokens..."
 				if tokenLabel != "" {
 					msg = fmt.Sprintf("⟳ Renewing %s...", tokenLabel)
@@ -1136,6 +1124,14 @@ func (m Model) View() string {
 				leftBanner = lipgloss.NewStyle().
 					Foreground(colorYellow).Bold(true).
 					Render(msg)
+			} else if len(m.tokenRenewFailures) > 0 {
+				failed := make([]string, 0, len(m.tokenRenewFailures))
+				for _, tokenType := range m.tokenRenewFailures {
+					failed = append(failed, tokenDisplayName(tokenType))
+				}
+				leftBanner = lipgloss.NewStyle().
+					Foreground(colorRed).Bold(true).
+					Render(fmt.Sprintf("⚠ Token renewals failed: %s", strings.Join(failed, ", ")))
 			} else if m.tokenRenewErr != "" {
 				leftBanner = lipgloss.NewStyle().
 					Foreground(colorRed).Bold(true).
@@ -1253,6 +1249,23 @@ func (m Model) View() string {
 	}
 
 	return ui
+}
+
+func tokenDisplayName(tokenType string) string {
+	switch tokenType {
+	case "graph":
+		return "MS_GRAPH_TOKEN"
+	case "fabric":
+		return "TEAMS_FABRIC_TOKEN"
+	case "web":
+		return "TEAMS_WEB_TOKEN"
+	case "notif":
+		return "TEAMS_NOTIF_TOKEN"
+	case "edu":
+		return "EDU_TOKEN"
+	default:
+		return tokenType
+	}
 }
 
 func presenceSymbol(avail string) string {

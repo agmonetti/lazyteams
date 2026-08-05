@@ -149,47 +149,47 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case errMsg:
 		if is401(msg.err) {
-			which := detectExpiredToken(msg.err)
-			if !m.tokenRenewing {
-				m.tokenRenewing = true
-				m.tokenRenewingType = which
-				return m, authHelperRenewal(&m, which)
-			}
-			return m, nil
+			return m, queueTokenRenewal(&m, detectExpiredToken(msg.err))
 		}
 		m.err = msg.err
 		m.loading = false
 		return m, nil
 
 	case tokenCheckDoneMsg:
-		for _, tokenType := range msg.expired {
-			if !m.tokenRenewing {
-				m.tokenRenewing = true
-				m.tokenRenewingType = tokenType
-				return m, authHelperRenewal(&m, tokenType)
-			}
+		if !m.tokenRenewing {
+			m.tokenRenewalQueue = nil
+			m.tokenRenewFailures = nil
+			m.tokenRenewErr = ""
 		}
-		return m, nil
+		for _, tokenType := range msg.expired {
+			enqueueTokenRenewal(&m, tokenType)
+		}
+		return m, startNextTokenRenewal(&m)
 
 	case tokenRenewedMsg:
 		m.renewalProc = nil
-		if msg.err != nil {
-			m.tokenRenewErr = msg.err.Error()
-			m.tokenRenewing = false
-			m.tokenRenewingType = ""
-		} else {
-			m.tokenRenewErr = ""
-			return m, reloadTokensCmd(m.client, msg.tokenType)
-		}
-		return m, nil
-
-	case tokensReloadedMsg:
+		finishTokenRenewal(&m, msg.tokenType)
 		m.tokenRenewing = false
 		m.tokenRenewingType = ""
+		var cmds []tea.Cmd
 		if msg.err != nil {
 			m.tokenRenewErr = msg.err.Error()
+			m.tokenRenewFailures = append(m.tokenRenewFailures, msg.tokenType)
 		} else {
-			m.tokenRenewErr = ""
+			cmds = append(cmds, reloadTokensCmd(m.client, msg.tokenType))
+		}
+		if next := startNextTokenRenewal(&m); next != nil {
+			cmds = append(cmds, next)
+		}
+		return m, tea.Batch(cmds...)
+
+	case tokensReloadedMsg:
+		if msg.err != nil {
+			m.tokenRenewErr = msg.err.Error()
+			if !containsString(m.tokenRenewFailures, msg.tokenType) {
+				m.tokenRenewFailures = append(m.tokenRenewFailures, msg.tokenType)
+			}
+		} else {
 			if msg.tokenType == "edu" {
 				return m, loadAssignmentsCmd(m.client)
 			}
@@ -246,12 +246,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		if is401(msg.err) {
-			which := detectExpiredToken(msg.err)
-			if !m.tokenRenewing {
-				m.tokenRenewing = true
-				m.tokenRenewingType = which
-				return m, authHelperRenewal(&m, which)
-			}
+			return m, queueTokenRenewal(&m, detectExpiredToken(msg.err))
 		} else {
 			m.viewport.SetContent(fmt.Sprintf("Error loading messages: %v", msg.err))
 		}
@@ -443,11 +438,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case chatsErrMsg:
 		if is401(msg.err) {
-			if !m.tokenRenewing {
-				m.tokenRenewing = true
-				m.tokenRenewingType = detectExpiredToken(msg.err)
-				return m, authHelperRenewal(&m, detectExpiredToken(msg.err))
-			}
+			cmd := queueTokenRenewal(&m, detectExpiredToken(msg.err))
+			m.loading = false
+			return m, cmd
 		} else {
 			m.err = msg.err
 		}
@@ -553,11 +546,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case notificationsErrMsg:
 		if is401(msg.err) {
-			if !m.tokenRenewing {
-				m.tokenRenewing = true
-				m.tokenRenewingType = "notif"
-				return m, authHelperRenewal(&m, "notif")
-			}
+			cmd := queueTokenRenewal(&m, "notif")
+			m.notifLoaded = true
+			return m, cmd
 		} else {
 			m.notifErr = msg.err
 		}
@@ -572,11 +563,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case assignmentsErrMsg:
 		if is401(msg.err) {
-			if !m.tokenRenewing {
-				m.tokenRenewing = true
-				m.tokenRenewingType = "edu"
-				return m, authHelperRenewal(&m, "edu")
-			}
+			cmd := queueTokenRenewal(&m, "edu")
+			m.assignLoaded = true
+			return m, cmd
 		}
 		m.assignErr = msg.err
 		m.assignLoaded = true
@@ -672,11 +661,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case searchUsersErrMsg:
 		if is401(msg.err) {
-			if !m.tokenRenewing {
-				m.tokenRenewing = true
-				m.tokenRenewingType = detectExpiredToken(msg.err)
-				return m, authHelperRenewal(&m, detectExpiredToken(msg.err))
-			}
+			return m, queueTokenRenewal(&m, detectExpiredToken(msg.err))
 		} else {
 			m.newDMErr = msg.err.Error()
 		}
@@ -1137,4 +1122,52 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	m.recalculateViewportHeight()
 
 	return m, tea.Batch(cmds...)
+}
+
+func enqueueTokenRenewal(m *Model, tokenType string) {
+	if tokenType == "" {
+		return
+	}
+	for _, queued := range m.tokenRenewalQueue {
+		if queued == tokenType {
+			return
+		}
+	}
+	m.tokenRenewalQueue = append(m.tokenRenewalQueue, tokenType)
+}
+
+func startNextTokenRenewal(m *Model) tea.Cmd {
+	if m.tokenRenewing || len(m.tokenRenewalQueue) == 0 {
+		return nil
+	}
+	m.tokenRenewing = true
+	m.tokenRenewingType = m.tokenRenewalQueue[0]
+	return authHelperRenewal(m, m.tokenRenewingType)
+}
+
+func finishTokenRenewal(m *Model, tokenType string) {
+	for i, queued := range m.tokenRenewalQueue {
+		if queued == tokenType {
+			m.tokenRenewalQueue = append(m.tokenRenewalQueue[:i], m.tokenRenewalQueue[i+1:]...)
+			return
+		}
+	}
+}
+
+func containsString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
+}
+
+func queueTokenRenewal(m *Model, tokenType string) tea.Cmd {
+	if !m.tokenRenewing && len(m.tokenRenewalQueue) == 0 {
+		m.tokenRenewFailures = nil
+		m.tokenRenewErr = ""
+	}
+	enqueueTokenRenewal(m, tokenType)
+	return startNextTokenRenewal(m)
 }

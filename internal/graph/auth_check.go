@@ -27,13 +27,10 @@ func (c *Client) CheckAllTokens() []string {
 		{"edu", func() bool {
 			return c.checkEndpoint("https://assignments.edu.cloud.microsoft/api/v1.0/edu/me/work?$top=1", c.EduToken)
 		}},
-		{"fabric", func() bool {
-			return c.checkEndpointFabric(c.FabricToken)
-		}},
 	}
 
 	var mu sync.Mutex
-	var expired []string
+	expiredSet := make(map[string]bool)
 	var wg sync.WaitGroup
 
 	for _, ch := range checks {
@@ -42,14 +39,19 @@ func (c *Client) CheckAllTokens() []string {
 			defer wg.Done()
 			if check() {
 				mu.Lock()
-				expired = append(expired, tokenType)
+				expiredSet[tokenType] = true
 				mu.Unlock()
 			}
 		}(ch.tokenType, ch.check)
 	}
 
 	wg.Wait()
-	
+	var expired []string
+	for _, ch := range checks {
+		if expiredSet[ch.tokenType] {
+			expired = append(expired, ch.tokenType)
+		}
+	}
 	return expired
 }
 
