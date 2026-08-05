@@ -21,3 +21,4 @@ browser-session/
 prefs.json
 *.env
 .config/teamstui/
+coverage.out

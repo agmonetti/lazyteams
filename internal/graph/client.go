@@ -17,35 +17,35 @@ import (
 )
 
 var (
-	stripTags       = regexp.MustCompile(`<[^>]*>`)
-	multipleSpaces  = regexp.MustCompile(`[ \t]+`)
-	MentionSpan     = regexp.MustCompile(`<span[^>]*itemtype="http://schema\.skype\.com/Mention"[^>]*>([^<]+)</span>`)
-	boldRe          = regexp.MustCompile(`(?i)<(b|strong)(\s+[^>]*)?>`)
-	boldCloseRe     = regexp.MustCompile(`(?i)</(b|strong)\s*>`)
-	italicRe        = regexp.MustCompile(`(?i)<(i|em)(\s+[^>]*)?>`)
-	italicCloseRe   = regexp.MustCompile(`(?i)</(i|em)\s*>`)
-	strikeRe        = regexp.MustCompile(`(?i)<(s|strike|del)(\s+[^>]*)?>`)
-	strikeCloseRe   = regexp.MustCompile(`(?i)</(s|strike|del)\s*>`)
-	linkRe          = regexp.MustCompile(`(?i)<a\s+[^>]*href="([^"]+)"[^>]*>([^<]+)</a>`)
-	codeRe          = regexp.MustCompile(`(?i)<code(\s+[^>]*)?>`)
-	codeCloseRe     = regexp.MustCompile(`(?i)</code\s*>`)
-	preRe           = regexp.MustCompile(`(?i)<pre(\s+[^>]*)?>`)
-	preCloseRe      = regexp.MustCompile(`(?i)</pre\s*>`)
-	ulRe            = regexp.MustCompile(`(?i)<ul(\s+[^>]*)?>`)
-	ulCloseRe       = regexp.MustCompile(`(?i)</ul\s*>`)
-	olRe            = regexp.MustCompile(`(?i)<ol(\s+[^>]*)?>`)
-	olCloseRe       = regexp.MustCompile(`(?i)</ol\s*>`)
-	liRe            = regexp.MustCompile(`(?i)<li(\s+[^>]*)?>`)
-	liCloseRe       = regexp.MustCompile(`(?i)</li\s*>`)
-	brRe            = regexp.MustCompile(`(?i)<br\s*/?>`)
-	pCloseRe        = regexp.MustCompile(`(?i)</p\s*>`)
-	divCloseRe      = regexp.MustCompile(`(?i)</div\s*>`)
-	blockquoteRe    = regexp.MustCompile(`(?i)<blockquote(\s+[^>]*)?>`)
+	stripTags         = regexp.MustCompile(`<[^>]*>`)
+	multipleSpaces    = regexp.MustCompile(`[ \t]+`)
+	MentionSpan       = regexp.MustCompile(`<span[^>]*itemtype="http://schema\.skype\.com/Mention"[^>]*>([^<]+)</span>`)
+	boldRe            = regexp.MustCompile(`(?i)<(b|strong)(\s+[^>]*)?>`)
+	boldCloseRe       = regexp.MustCompile(`(?i)</(b|strong)\s*>`)
+	italicRe          = regexp.MustCompile(`(?i)<(i|em)(\s+[^>]*)?>`)
+	italicCloseRe     = regexp.MustCompile(`(?i)</(i|em)\s*>`)
+	strikeRe          = regexp.MustCompile(`(?i)<(s|strike|del)(\s+[^>]*)?>`)
+	strikeCloseRe     = regexp.MustCompile(`(?i)</(s|strike|del)\s*>`)
+	linkRe            = regexp.MustCompile(`(?i)<a\s+[^>]*href="([^"]+)"[^>]*>([^<]+)</a>`)
+	codeRe            = regexp.MustCompile(`(?i)<code(\s+[^>]*)?>`)
+	codeCloseRe       = regexp.MustCompile(`(?i)</code\s*>`)
+	preRe             = regexp.MustCompile(`(?i)<pre(\s+[^>]*)?>`)
+	preCloseRe        = regexp.MustCompile(`(?i)</pre\s*>`)
+	ulRe              = regexp.MustCompile(`(?i)<ul(\s+[^>]*)?>`)
+	ulCloseRe         = regexp.MustCompile(`(?i)</ul\s*>`)
+	olRe              = regexp.MustCompile(`(?i)<ol(\s+[^>]*)?>`)
+	olCloseRe         = regexp.MustCompile(`(?i)</ol\s*>`)
+	liRe              = regexp.MustCompile(`(?i)<li(\s+[^>]*)?>`)
+	liCloseRe         = regexp.MustCompile(`(?i)</li\s*>`)
+	brRe              = regexp.MustCompile(`(?i)<br\s*/?>`)
+	pCloseRe          = regexp.MustCompile(`(?i)</p\s*>`)
+	divCloseRe        = regexp.MustCompile(`(?i)</div\s*>`)
+	blockquoteRe      = regexp.MustCompile(`(?i)<blockquote(\s+[^>]*)?>`)
 	blockquoteCloseRe = regexp.MustCompile(`(?i)</blockquote\s*>`)
-	imgRe           = regexp.MustCompile(`(?i)<img[^>]*>`)
-	attachmentRe    = regexp.MustCompile(`(?i)<attachment[^>]*>.*?</attachment>`)
-	headingRe       [6]*regexp.Regexp
-	headingCloseRe  [6]*regexp.Regexp
+	imgRe             = regexp.MustCompile(`(?i)<img[^>]*>`)
+	attachmentRe      = regexp.MustCompile(`(?i)<attachment[^>]*>.*?</attachment>`)
+	headingRe         [6]*regexp.Regexp
+	headingCloseRe    [6]*regexp.Regexp
 )
 
 func init() {
@@ -159,7 +159,11 @@ func cleanHTML(s string) string {
 		})
 	}
 	s = fixMarkdownSpacing("**", s)
+	// Protect bold markers while normalizing single-asterisk emphasis.
+	const boldMarkerPlaceholder = "\x1cBOLD_MARKER\x1d"
+	s = strings.ReplaceAll(s, "**", boldMarkerPlaceholder)
 	s = fixMarkdownSpacing("*", s)
+	s = strings.ReplaceAll(s, boldMarkerPlaceholder, "**")
 	s = fixMarkdownSpacing("~~", s)
 
 	// Step 5: unescape HTML entities
