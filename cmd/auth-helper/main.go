@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bufio"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -24,6 +26,7 @@ type tokens struct {
 	webToken         string
 	notifToken       string
 	eduToken         string
+	eduRequestSeen   bool
 	cookie           string
 	spacesToken      string
 	fabricToken      string
@@ -31,6 +34,13 @@ type tokens struct {
 }
 
 var globalSpin *spinner
+var debugMode bool
+
+func debugPrintf(format string, args ...interface{}) {
+	if debugMode {
+		fmt.Printf(format, args...)
+	}
+}
 
 // captureLoopResult describes what the token capture loop ended with.
 const (
@@ -109,6 +119,16 @@ func registerFullInterceptor(ctx playwright.BrowserContext, captured *tokens) {
 		captured.mu.Unlock()
 
 		// Capture Bearer tokens
+		if strings.Contains(url, "assignments.edu.cloud.microsoft") {
+			captured.mu.Lock()
+			firstEduRequest := !captured.eduRequestSeen
+			captured.eduRequestSeen = true
+			captured.mu.Unlock()
+			if firstEduRequest {
+				debugPrintf("→ EDU request observed\n")
+			}
+		}
+
 		authHeader := ""
 		for k, v := range headers {
 			if strings.ToLower(k) == "authorization" {
@@ -203,6 +223,33 @@ func printTokenStatus(t *tokens) {
 }
 
 func main() {
+	args := os.Args[1:]
+	for _, arg := range args {
+		if arg == "--help" || arg == "-h" {
+			fmt.Print(`msTTui-auth — Microsoft Teams authentication helper
+
+USAGE:
+  ./msTTui-auth                         Full token capture
+  ./msTTui-auth --renew <token>         Renew one token
+  ./msTTui-auth --renew edu --show      Renew EDU with visible browser
+  ./msTTui-auth --debug                 Enable detailed diagnostic output
+  ./msTTui-auth --help                  Show this help
+
+OPTIONS:
+  --show             Force browser visible
+  --headless         Force headless mode
+  --clear-session    Delete browser session
+  --clear-tokens     Delete saved tokens
+`)
+			return
+		}
+	}
+	for _, arg := range args {
+		if arg == "--debug" {
+			debugMode = true
+		}
+	}
+
 	initConsole()
 
 	// Kill any stale browser holding our profile from a previous crashed run,
@@ -225,7 +272,6 @@ func main() {
 	forceHeadless := false
 	clearSession := false
 	clearTokens := false
-	args := os.Args[1:]
 	for i := 0; i < len(args); i++ {
 		if args[i] == "--renew" && i+1 < len(args) {
 			renewOnly = args[i+1]
@@ -269,15 +315,16 @@ func main() {
 	}
 
 	firstRun := !sessionExists(sessionDir)
+	if forceHeadless {
+		showBrowser = false
+	}
 	if firstRun {
 		showBrowser = true
 		fmt.Println("  ● First run — browser will open for login")
+	} else if showBrowser {
+		fmt.Println("  ● Session found — browser will open")
 	} else {
 		fmt.Println("  ● Session found — running headless")
-	}
-
-	if forceHeadless {
-		showBrowser = false
 	}
 	fmt.Println()
 
@@ -381,7 +428,7 @@ func main() {
 		intentional := captured.intentionalClose
 		incomplete := captured.graphToken == "" || captured.webToken == "" || captured.cookie == ""
 		captured.mu.Unlock()
-		if !intentional && incomplete {
+		if renewOnly == "" && !intentional && incomplete {
 			fmt.Println("\n\n[!] Browser closed before login completed. Clearing session...")
 			os.RemoveAll(sessionDir)
 			fmt.Println("  ✓ Session cleared. Next run will require login.")
@@ -405,7 +452,7 @@ func main() {
 		incomplete := captured.graphToken == "" || captured.webToken == "" || captured.cookie == ""
 		captured.mu.Unlock()
 
-		if incomplete {
+		if renewOnly == "" && incomplete {
 			fmt.Println("  ⚠ Incomplete session — clearing browser session to force re-login next run.")
 			os.RemoveAll(sessionDir)
 		}
@@ -445,7 +492,7 @@ func main() {
 
 	case "edu":
 		fmt.Println("→ Renewing EDU token...")
-		renewalErr = renewEdu(page, captured)
+		renewalErr = renewEdu(page, context, captured, showBrowser)
 
 	case "fabric":
 		fmt.Println("→ Renewing FABRIC token...")
@@ -548,6 +595,9 @@ func main() {
 	}
 	if renewalErr != nil {
 		fmt.Printf("Renewal failed: %v\n", renewalErr)
+		if showBrowser {
+			waitBeforeClosingBrowser()
+		}
 		context.Close()
 		pw.Stop()
 		os.Exit(1)
@@ -712,7 +762,7 @@ func renewWebNotif(page playwright.Page, ctx playwright.BrowserContext, captured
 }
 
 // renewEdu navigates Teams to trigger EDU token request.
-func renewEdu(page playwright.Page, captured *tokens) error {
+func renewEdu(page playwright.Page, ctx playwright.BrowserContext, captured *tokens, showBrowser bool) error {
 	_, err := page.Goto("https://teams.microsoft.com/v2/",
 		playwright.PageGotoOptions{Timeout: playwright.Float(60000)},
 	)
@@ -721,6 +771,20 @@ func renewEdu(page playwright.Page, captured *tokens) error {
 	}
 
 	time.Sleep(3 * time.Second)
+	if isLoginURL(page.URL()) {
+		if !showBrowser {
+			return fmt.Errorf("interactive login required; run ./msTTui-auth --renew edu --show")
+		}
+		fmt.Println("→ Waiting for interactive login and 2FA...")
+		page, err = waitForTeamsPage(ctx, 5*time.Minute)
+		if err != nil {
+			return err
+		}
+		time.Sleep(2 * time.Second)
+	}
+	waitForTeamsShell(page, 30*time.Second)
+	logPages("EDU pages before click", ctx.Pages())
+	logTeamsDOM(page)
 
 	selectors := []string{
 		`[role="navigation"] span:text-is("Assignments")`,
@@ -728,54 +792,142 @@ func renewEdu(page playwright.Page, captured *tokens) error {
 		`span:text-is("Assignments") >> nth=0`,
 	}
 
-	clicked := false
-	clickErrors := make([]string, 0, len(selectors))
-	for _, sel := range selectors {
-		err := page.Locator(sel).First().Click(playwright.LocatorClickOptions{
-			Timeout: playwright.Float(3000),
-		})
-		if err == nil {
-			fmt.Printf("→ Clicked Assignments sidebar (%s)\n", sel)
-			clicked = true
+	clicked, clickErrors := clickAssignments(page, selectors, 30*time.Second)
 
-			deadline := time.Now().Add(12 * time.Second)
-			assignmentsLoaded := false
-			for time.Now().Before(deadline) {
-				time.Sleep(500 * time.Millisecond)
-				if strings.Contains(page.URL(), "assignments.edu.cloud.microsoft") {
-					time.Sleep(2 * time.Second)
-					assignmentsLoaded = true
-					break
-				}
-			}
-			if !assignmentsLoaded {
-				return fmt.Errorf("Assignments page did not load after clicking %s (url: %s)", sel, page.URL())
-			}
+	assignmentsPageFound := false
+	for _, candidate := range ctx.Pages() {
+		if strings.Contains(candidate.URL(), "assignments.edu.cloud.microsoft") {
+			assignmentsPageFound = true
 			break
 		}
-		clickErrors = append(clickErrors, fmt.Sprintf("%s: %v", sel, err))
 	}
+	logPages("EDU pages after click", ctx.Pages())
 
-	if !clicked {
+	captured.mu.Lock()
+	hasEdu := captured.eduToken != ""
+	captured.mu.Unlock()
+	if hasEdu {
+		return nil
+	}
+	if !clicked && !assignmentsPageFound {
+		logTeamsDOM(page)
 		return fmt.Errorf("could not click Assignments: %s", strings.Join(clickErrors, "; "))
 	}
 
-	// Try JS extraction
-	if err := tryExtractEduTokenFromJS(page, captured); err != nil {
-		return fmt.Errorf("extract EDU token from browser storage: %w", err)
-	}
-
+	// Try JS extraction on every page because Teams may open Assignments in a new tab.
 	deadline := time.Now().Add(10 * time.Second)
+	jsErrorLogged := false
 	for time.Now().Before(deadline) {
+		for _, candidate := range ctx.Pages() {
+			if err := tryExtractEduTokenFromJS(candidate, captured); err != nil && !jsErrorLogged {
+				debugPrintf("  ⚠ EDU JS extraction failed on %s: %v\n", candidate.URL(), err)
+				jsErrorLogged = true
+			}
+		}
 		captured.mu.Lock()
-		hasEdu := captured.eduToken != ""
+		hasEdu = captured.eduToken != ""
 		captured.mu.Unlock()
 		if hasEdu {
 			return nil
 		}
 		time.Sleep(500 * time.Millisecond)
 	}
-	return fmt.Errorf("EDU token was not captured after loading Assignments")
+
+	captured.mu.Lock()
+	requestSeen := captured.eduRequestSeen
+	captured.mu.Unlock()
+	return fmt.Errorf("EDU token was not captured after Assignments click (request observed: %t, assignments URL found: %t)", requestSeen, assignmentsPageFound)
+}
+
+func isLoginURL(rawURL string) bool {
+	parsed, err := url.Parse(rawURL)
+	return err == nil && parsed.Hostname() == "login.microsoftonline.com"
+}
+
+func isTeamsURL(rawURL string) bool {
+	parsed, err := url.Parse(rawURL)
+	return err == nil && parsed.Hostname() == "teams.microsoft.com"
+}
+
+func waitForTeamsPage(ctx playwright.BrowserContext, timeout time.Duration) (playwright.Page, error) {
+	deadline := time.Now().Add(timeout)
+	lastURL := ""
+	for time.Now().Before(deadline) {
+		for _, candidate := range ctx.Pages() {
+			candidateURL := candidate.URL()
+			if candidateURL != lastURL {
+				debugPrintf("  login page URL: %s\n", candidateURL)
+				lastURL = candidateURL
+			}
+			if isTeamsURL(candidateURL) {
+				debugPrintf("  ✓ Login completed: %s\n", candidateURL)
+				return candidate, nil
+			}
+		}
+		time.Sleep(1 * time.Second)
+	}
+	return nil, fmt.Errorf("interactive login did not reach Teams within %s", timeout)
+}
+
+func logPages(label string, pages []playwright.Page) {
+	if !debugMode {
+		return
+	}
+	debugPrintf("→ %s (%d pages)\n", label, len(pages))
+	for i, page := range pages {
+		debugPrintf("  page[%d]: %s\n", i, page.URL())
+	}
+}
+
+func waitForTeamsShell(page playwright.Page, timeout time.Duration) {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		navigationCount, _ := page.Locator(`[role="navigation"]`).Count()
+		if navigationCount > 0 {
+			return
+		}
+		time.Sleep(1 * time.Second)
+	}
+	debugPrintf("  ⚠ Teams shell did not expose navigation within %s\n", timeout)
+}
+
+func clickAssignments(page playwright.Page, selectors []string, timeout time.Duration) (bool, []string) {
+	deadline := time.Now().Add(timeout)
+	var clickErrors []string
+	for time.Now().Before(deadline) {
+		for _, sel := range selectors {
+			err := page.Locator(sel).First().Click(playwright.LocatorClickOptions{
+				Timeout: playwright.Float(1500),
+			})
+			if err == nil {
+				debugPrintf("→ Clicked Assignments sidebar (%s)\n", sel)
+				return true, clickErrors
+			}
+			if len(clickErrors) < 12 {
+				clickErrors = append(clickErrors, fmt.Sprintf("%s: %v", sel, err))
+			}
+		}
+		time.Sleep(1 * time.Second)
+	}
+	return false, clickErrors
+}
+
+func logTeamsDOM(page playwright.Page) {
+	snapshot, err := page.Locator("body").AriaSnapshot()
+	if err != nil {
+		debugPrintf("  ⚠ Could not capture Teams accessibility tree: %v\n", err)
+		return
+	}
+	const maxSnapshotLength = 12000
+	if len(snapshot) > maxSnapshotLength {
+		snapshot = snapshot[:maxSnapshotLength] + "..."
+	}
+	debugPrintf("→ Teams accessibility tree:\n%s\n", snapshot)
+}
+
+func waitBeforeClosingBrowser() {
+	fmt.Println("Press Enter to close the browser...")
+	_, _ = bufio.NewReader(os.Stdin).ReadString('\n')
 }
 
 // fullRenewal runs the full capture flow (all 5 tokens).
