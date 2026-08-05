@@ -16,6 +16,7 @@ func main() {
 	helpers.KillZombieBrowser()
 
 	// Handle --help flag
+	debugMode := false
 	for _, arg := range os.Args[1:] {
 		if arg == "--help" || arg == "-h" {
 			fmt.Print(`msTTui — Microsoft Teams Terminal UI
@@ -23,6 +24,7 @@ func main() {
 USAGE:
   ./msTTui                         Start the TUI
   ./msTTui --help                  Show this help
+  ./msTTui --debug                 Enable detailed auth-helper logging
 
 AUTH (run ./msTTui-auth):
   ./msTTui-auth                    Full token capture (first run)
@@ -33,6 +35,7 @@ AUTH (run ./msTTui-auth):
   ./msTTui-auth --renew notif      Renew Notifications token (headless)
   ./msTTui-auth --show             Force browser visible
   ./msTTui-auth --headless         Force headless mode
+  ./msTTui-auth --debug            Enable detailed diagnostic output
   ./msTTui-auth --clear-session    Delete browser session (forces re-login)
   ./msTTui-auth --clear-tokens     Delete saved tokens
 
@@ -53,6 +56,9 @@ NOTES:
 `)
 			os.Exit(0)
 		}
+		if arg == "--debug" {
+			debugMode = true
+		}
 	}
 
 	graphToken, webToken, notifToken, eduToken, cookie, eduCookie, spacesToken, fabricToken, err := auth.GetTokens()
@@ -66,7 +72,7 @@ NOTES:
 	userName := auth.ParseUserNameFromToken(graphToken)
 
 	p := tea.NewProgram(
-		ui.New(graphClient, userName),
+		ui.New(graphClient, userName, debugMode),
 		tea.WithAltScreen(),
 		tea.WithMouseCellMotion(),
 	)

@@ -250,6 +250,7 @@ type Model struct {
 	tokenRenewing     bool
 	tokenRenewingType string // "graph", "fabric", "web", "notif", "edu"
 	tokenRenewErr     string
+	debug             bool
 	renewalProc       *os.Process // running msTTui-auth child, killed on quit
 
 	// User
@@ -367,7 +368,7 @@ type Model struct {
 	channelMembers []graph.TeamMember
 }
 
-func New(client *graph.Client, userName string) Model {
+func New(client *graph.Client, userName string, debug bool) Model {
 	ta := textarea.New()
 	ta.Placeholder = "Type a message... (Esc to cancel, Enter to send, Ctrl+P to paste image)"
 	ta.ShowLineNumbers = false
@@ -442,6 +443,7 @@ func New(client *graph.Client, userName string) Model {
 		folderCache:           make(map[string][]graph.DriveItem),
 		channelToTeam:         make(map[string]string),
 		userName:              userName,
+		debug:                 debug,
 		presenceOptions:       []string{"Available", "Busy", "DoNotDisturb", "BeRightBack", "Away", "Reset (Automatic)"},
 		reactionOptions:       []string{"like", "heart", "laugh", "surprised", "sad", "angry"},
 	}
