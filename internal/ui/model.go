@@ -247,13 +247,15 @@ type Model struct {
 	searchQuery string
 
 	// Token renewal
-	tokenRenewing      bool
-	tokenRenewingType  string // "graph", "fabric", "web", "notif", "edu"
-	tokenRenewErr      string
-	tokenRenewalQueue  []string
-	tokenRenewFailures []string
-	debug              bool
-	renewalProc        *os.Process // running msTTui-auth child, killed on quit
+	tokenRenewing             bool
+	tokenRenewingType         string // "graph", "fabric", "web", "notif", "edu"
+	tokenRenewErr             string
+	tokenRenewalQueue         []string
+	tokenRenewFailures        []string
+	tokenRenewalFrame         int
+	tokenRenewalSpinnerActive bool
+	debug                     bool
+	renewalProc               *os.Process // running msTTui-auth child, killed on quit
 
 	// User
 	userName string

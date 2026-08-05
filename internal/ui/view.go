@@ -10,6 +10,8 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+var tokenRenewalSpinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+
 const asciiLogo = `
 ████████ ███████  █████  ███    ███ ███████       ████████ ██    ██ ██ 
    ██    ██      ██   ██ ████  ████ ██               ██    ██    ██ ██ 
@@ -1117,9 +1119,10 @@ func (m Model) View() string {
 
 			if m.tokenRenewing {
 				tokenLabel := tokenDisplayName(m.tokenRenewingType)
-				msg := "⟳ Renewing tokens..."
+				spinner := tokenRenewalSpinnerFrames[m.tokenRenewalFrame%len(tokenRenewalSpinnerFrames)]
+				msg := fmt.Sprintf("%s Renewing tokens...", spinner)
 				if tokenLabel != "" {
-					msg = fmt.Sprintf("⟳ Renewing %s...", tokenLabel)
+					msg = fmt.Sprintf("%s Renewing %s...", spinner, tokenLabel)
 				}
 				leftBanner = lipgloss.NewStyle().
 					Foreground(colorYellow).Bold(true).

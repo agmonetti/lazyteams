@@ -166,6 +166,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, startNextTokenRenewal(&m)
 
+	case tokenRenewalTickMsg:
+		if !m.tokenRenewing {
+			m.tokenRenewalSpinnerActive = false
+			return m, nil
+		}
+		m.tokenRenewalFrame = (m.tokenRenewalFrame + 1) % len(tokenRenewalSpinnerFrames)
+		return m, renewalSpinnerTickCmd()
+
 	case tokenRenewedMsg:
 		m.renewalProc = nil
 		finishTokenRenewal(&m, msg.tokenType)
@@ -1142,7 +1150,13 @@ func startNextTokenRenewal(m *Model) tea.Cmd {
 	}
 	m.tokenRenewing = true
 	m.tokenRenewingType = m.tokenRenewalQueue[0]
-	return authHelperRenewal(m, m.tokenRenewingType)
+	m.tokenRenewalFrame = 0
+	cmds := []tea.Cmd{authHelperRenewal(m, m.tokenRenewingType)}
+	if !m.tokenRenewalSpinnerActive {
+		m.tokenRenewalSpinnerActive = true
+		cmds = append(cmds, renewalSpinnerTickCmd())
+	}
+	return tea.Batch(cmds...)
 }
 
 func finishTokenRenewal(m *Model, tokenType string) {

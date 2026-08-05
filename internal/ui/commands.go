@@ -24,6 +24,7 @@ const unreadSweepInterval = 30
 const unreadSweepBatchSize = 8
 const unreadSweepDelay = 500 * time.Millisecond
 const filesRefreshInterval = 30
+const tokenRenewalSpinnerInterval = 80 * time.Millisecond
 
 func reloadChannelsAfterDelayCmd() tea.Cmd {
 	return tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
@@ -150,6 +151,12 @@ func renewalTimeout(tokenType string) time.Duration {
 	default:
 		return 0
 	}
+}
+
+func renewalSpinnerTickCmd() tea.Cmd {
+	return tea.Tick(tokenRenewalSpinnerInterval, func(time.Time) tea.Msg {
+		return tokenRenewalTickMsg{}
+	})
 }
 
 // authHelperRenewal starts a background msTTui-auth --renew process, records

@@ -34,6 +34,7 @@ type tokenRenewedMsg struct {
 	tokenType string
 	err       error
 }
+type tokenRenewalTickMsg struct{}
 
 type tokenCheckDoneMsg struct {
 	expired []string
