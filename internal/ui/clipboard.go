@@ -101,7 +101,7 @@ func convertTIFFToPNG(tiff []byte) ([]byte, error) {
 		return nil, fmt.Errorf("failed to convert clipboard TIFF to PNG: %w", err)
 	}
 
-	in, err := os.CreateTemp("", "msTTui-clipboard-*.tiff")
+	in, err := os.CreateTemp("", "lazyteams-clipboard-*.tiff")
 	if err != nil {
 		return convertErr(err)
 	}
@@ -115,7 +115,7 @@ func convertTIFFToPNG(tiff []byte) ([]byte, error) {
 		return convertErr(err)
 	}
 
-	out, err := os.CreateTemp("", "msTTui-clipboard-*.png")
+	out, err := os.CreateTemp("", "lazyteams-clipboard-*.png")
 	if err != nil {
 		return convertErr(err)
 	}

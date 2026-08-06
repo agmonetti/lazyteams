@@ -25,9 +25,9 @@ func HomeDir() string {
 	return ""
 }
 
-// ConfigDir returns the msTTui config directory (~/.config/teamstui).
+// ConfigDir returns the lazyteams config directory (~/.config/lazyteams).
 func ConfigDir() string {
-	return filepath.Join(HomeDir(), ".config", "teamstui")
+	return filepath.Join(HomeDir(), ".config", "lazyteams")
 }
 
 // KillZombieBrowser terminates any stale Firefox left over from a crashed run
@@ -55,7 +55,7 @@ func KillZombieBrowser() {
 	os.Remove(filepath.Join(profile, ".parentlock"))
 }
 
-// SignalAuthProcess asks a background msTTui-auth helper to stop gracefully so
+// SignalAuthProcess asks a background lazyteams-auth helper to stop gracefully so
 // it can close its Playwright browser before exiting. Windows has no signal
 // model, so it falls back to a hard kill there.
 func SignalAuthProcess(proc *os.Process) {

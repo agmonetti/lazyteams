@@ -259,7 +259,7 @@ type Model struct {
 	tokenRenewalFrame         int
 	tokenRenewalSpinnerActive bool
 	debug                     bool
-	renewalProc               *os.Process // running msTTui-auth child, killed on quit
+	renewalProc               *os.Process // running lazyteams-auth child, killed on quit
 
 	// User
 	userName string

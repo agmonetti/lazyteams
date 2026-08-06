@@ -226,14 +226,14 @@ func main() {
 	args := os.Args[1:]
 	for _, arg := range args {
 		if arg == "--help" || arg == "-h" {
-			fmt.Print(`msTTui-auth — Microsoft Teams authentication helper
+			fmt.Print(`lazyteams-auth — Microsoft Teams authentication helper
 
 USAGE:
-  ./msTTui-auth                         Full token capture
-  ./msTTui-auth --renew <token>         Renew one token
-  ./msTTui-auth --renew edu --show      Renew EDU with visible browser
-  ./msTTui-auth --debug                 Enable detailed diagnostic output
-  ./msTTui-auth --help                  Show this help
+  ./lazyteams-auth                         Full token capture
+  ./lazyteams-auth --renew <token>         Renew one token
+  ./lazyteams-auth --renew edu --show      Renew EDU with visible browser
+  ./lazyteams-auth --debug                 Enable detailed diagnostic output
+  ./lazyteams-auth --help                  Show this help
 
 OPTIONS:
   --show             Force browser visible
@@ -257,7 +257,7 @@ OPTIONS:
 	helpers.KillZombieBrowser()
 
 	fmt.Println("╔════════════════════════════════════════════╗")
-	fmt.Println("║            msTTui — Auth Helper -          ║")
+	fmt.Println("║          lazyteams — Auth Helper           ║")
 	fmt.Println("╚════════════════════════════════════════════╝")
 	fmt.Println()
 
@@ -605,7 +605,7 @@ OPTIONS:
 
 	fmt.Println()
 	fmt.Println("→ Session saved. Next time no login is required.")
-	fmt.Println("→ You can now run: ./msTTui")
+	fmt.Println("→ You can now run: ./lazyteams")
 }
 
 func sessionExists(dir string) bool {
@@ -659,8 +659,8 @@ func saveTokens(t *tokens, configDir string) error {
 		existing["TEAMS_FABRIC_TOKEN"] = t.fabricToken
 	}
 
-	content := fmt.Sprintf(`# msTTui tokens — auto-generated on %s
-# Do not edit manually. Run ./msTTui-auth to renew.
+	content := fmt.Sprintf(`# lazyteams tokens — auto-generated on %s
+# Do not edit manually. Run ./lazyteams-auth to renew.
 
 export MS_GRAPH_TOKEN="%s"
 export TEAMS_WEB_TOKEN="%s"
@@ -773,7 +773,7 @@ func renewEdu(page playwright.Page, ctx playwright.BrowserContext, captured *tok
 	time.Sleep(3 * time.Second)
 	if isLoginURL(page.URL()) {
 		if !showBrowser {
-			return fmt.Errorf("interactive login required; run ./msTTui-auth --renew edu --show")
+			return fmt.Errorf("interactive login required; run ./lazyteams-auth --renew edu --show")
 		}
 		fmt.Println("→ Waiting for interactive login and 2FA...")
 		page, err = waitForTeamsPage(ctx, 5*time.Minute)

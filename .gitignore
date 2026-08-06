@@ -20,5 +20,5 @@ tokens.json
 browser-session/
 prefs.json
 *.env
-.config/teamstui/
+.config/lazyteams/
 coverage.out

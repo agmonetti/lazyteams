@@ -46,17 +46,17 @@ TUI client for Microsoft Teams. Runs entirely in the terminal — no Electron, n
 
 ```bash
 # Build the TUI and the Auth Helper
-go build -o msTTui .
-go build -o msTTui-auth ./cmd/auth-helper/
+go build -o lazyteams .
+go build -o lazyteams-auth ./cmd/auth-helper/
 
 # Capture tokens (first time, interactive)
-./msTTui-auth
+./lazyteams-auth
 
 # Run
-./msTTui
+./lazyteams
 
 # Show CLI help (usage, auth commands, config paths)
-./msTTui --help
+./lazyteams --help
 ```
 
 First-time setup requires granting a set of Microsoft Graph permissions once (see [the docs](https://ms-teams-tui.agmonetti.workers.dev/#first-time-setup)). The TUI renews expired tokens automatically in the background.

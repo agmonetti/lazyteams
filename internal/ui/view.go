@@ -1167,7 +1167,7 @@ func (m Model) View() string {
 			} else if m.tokenRenewErr != "" {
 				leftBanner = lipgloss.NewStyle().
 					Foreground(colorRed).Bold(true).
-					Render("⚠ Token renewal failed — run ./msTTui-auth")
+					Render("⚠ Token renewal failed — run ./lazyteams-auth")
 			} else if m.teamCreating {
 				leftBanner = lipgloss.NewStyle().
 					Foreground(colorMuted).

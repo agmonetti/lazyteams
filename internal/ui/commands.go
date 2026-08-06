@@ -5,14 +5,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"lazyteams/internal/graph"
+	"lazyteams/internal/helpers"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
-	"lazyteams/internal/graph"
-	"lazyteams/internal/helpers"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -167,7 +167,7 @@ func renewalSpinnerTickCmd() tea.Cmd {
 	})
 }
 
-// authHelperRenewal starts a background msTTui-auth --renew process, records
+// authHelperRenewal starts a background lazyteams-auth --renew process, records
 // it on the model (so it is killed on quit), and returns a cmd that resolves
 // with the result once the process exits.
 func authHelperRenewal(m *Model, expiredToken string) tea.Cmd {
@@ -175,7 +175,7 @@ func authHelperRenewal(m *Model, expiredToken string) tea.Cmd {
 	if err != nil {
 		return func() tea.Msg { return tokenRenewedMsg{tokenType: expiredToken, err: err} }
 	}
-	authHelper := filepath.Join(filepath.Dir(exe), "msTTui-auth")
+	authHelper := filepath.Join(filepath.Dir(exe), "lazyteams-auth")
 
 	args := []string{"--renew", expiredToken}
 	// graph and fabric require visible browser — all others run headless
@@ -624,7 +624,7 @@ func getUniquePath(baseDir, name string) string {
 func openAttachmentsCmd(client *graph.Client, attachments []graph.Attachment) tea.Cmd {
 	return func() tea.Msg {
 		var results []string
-		tmpDir := filepath.Join(os.TempDir(), "msTTui-attachments")
+		tmpDir := filepath.Join(os.TempDir(), "lazyteams-attachments")
 		os.MkdirAll(tmpDir, 0700)
 
 		for _, att := range attachments {

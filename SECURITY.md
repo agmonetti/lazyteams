@@ -2,7 +2,7 @@
 
 ## Supported Versions
 
-msTTui is pre-release software. Security fixes are applied to the latest commit on the default branch (`main`). Older commits and tagged releases are not supported separately.
+lazyteams is pre-release software. Security fixes are applied to the latest commit on the default branch (`main`). Older commits and tagged releases are not supported separately.
 
 | Version        | Supported |
 | -------------- | --------- |
@@ -38,24 +38,24 @@ The following are **in scope** for security reports:
 - Command injection or unsafe subprocess execution
 - Terminal escape-sequence or hyperlink (OSC 8) abuse via untrusted Teams content
 - Insecure handling of URLs opened in the system browser
-- Authentication helper (`msTTui-auth`) session or token capture flaws
+- Authentication helper (`lazyteams-auth`) session or token capture flaws
 
 The following are generally **out of scope**:
 
-- Issues that require full access to the victim's local machine and `~/.config/teamstui/` (that directory is treated as a trusted secret store, similar to `~/.ssh/`)
+- Issues that require full access to the victim's local machine and `~/.config/lazyteams/` (that directory is treated as a trusted secret store, similar to `~/.ssh/`)
 - Microsoft Teams, Graph API, or Azure AD vulnerabilities (report those to [Microsoft Security Response Center](https://msrc.microsoft.com/))
-- Violations of Microsoft's Terms of Service from using undocumented internal APIs (legal/compliance concern, not an msTTui code vulnerability)
-- Social engineering or phishing against msTTui users
+- Violations of Microsoft's Terms of Service from using undocumented internal APIs (legal/compliance concern, not an lazyteams code vulnerability)
+- Social engineering or phishing against lazyteams users
 
-## Sensitive Data Handled by msTTui
+## Sensitive Data Handled by lazyteams
 
 This client stores and uses credentials locally to operate. Anyone with access to these paths can act as the signed-in Teams user.
 
 | Location | Contents | Permissions |
 | -------- | -------- | ----------- |
-| `~/.config/teamstui/tokens.env` | JWT tokens and session cookies | `0600` (intended) |
-| `~/.config/teamstui/browser-session/` | Persistent Playwright/Firefox session | `0700` (intended) |
-| `~/.config/teamstui/prefs.json` | UI preferences (download directory, hidden teams/channels) | `0600` (intended) |
+| `~/.config/lazyteams/tokens.env` | JWT tokens and session cookies | `0600` (intended) |
+| `~/.config/lazyteams/browser-session/` | Persistent Playwright/Firefox session | `0700` (intended) |
+| `~/.config/lazyteams/prefs.json` | UI preferences (download directory, hidden teams/channels) | `0600` (intended) |
 
 **Never commit** `tokens.env`, `browser-session/`, or `prefs.json` to version control. Do not share these files or paste their contents in issues, pull requests, or chat logs.
 
@@ -63,11 +63,11 @@ Environment variables (`MS_GRAPH_TOKEN`, `TEAMS_WEB_TOKEN`, etc.) override value
 
 ## Security Recommendations for Users
 
-- Run `./msTTui-auth` only on machines you trust.
-- Keep `~/.config/teamstui/` readable only by your user account.
-- Do not run msTTui on shared or multi-user systems without understanding the credential exposure.
+- Run `./lazyteams-auth` only on machines you trust.
+- Keep `~/.config/lazyteams/` readable only by your user account.
+- Do not run lazyteams on shared or multi-user systems without understanding the credential exposure.
 - Revoke or rotate Microsoft sessions if you suspect your token files were copied.
-- Build msTTui from source when possible; do not run untrusted pre-built binaries.
+- Build lazyteams from source when possible; do not run untrusted pre-built binaries.
 
 ## Security Recommendations for Contributors
 
@@ -90,4 +90,4 @@ We follow coordinated disclosure:
 
 ## Disclaimer
 
-msTTui is an independent, educational terminal client. It is **not affiliated with, endorsed by, or supported by Microsoft Corporation**. Use at your own risk and in compliance with your organization's policies and Microsoft's terms of service.
+lazyteams is an independent, educational terminal client. It is **not affiliated with, endorsed by, or supported by Microsoft Corporation**. Use at your own risk and in compliance with your organization's policies and Microsoft's terms of service.

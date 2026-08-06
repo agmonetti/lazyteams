@@ -60,8 +60,8 @@ func GetTokens() (string, string, string, string, string, string, string, string
 	if graphToken == "" || webToken == "" {
 		return "", "", "", "", "", "", "", "", errors.New(
 			"Tokens not found.\n\n" +
-			"Run ./msTTui-auth first\n" +
-			"to capture tokens automatically.")
+				"Run ./lazyteams-auth first\n" +
+				"to capture tokens automatically.")
 	}
 	if cookie == "" {
 		return "", "", "", "", "", "", "", "", errors.New("Missing TEAMS_COOKIE in environment.")

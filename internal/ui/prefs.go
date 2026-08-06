@@ -4,12 +4,14 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+
+	"lazyteams/internal/helpers"
 )
 
 type Preferences struct {
 	// Maps UserID -> ChatID to support multiple accounts without cache collisions
-	SelfChatIDs     map[string]string   `json:"self_chat_ids"`
-	DownloadDir     string              `json:"download_dir,omitempty"`
+	SelfChatIDs           map[string]string   `json:"self_chat_ids"`
+	DownloadDir           string              `json:"download_dir,omitempty"`
 	HiddenTeams           []string            `json:"hidden_teams,omitempty"`
 	HiddenChannels        map[string][]string `json:"hidden_channels"` // teamID → channelID
 	DMSectionCollapsed    bool                `json:"dmSectionCollapsed"`
@@ -17,8 +19,7 @@ type Preferences struct {
 }
 
 func prefsPath() string {
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".config", "teamstui", "prefs.json")
+	return filepath.Join(helpers.ConfigDir(), "prefs.json")
 }
 
 func loadPrefs() Preferences {
