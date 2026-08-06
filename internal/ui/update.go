@@ -408,7 +408,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.loading = false
 			return m, nil
 		}
-		m.folderStack = []FolderNode{msg.node}
+		// The channel root is represented by the header; only real subfolders belong in the stack.
+		m.folderStack = nil
 		m.currentFilesDriveID = msg.node.DriveID
 		// Check cache for root
 		cacheKey := "root:" + m.channels[m.selectedChan].ID

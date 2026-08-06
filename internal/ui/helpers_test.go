@@ -220,7 +220,7 @@ func TestChannelRootMessageResetsStackAndIgnoresStaleChannel(t *testing.T) {
 		node:      FolderNode{ID: "root-a", Name: "General"},
 	})
 	got := updated.(Model)
-	if len(got.folderStack) != 1 || got.folderStack[0].ID != "root-a" {
+	if len(got.folderStack) != 0 {
 		t.Fatalf("root response did not normalize stack: %#v", got.folderStack)
 	}
 
@@ -229,7 +229,7 @@ func TestChannelRootMessageResetsStackAndIgnoresStaleChannel(t *testing.T) {
 		node:      FolderNode{ID: "root-b", Name: "Other"},
 	})
 	got = updated.(Model)
-	if len(got.folderStack) != 1 || got.folderStack[0].ID != "root-a" {
+	if len(got.folderStack) != 0 {
 		t.Fatalf("stale root response changed stack: %#v", got.folderStack)
 	}
 }
