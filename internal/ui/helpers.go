@@ -342,6 +342,16 @@ func remove(slice []string, s string) []string {
 	return result
 }
 
+func appendFolderNode(stack []FolderNode, node FolderNode) []FolderNode {
+	if len(stack) > 0 {
+		last := stack[len(stack)-1]
+		if last.ID == node.ID && last.DriveID == node.DriveID {
+			return stack
+		}
+	}
+	return append(stack, node)
+}
+
 func markNotifReadCmd(client *graph.Client, msgID string) tea.Cmd {
 	return func() tea.Msg {
 		err := client.MarkNotificationRead(msgID)

@@ -763,7 +763,7 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					m.loading = true
 					// Start a fresh auto-refresh timer on entering Files so the
 					// first background refresh happens 30s after entering.
-					cmds = append(cmds, loadChannelRootCmd(m.client, m.teams[m.selectedTeam].ID, m.channels[m.selectedChan].DisplayName))
+					cmds = append(cmds, loadChannelRootCmd(m.client, m.teams[m.selectedTeam].ID, m.channels[m.selectedChan].ID, m.channels[m.selectedChan].DisplayName))
 					cmds = append(cmds, filesRefreshTickCmd())
 				} else {
 					m.viewMode = ModeChat
@@ -1146,7 +1146,7 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					Name:    selected.Name,
 					DriveID: selected.RemoteItem.ParentReference.DriveID,
 				}
-				m.folderStack = append(m.folderStack, node)
+				m.folderStack = appendFolderNode(m.folderStack, node)
 				m.currentFilesDriveID = node.DriveID
 				// Check cache
 				if cached, ok := m.folderCache[node.ID]; ok {
@@ -1165,7 +1165,7 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					currentDriveID = m.folderStack[len(m.folderStack)-1].DriveID
 				}
 				node := FolderNode{ID: selected.ID, Name: selected.Name, DriveID: currentDriveID}
-				m.folderStack = append(m.folderStack, node)
+				m.folderStack = appendFolderNode(m.folderStack, node)
 				m.currentFilesDriveID = currentDriveID
 				// Check cache
 				if cached, ok := m.folderCache[node.ID]; ok {

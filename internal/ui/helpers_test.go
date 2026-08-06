@@ -193,6 +193,47 @@ func TestSmallHelpers(t *testing.T) {
 	}
 }
 
+func TestAppendFolderNodeDoesNotDuplicateCurrentNode(t *testing.T) {
+	root := FolderNode{ID: "root", Name: "General"}
+	child := FolderNode{ID: "child", Name: "Materials"}
+	stack := appendFolderNode([]FolderNode{root, child}, child)
+	if len(stack) != 2 {
+		t.Fatalf("duplicate folder changed stack length to %d, want 2", len(stack))
+	}
+	stack = appendFolderNode(stack, FolderNode{ID: "other-drive", Name: "Materials", DriveID: "drive"})
+	if len(stack) != 3 {
+		t.Fatalf("different drive folder was not appended: %v", stack)
+	}
+}
+
+func TestChannelRootMessageResetsStackAndIgnoresStaleChannel(t *testing.T) {
+	m := Model{
+		teams:         []graph.Team{{ID: "team-a"}},
+		channels:      []graph.Channel{{ID: "channel-a"}},
+		selectedTeam:  0,
+		selectedChan:  0,
+		folderStack:   []FolderNode{{ID: "old-root", Name: "General"}, {ID: "child", Name: "Materials"}},
+		selectedFiles: make(map[int]bool),
+	}
+	updated, _ := m.Update(channelRootMsg{
+		channelID: "channel-a",
+		node:      FolderNode{ID: "root-a", Name: "General"},
+	})
+	got := updated.(Model)
+	if len(got.folderStack) != 1 || got.folderStack[0].ID != "root-a" {
+		t.Fatalf("root response did not normalize stack: %#v", got.folderStack)
+	}
+
+	updated, _ = got.Update(channelRootMsg{
+		channelID: "channel-b",
+		node:      FolderNode{ID: "root-b", Name: "Other"},
+	})
+	got = updated.(Model)
+	if len(got.folderStack) != 1 || got.folderStack[0].ID != "root-a" {
+		t.Fatalf("stale root response changed stack: %#v", got.folderStack)
+	}
+}
+
 func TestFormatDownloadResultsKeepsEachResultVisible(t *testing.T) {
 	got := formatDownloadResults([]string{
 		"✓ first.pdf → /tmp/first.pdf",

@@ -874,13 +874,14 @@ func sendMessageCmd(client *graph.Client, channelID, content string, mentions []
 	}
 }
 
-func loadChannelRootCmd(client *graph.Client, teamID, channelName string) tea.Cmd {
+func loadChannelRootCmd(client *graph.Client, teamID, channelID, channelName string) tea.Cmd {
 	return func() tea.Msg {
 		folder, err := client.GetChannelFolder(teamID, channelName)
 		if err != nil {
-			return channelRootMsg{err: err}
+			return channelRootMsg{channelID: channelID, err: err}
 		}
 		return channelRootMsg{
+			channelID: channelID,
 			node: FolderNode{
 				ID:   folder.ID,
 				Name: folder.Name,

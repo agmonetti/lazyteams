@@ -45,8 +45,9 @@ type searchUsersErrMsg struct{ err error }
 type createDMMsg struct{ chat graph.Chat }
 type createDMErrMsg struct{ err error }
 type channelRootMsg struct {
-	node FolderNode
-	err  error
+	channelID string
+	node      FolderNode
+	err       error
 }
 
 type uploadDoneMsg struct {

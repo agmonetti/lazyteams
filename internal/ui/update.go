@@ -400,12 +400,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case channelRootMsg:
+		if m.selectedChan >= len(m.channels) || m.channels[m.selectedChan].ID != msg.channelID {
+			return m, nil
+		}
 		if msg.err != nil {
 			m.err = msg.err
 			m.loading = false
 			return m, nil
 		}
-		m.folderStack = append(m.folderStack, msg.node)
+		m.folderStack = []FolderNode{msg.node}
 		m.currentFilesDriveID = msg.node.DriveID
 		// Check cache for root
 		cacheKey := "root:" + m.channels[m.selectedChan].ID
