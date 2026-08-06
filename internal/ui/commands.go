@@ -108,6 +108,14 @@ func removeChannelMemberCmd(client *graph.Client, teamGUID, channelThreadID, use
 	}
 }
 
+func updateChannelMemberRoleCmd(client *graph.Client, teamGUID, channelThreadID string, member graph.TeamMember, role string) tea.Cmd {
+	return func() tea.Msg {
+		tenantID := client.GetTenantID()
+		err := client.UpdateChannelMemberRole(teamGUID, channelThreadID, member.ID, role, tenantID)
+		return updateChannelMemberRoleMsg{err: err, userID: member.ID, role: role}
+	}
+}
+
 func createTeamCmd(client *graph.Client, name string) tea.Cmd {
 	return func() tea.Msg {
 		err := client.CreateTeam(name)

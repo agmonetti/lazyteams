@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -256,6 +257,41 @@ func TestUpdateNotificationsUsesServerReadStateAndPreservesSelection(t *testing.
 	}
 	if m.notificationsRefreshing {
 		t.Error("notification refresh should be marked complete")
+	}
+}
+
+func TestUpdateChannelMemberRoleUpdatesOptimistically(t *testing.T) {
+	m := Model{
+		channelMembers: []graph.TeamMember{{ID: "u1", Role: "Member"}, {ID: "u2", Role: "Owner"}},
+	}
+	updated, _ := m.Update(updateChannelMemberRoleMsg{userID: "u1", role: "Owner"})
+	got := updated.(Model)
+	if len(got.channelMembers) != 2 || got.channelMembers[0].Role != "Owner" {
+		t.Fatalf("role was not updated optimistically: %#v", got.channelMembers)
+	}
+	if got.channelRoleErr != "" {
+		t.Errorf("channelRoleErr should be empty on success, got %q", got.channelRoleErr)
+	}
+	if got.downloadStatus == "" {
+		t.Error("success should set a download status message")
+	}
+}
+
+func TestUpdateChannelMemberRoleErrorIsPersistent(t *testing.T) {
+	m := Model{
+		channelMembers: []graph.TeamMember{{ID: "u1", Role: "Owner"}},
+	}
+	updated, _ := m.Update(updateChannelMemberRoleMsg{
+		err:    fmt.Errorf("change channel member role error 400: cannot demote the last owner"),
+		userID: "u1",
+		role:   "Member",
+	})
+	got := updated.(Model)
+	if got.channelRoleErr == "" {
+		t.Fatal("server error should be stored in channelRoleErr")
+	}
+	if got.channelMembers[0].Role != "Owner" {
+		t.Error("failed role change must not alter the local member list")
 	}
 }
 

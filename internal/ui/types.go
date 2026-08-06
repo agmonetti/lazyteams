@@ -85,6 +85,11 @@ type removeChannelMemberMsg struct {
 	err    error
 	userID string
 }
+type updateChannelMemberRoleMsg struct {
+	err    error
+	userID string
+	role   string
+}
 
 type delayedReloadChannelsMsg struct{}
 type delayedReloadTeamsMsg struct{}

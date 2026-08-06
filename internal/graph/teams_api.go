@@ -424,13 +424,21 @@ func (c *Client) GetChannelSubstrateID(channelThreadID string) (string, error) {
 	return "", fmt.Errorf("substrateGroupId not found")
 }
 
-func (c *Client) AddChannelMember(teamGUID, channelThreadID, userID, tenantID string) error {
+func (c *Client) channelMemberOIDs(teamGUID, channelThreadID, userID, tenantID string) (string, string, error) {
 	substrateID, err := c.GetChannelSubstrateID(channelThreadID)
 	if err != nil {
-		return fmt.Errorf("could not get channel substrate ID: %w", err)
+		return "", "", fmt.Errorf("could not get channel substrate ID: %w", err)
 	}
 	channelOID := fmt.Sprintf("OID:%s@%s", substrateID, tenantID)
 	userOID := fmt.Sprintf("OID:%s@%s", userID, tenantID)
+	return channelOID, userOID, nil
+}
+
+func (c *Client) AddChannelMember(teamGUID, channelThreadID, userID, tenantID string) error {
+	channelOID, userOID, err := c.channelMemberOIDs(teamGUID, channelThreadID, userID, tenantID)
+	if err != nil {
+		return err
+	}
 
 	payload := fmt.Sprintf(`{"users":[{"id":"%s","role":1}]}`, userOID)
 	url := fmt.Sprintf(
@@ -482,12 +490,10 @@ func (c *Client) RemoveTeamMember(teamThreadID, teamGUID, userID string) error {
 }
 
 func (c *Client) RemoveChannelMember(teamGUID, channelThreadID, userID, tenantID string) error {
-	substrateID, err := c.GetChannelSubstrateID(channelThreadID)
+	channelOID, userOID, err := c.channelMemberOIDs(teamGUID, channelThreadID, userID, tenantID)
 	if err != nil {
-		return fmt.Errorf("could not get channel substrate ID: %w", err)
+		return err
 	}
-	channelOID := fmt.Sprintf("OID:%s@%s", substrateID, tenantID)
-	userOID := fmt.Sprintf("OID:%s@%s", userID, tenantID)
 	url := fmt.Sprintf("https://teams.microsoft.com/fabric/amer/templates/api/teams/%s/channels/%s/users/%s?forceSync=false",
 		teamGUID, channelOID, userOID)
 	req, err := http.NewRequest("DELETE", url, nil)
@@ -508,4 +514,58 @@ func (c *Client) RemoveChannelMember(teamGUID, channelThreadID, userID, tenantID
 	}
 	body, _ := io.ReadAll(resp.Body)
 	return fmt.Errorf("remove channel member error %d: %s", resp.StatusCode, string(body))
+}
+
+// channelRoleNumber maps a role name to the numeric role used by the Teams
+// Fabric channel members API. 1 = Member (User), 2 = Owner (Admin).
+func channelRoleNumber(role string) (int, bool) {
+	switch role {
+	case "Owner":
+		return 2, true
+	case "Member":
+		return 1, true
+	default:
+		return 0, false
+	}
+}
+
+// UpdateChannelMemberRole changes the role of a channel member. The server
+// rejects self-demotion when the user is the last owner; that descriptive
+// error is returned to the caller so it can be shown clearly.
+func (c *Client) UpdateChannelMemberRole(teamGUID, channelThreadID, userID, role, tenantID string) error {
+	roleNum, ok := channelRoleNumber(role)
+	if !ok {
+		return fmt.Errorf("unsupported channel role %q", role)
+	}
+	channelOID, userOID, err := c.channelMemberOIDs(teamGUID, channelThreadID, userID, tenantID)
+	if err != nil {
+		return err
+	}
+
+	payload := fmt.Sprintf(`{"users":[{"id":"%s","role":%d}]}`, userOID, roleNum)
+	url := fmt.Sprintf(
+		"https://teams.microsoft.com/fabric/amer/templates/api/teams/%s/channels/%s/users?forceSync=false",
+		teamGUID, channelOID,
+	)
+	req, err := http.NewRequest("POST", url, strings.NewReader(payload))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.FabricToken)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("x-ms-client-type", "web")
+
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == 401 {
+		return fmt.Errorf("change channel member role error 401: TEAMS_FABRIC_TOKEN expired")
+	}
+	if resp.StatusCode == 200 || resp.StatusCode == 201 || resp.StatusCode == 202 {
+		return nil
+	}
+	body, _ := io.ReadAll(resp.Body)
+	return fmt.Errorf("change channel member role error %d: %s", resp.StatusCode, string(body))
 }

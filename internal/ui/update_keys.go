@@ -33,6 +33,7 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		{m.showAddMemberPopup, m.handleAddMemberPopup},
 		{m.showRemoveMemberPopup, m.handleRemoveMemberPopup},
 		{m.showRemoveChannelMemberPopup, m.handleRemoveChannelMemberPopup},
+		{m.showChangeChannelRolePopup, m.handleChangeChannelRolePopup},
 		{m.showMembersPopup, m.handleMembersPopup},
 		{m.showDeleteChannelPopup, m.handleDeleteChannelPopup},
 		{m.showDeleteTeamPopup, m.handleDeleteTeamPopup},
@@ -408,6 +409,7 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		if !m.focusLeft && m.viewMode == ModeInfo {
 			m.viewMode = ModeChat
+			m.channelRoleErr = ""
 			m.loading = true
 			m.messagesBackwardLink = ""
 			m.loadingMore = false
@@ -691,6 +693,7 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		} else if !m.focusLeft {
 			if m.viewMode == ModeInfo {
 				m.viewMode = ModeChat
+				m.channelRoleErr = ""
 				m.loading = true
 				m.messagesBackwardLink = ""
 				m.loadingMore = false
@@ -758,6 +761,7 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if m.workspace == WorkspaceTeams && len(m.channels) > 0 {
 				if m.viewMode == ModeChat || m.viewMode == ModeInfo {
 					m.viewMode = ModeFiles
+					m.channelRoleErr = ""
 					m.folderStack = nil
 					m.currentFilesDriveID = ""
 					m.loading = true
@@ -949,7 +953,18 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case "r":
-		if m.workspace == WorkspaceActivity && m.notifErr != nil {
+		if !m.focusLeft && m.viewMode == ModeInfo && len(m.channelMembers) > 0 {
+			if m.channelInfo != nil && strings.ToLower(m.channelInfo.MembershipType) == "private" {
+				member := m.channelMembers[m.channelMemberCursor]
+				m.showChangeChannelRolePopup = true
+				m.channelRoleErr = ""
+				if member.Role == "Owner" {
+					m.changeChannelRoleCursor = 0
+				} else {
+					m.changeChannelRoleCursor = 1
+				}
+			}
+		} else if m.workspace == WorkspaceActivity && m.notifErr != nil {
 			m.notifErr = nil
 			m.notifLoaded = false
 			return m, loadNotificationsCmd(m.client)
@@ -1014,12 +1029,14 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		} else if !m.focusLeft && m.workspace == WorkspaceTeams && m.focusList == 1 && len(m.channels) > 0 {
 			if m.viewMode == ModeInfo {
 				m.viewMode = ModeChat
+				m.channelRoleErr = ""
 				m.loading = true
 				m.messagesBackwardLink = ""
 				m.loadingMore = false
 				return m, loadMessagesCmd(m.client, m.teams[m.selectedTeam].ID, m.channels[m.selectedChan].ID, 200)
 			} else {
 				m.viewMode = ModeInfo
+				m.channelRoleErr = ""
 				m.channelInfo = nil
 				m.channelMembers = nil
 				m.viewport.SetContent("Loading info...")

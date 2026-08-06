@@ -758,6 +758,39 @@ func (m Model) handleRemoveChannelMemberPopup(msg tea.KeyMsg) (tea.Model, tea.Cm
 	return m, nil, true
 }
 
+func (m Model) handleChangeChannelRolePopup(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
+	switch msg.String() {
+	case "up", "k":
+		if m.changeChannelRoleCursor > 0 {
+			m.changeChannelRoleCursor--
+		}
+	case "down", "j":
+		if m.changeChannelRoleCursor < 1 {
+			m.changeChannelRoleCursor++
+		}
+	case "enter":
+		if m.channelMemberCursor < len(m.channelMembers) {
+			member := m.channelMembers[m.channelMemberCursor]
+			role := "Owner"
+			if m.changeChannelRoleCursor == 1 {
+				role = "Member"
+			}
+			if member.Role == role {
+				m.showChangeChannelRolePopup = false
+				return m, nil, true
+			}
+			m.showChangeChannelRolePopup = false
+			m.channelRoleErr = ""
+			teamGUID := m.teams[m.selectedTeam].ID
+			channelID := m.channels[m.selectedChan].ID
+			return m, updateChannelMemberRoleCmd(m.client, teamGUID, channelID, member, role), true
+		}
+	case "esc":
+		m.showChangeChannelRolePopup = false
+	}
+	return m, nil, true
+}
+
 func (m Model) handleMembersPopup(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
 	switch msg.String() {
 	case "esc":

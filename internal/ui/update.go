@@ -1029,6 +1029,32 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, clearStatusAfter(m.downloadStatusID)
 
+	case updateChannelMemberRoleMsg:
+		m.showChangeChannelRolePopup = false
+		if msg.err != nil {
+			if is401(msg.err) {
+				return m, func() tea.Msg { return errMsg{err: msg.err} }
+			}
+			m.channelRoleErr = msg.err.Error()
+		} else {
+			m.channelRoleErr = ""
+			for i := range m.channelMembers {
+				if m.channelMembers[i].ID == msg.userID {
+					m.channelMembers[i].Role = msg.role
+					break
+				}
+			}
+			m.downloadStatus = fmt.Sprintf("✓ Role updated to %s", msg.role)
+			m.downloadStatusID++
+		}
+		if m.viewMode == ModeInfo {
+			m.viewport.SetContent(renderInfoContent(&m))
+		}
+		if msg.err == nil {
+			return m, clearStatusAfter(m.downloadStatusID)
+		}
+		return m, nil
+
 	case delayedReloadChannelsMsg:
 		return m, loadChannelsCmd(m.client, m.teams[m.selectedTeam].ID)
 

@@ -372,6 +372,9 @@ type Model struct {
 	addChannelMemberErr          string
 	showRemoveChannelMemberPopup bool
 	channelMemberCursor          int
+	showChangeChannelRolePopup   bool
+	changeChannelRoleCursor      int // 0 = Owner, 1 = Member
+	channelRoleErr               string
 
 	// Channel members (separate from team members)
 	channelMembers []graph.TeamMember

@@ -67,7 +67,11 @@ func renderInfoContent(m *Model) string {
 	}
 
 	if strings.ToLower(ch.MembershipType) == "private" {
-		content += "\n\n" + helpStyle.Render("Press [a] to add or [x] to remove members in this private channel.")
+		content += "\n\n" + helpStyle.Render("Press [a] to add, [x] to remove, [r] to change role of members in this private channel.")
+	}
+
+	if m.channelRoleErr != "" {
+		content += "\n\n" + lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Render("⚠ "+m.channelRoleErr)
 	}
 
 	if m.downloadStatus != "" {
@@ -886,6 +890,29 @@ func (m Model) View() string {
 		return lipgloss.Place(lipgloss.Width(combined), lipgloss.Height(combined), lipgloss.Center, lipgloss.Center, popup)
 	}
 
+	if m.showChangeChannelRolePopup && m.channelMemberCursor < len(m.channelMembers) {
+		member := m.channelMembers[m.channelMemberCursor]
+		ownerCursor := " "
+		memberCursor := " "
+		if m.changeChannelRoleCursor == 0 {
+			ownerCursor = ">"
+		} else {
+			memberCursor = ">"
+		}
+		content := fmt.Sprintf("Change role of \"%s\":\n\n  %s Owner\n  %s Member\n\n[↑/↓] Select   [Enter] Confirm   [Esc] Cancel", member.DisplayName, ownerCursor, memberCursor)
+		popup := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("11")).
+			Padding(1, 3).
+			Render(content)
+		if m.mobileMode {
+			mobileUI := buildMobileUI(&m, leftContent, rightContent, panelOuterHeight)
+			return lipgloss.Place(m.width, lipgloss.Height(mobileUI), lipgloss.Center, lipgloss.Center, popup)
+		}
+		combined := lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, rightPanel)
+		return lipgloss.Place(lipgloss.Width(combined), lipgloss.Height(combined), lipgloss.Center, lipgloss.Center, popup)
+	}
+
 	if m.showMembersPopup {
 		var content string
 		content += titleStyle.Render("Team Members") + "\n\n"
@@ -1396,7 +1423,7 @@ func (m Model) footerText() string {
 		return dim.Render(" [↑/↓] Scroll  [i] Type  [/] Search  [u] Upload  [f] Files  [I] Info  [p] Status  [?] Help  [Esc/h] Back")
 	case !m.focusLeft && m.viewMode == ModeInfo:
 		if m.channelInfo != nil && strings.ToLower(m.channelInfo.MembershipType) == "private" {
-			return dim.Render(" [↑/↓] Scroll  [a] Add member  [x] Remove  [f] Files  [I] Chat  [p] Status  [?] Help  [Esc/h] Back")
+			return dim.Render(" [↑/↓] Scroll  [a] Add member  [x] Remove  [r] Change role  [f] Files  [I] Chat  [p] Status  [?] Help  [Esc/h] Back")
 		}
 		return dim.Render(" [↑/↓] Scroll  [f] Files  [I] Chat  [p] Status  [?] Help  [Esc/h] Back")
 	default:

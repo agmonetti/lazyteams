@@ -110,3 +110,15 @@ func TestChatSvcError(t *testing.T) {
 		t.Errorf("ChatSvcError.Error() = %q", err)
 	}
 }
+
+func TestChannelRoleNumber(t *testing.T) {
+	if n, ok := channelRoleNumber("Owner"); !ok || n != 2 {
+		t.Errorf("Owner = %d/%v, want 2/true", n, ok)
+	}
+	if n, ok := channelRoleNumber("Member"); !ok || n != 1 {
+		t.Errorf("Member = %d/%v, want 1/true", n, ok)
+	}
+	if _, ok := channelRoleNumber("Guest"); ok {
+		t.Error("Guest should not be a valid role for the change-role API")
+	}
+}
