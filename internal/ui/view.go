@@ -465,9 +465,9 @@ func (m Model) View() string {
 					Foreground(lipgloss.Color("205")).
 					Render("Search: ") + m.searchInput.View()
 				if m.searchQuery != "" {
-					countStr := fmt.Sprintf(" %d coincidencias", m.searchMatchCount)
+					countStr := fmt.Sprintf(" %d match%s", m.searchMatchCount, pluralS(m.searchMatchCount))
 					if m.searchMatchCount > 0 {
-						countStr = fmt.Sprintf(" [%d/%d] coincidencias", m.searchCursor+1, m.searchMatchCount)
+						countStr = fmt.Sprintf(" [%d/%d] match%s", m.searchCursor+1, m.searchMatchCount, pluralS(m.searchMatchCount))
 					}
 					searchBar += lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render(countStr)
 				}
@@ -556,9 +556,9 @@ func (m Model) View() string {
 					Foreground(lipgloss.Color("205")).
 					Render("Search: ") + m.searchInput.View()
 				if m.searchQuery != "" {
-					countStr := fmt.Sprintf(" %d coincidencias", m.searchMatchCount)
+					countStr := fmt.Sprintf(" %d match%s", m.searchMatchCount, pluralS(m.searchMatchCount))
 					if m.searchMatchCount > 0 {
-						countStr = fmt.Sprintf(" [%d/%d] coincidencias", m.searchCursor+1, m.searchMatchCount)
+						countStr = fmt.Sprintf(" [%d/%d] match%s", m.searchCursor+1, m.searchMatchCount, pluralS(m.searchMatchCount))
 					}
 					searchBar += lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render(countStr)
 				}
