@@ -3,13 +3,14 @@ package ui
 import (
 	"fmt"
 	"io"
+	"lazyteams/internal/graph"
+	"lazyteams/internal/teams"
 	"net/url"
 	"os/exec"
+	"regexp"
 	"runtime"
 	"sort"
 	"strings"
-	"lazyteams/internal/graph"
-	"lazyteams/internal/teams"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -281,18 +282,56 @@ func (m *Model) buildMemberIndex() map[string]string {
 	return index
 }
 
+// activeSearchCursor returns the current search result cursor, or -1 when no
+// search is active. It is passed to the format functions to highlight the
+// current match.
+func (m *Model) activeSearchCursor() int {
+	if m.isSearching {
+		return m.searchCursor
+	}
+	return -1
+}
+
 func (m *Model) filterMessages(msgs []graph.Message, query string) []graph.Message {
 	if query == "" {
 		return msgs
 	}
-	query = strings.ToLower(query)
+	queryLower := strings.ToLower(query)
+	re := regexp.MustCompile(`(?i)(` + regexp.QuoteMeta(query) + `)`)
 	var filtered []graph.Message
 	for _, msg := range msgs {
-		if strings.Contains(strings.ToLower(msg.Body), query) || strings.Contains(strings.ToLower(msg.FromName), query) {
+		matched := false
+		if strings.Contains(strings.ToLower(msg.Body), queryLower) {
+			msg.Body = re.ReplaceAllString(msg.Body, "\x11$1\x12")
+			matched = true
+		}
+		if strings.Contains(strings.ToLower(msg.FromName), queryLower) {
+			msg.FromName = re.ReplaceAllString(msg.FromName, "\x11$1\x12")
+			matched = true
+		}
+		if matched {
 			filtered = append(filtered, msg)
 		}
 	}
 	return filtered
+}
+
+// countSearchMatches returns the number of messages whose body or sender
+// contains the query (case-insensitive). This is the total result count shown
+// while searching.
+func (m *Model) countSearchMatches(msgs []graph.Message, query string) int {
+	if query == "" {
+		return 0
+	}
+	queryLower := strings.ToLower(query)
+	count := 0
+	for _, msg := range msgs {
+		if strings.Contains(strings.ToLower(msg.Body), queryLower) ||
+			strings.Contains(strings.ToLower(msg.FromName), queryLower) {
+			count++
+		}
+	}
+	return count
 }
 
 func isSharePointURL(rawURL string) bool {

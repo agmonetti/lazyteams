@@ -2,9 +2,9 @@ package ui
 
 import (
 	"fmt"
-	"strings"
 	"lazyteams/internal/graph"
 	"lazyteams/internal/teams"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -25,9 +25,9 @@ func (m Model) handleMessagesMsg(msg messagesMsg) (tea.Model, tea.Cmd) {
 		}
 
 		if m.workspace == WorkspaceDMs {
-			content = formatMessagesDM(msgsToRender, m.viewport.Width, m.userName, m.selfID, m.messageCursor, m.cursorMode)
+			content = formatMessagesDM(msgsToRender, m.viewport.Width, m.userName, m.selfID, m.messageCursor, m.cursorMode, m.activeSearchCursor())
 		} else {
-			content = formatMessagesWithCursor(msgsToRender, m.viewport.Width, m.messageCursor, m.cursorMode)
+			content = formatMessagesWithCursor(msgsToRender, m.viewport.Width, m.messageCursor, m.cursorMode, m.activeSearchCursor())
 		}
 		atBottom := m.viewport.AtBottom()
 		m.viewport.SetContent(content)

@@ -1,11 +1,13 @@
 package ui
 
 import (
-	"strings"
+	"fmt"
 	"lazyteams/internal/graph"
 	"lazyteams/internal/ui/components/directorypicker"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 func (m Model) handleHelpPopup(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
@@ -323,7 +325,7 @@ func (m Model) handleCursorModeTeams(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) 
 	case "esc":
 		m.cursorMode = false
 		m.messageCursor = 0
-		content := formatMessagesWithCursor(m.messages, m.viewport.Width, m.messageCursor, m.cursorMode)
+		content := formatMessagesWithCursor(m.messages, m.viewport.Width, m.messageCursor, m.cursorMode, m.activeSearchCursor())
 		m.viewport.SetContent(content)
 		return m, nil, true
 	case "e":
@@ -367,7 +369,7 @@ func (m Model) handleCursorModeTeams(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) 
 		if m.messageCursor > 0 {
 			m.messageCursor--
 		}
-		content := formatMessagesWithCursor(m.messages, m.viewport.Width, m.messageCursor, m.cursorMode)
+		content := formatMessagesWithCursor(m.messages, m.viewport.Width, m.messageCursor, m.cursorMode, m.activeSearchCursor())
 		// Scroll to cursor
 		cursorLine := 0
 		for i, line := range strings.Split(content, "\n") {
@@ -390,7 +392,7 @@ func (m Model) handleCursorModeTeams(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) 
 		if m.messageCursor < len(rootMsgs)-1 {
 			m.messageCursor++
 		}
-		content := formatMessagesWithCursor(m.messages, m.viewport.Width, m.messageCursor, m.cursorMode)
+		content := formatMessagesWithCursor(m.messages, m.viewport.Width, m.messageCursor, m.cursorMode, m.activeSearchCursor())
 		// Scroll to cursor
 		cursorLine := 0
 		for i, line := range strings.Split(content, "\n") {
@@ -444,7 +446,7 @@ func (m Model) handleCursorModeDMs(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
 	case "esc":
 		m.cursorMode = false
 		m.messageCursor = 0
-		content := formatMessagesDM(m.messages, m.viewport.Width, m.userName, m.selfID, m.messageCursor, m.cursorMode)
+		content := formatMessagesDM(m.messages, m.viewport.Width, m.userName, m.selfID, m.messageCursor, m.cursorMode, m.activeSearchCursor())
 		m.viewport.SetContent(content)
 		return m, nil, true
 	case "up", "k":
@@ -452,7 +454,7 @@ func (m Model) handleCursorModeDMs(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
 		if m.messageCursor < len(validMsgs)-1 {
 			m.messageCursor++
 		}
-		content := formatMessagesDM(m.messages, m.viewport.Width, m.userName, m.selfID, m.messageCursor, m.cursorMode)
+		content := formatMessagesDM(m.messages, m.viewport.Width, m.userName, m.selfID, m.messageCursor, m.cursorMode, m.activeSearchCursor())
 		cursorLine := 0
 		for i, line := range strings.Split(content, "\n") {
 			if strings.HasPrefix(line, symCursor) {
@@ -473,7 +475,7 @@ func (m Model) handleCursorModeDMs(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
 		if m.messageCursor > 0 {
 			m.messageCursor--
 		}
-		content := formatMessagesDM(m.messages, m.viewport.Width, m.userName, m.selfID, m.messageCursor, m.cursorMode)
+		content := formatMessagesDM(m.messages, m.viewport.Width, m.userName, m.selfID, m.messageCursor, m.cursorMode, m.activeSearchCursor())
 		cursorLine := 0
 		for i, line := range strings.Split(content, "\n") {
 			if strings.HasPrefix(line, symCursor) {
@@ -538,20 +540,36 @@ func (m Model) handleSearching(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
 		m.isSearching = false
 		m.searchInput.Reset()
 		m.searchQuery = ""
+		m.searchCursor = 0
+		m.searchMatchCount = 0
 
 		// Re-render chat
 		var content string
 		if m.workspace == WorkspaceDMs {
-			content = formatMessagesDM(m.messages, m.viewport.Width, m.userName, m.selfID, m.messageCursor, m.cursorMode)
+			content = formatMessagesDM(m.messages, m.viewport.Width, m.userName, m.selfID, m.messageCursor, m.cursorMode, m.activeSearchCursor())
 		} else {
-			content = formatMessagesWithCursor(m.messages, m.viewport.Width, m.messageCursor, m.cursorMode)
+			content = formatMessagesWithCursor(m.messages, m.viewport.Width, m.messageCursor, m.cursorMode, m.activeSearchCursor())
 		}
 		m.viewport.SetContent(content)
 		return m, nil, true
 	case "enter":
 		m.isSearching = false
 		return m, nil, true
-	case "up", "down", "pgup", "pgdown", "ctrl+u", "ctrl+d":
+	case "up":
+		if m.searchCursor > 0 {
+			m.searchCursor--
+			m.viewport.SetContent(m.renderSearchResults())
+			m.viewport.GotoTop()
+		}
+		return m, nil, true
+	case "down":
+		if m.searchCursor < m.searchMatchCount-1 {
+			m.searchCursor++
+			m.viewport.SetContent(m.renderSearchResults())
+			m.viewport.GotoTop()
+		}
+		return m, nil, true
+	case "pgup", "pgdown", "ctrl+u", "ctrl+d":
 		var cmd tea.Cmd
 		m.viewport, cmd = m.viewport.Update(msg)
 		return m, cmd, true
@@ -560,21 +578,29 @@ func (m Model) handleSearching(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
 		m.searchInput, cmd = m.searchInput.Update(msg)
 
 		m.searchQuery = strings.TrimSpace(m.searchInput.Value())
+		m.searchCursor = 0
+		m.searchMatchCount = m.countSearchMatches(m.messages, m.searchQuery)
 
-		// Filter messages and re-render
-		var content string
-		filtered := m.messages
-		if m.searchQuery != "" {
-			filtered = m.filterMessages(m.messages, m.searchQuery)
-		}
-		if m.workspace == WorkspaceDMs {
-			content = formatMessagesDM(filtered, m.viewport.Width, m.userName, m.selfID, m.messageCursor, m.cursorMode)
-		} else {
-			content = formatMessagesWithCursor(filtered, m.viewport.Width, m.messageCursor, m.cursorMode)
-		}
-		m.viewport.SetContent(content)
+		m.viewport.SetContent(m.renderSearchResults())
 		return m, cmd, true
 	}
+}
+
+// renderSearchResults renders the filtered message list during a search,
+// applying the search highlight and an empty state when nothing matches.
+func (m Model) renderSearchResults() string {
+	filtered := m.messages
+	if m.searchQuery != "" {
+		filtered = m.filterMessages(m.messages, m.searchQuery)
+	}
+	if len(filtered) == 0 && m.searchQuery != "" {
+		empty := helpStyle.Render(fmt.Sprintf("No results found for %q", m.searchQuery))
+		return lipgloss.Place(m.viewport.Width, m.viewport.Height, lipgloss.Center, lipgloss.Center, empty)
+	}
+	if m.workspace == WorkspaceDMs {
+		return formatMessagesDM(filtered, m.viewport.Width, m.userName, m.selfID, m.messageCursor, m.cursorMode, m.activeSearchCursor())
+	}
+	return formatMessagesWithCursor(filtered, m.viewport.Width, m.messageCursor, m.cursorMode, m.activeSearchCursor())
 }
 
 func (m Model) handleDirPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {

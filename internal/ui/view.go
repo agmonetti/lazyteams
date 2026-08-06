@@ -461,9 +461,17 @@ func (m Model) View() string {
 		if !m.focusLeft && m.viewMode == ModeChat {
 			var inputView string
 			if m.isSearching {
-				inputView = lipgloss.NewStyle().
+				searchBar := lipgloss.NewStyle().
 					Foreground(lipgloss.Color("205")).
 					Render("Search: ") + m.searchInput.View()
+				if m.searchQuery != "" {
+					countStr := fmt.Sprintf(" %d coincidencias", m.searchMatchCount)
+					if m.searchMatchCount > 0 {
+						countStr = fmt.Sprintf(" [%d/%d] coincidencias", m.searchCursor+1, m.searchMatchCount)
+					}
+					searchBar += lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render(countStr)
+				}
+				inputView = searchBar
 			} else {
 				inputView = m.input.View()
 			}
@@ -544,9 +552,17 @@ func (m Model) View() string {
 
 			var inputView string
 			if m.isSearching {
-				inputView = lipgloss.NewStyle().
+				searchBar := lipgloss.NewStyle().
 					Foreground(lipgloss.Color("205")).
 					Render("Search: ") + m.searchInput.View()
+				if m.searchQuery != "" {
+					countStr := fmt.Sprintf(" %d coincidencias", m.searchMatchCount)
+					if m.searchMatchCount > 0 {
+						countStr = fmt.Sprintf(" [%d/%d] coincidencias", m.searchCursor+1, m.searchMatchCount)
+					}
+					searchBar += lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render(countStr)
+				}
+				inputView = searchBar
 			} else {
 				inputView = m.input.View()
 			}
@@ -1420,7 +1436,7 @@ func (m Model) footerText() string {
 		return dim.Render(" [↑/↓] Navigate  [Enter] Open  [Space] Select  [v] Preview  [o] Download  [u] Upload  [F] New folder  [Del] Delete  [p] Status  [?] Help  [Esc/h] Back")
 	case !m.focusLeft && m.viewMode == ModeChat:
 		if m.isSearching {
-			return dim.Render(" [↑/↓] Scroll  [Esc] Clear & Close")
+			return dim.Render(" [↑/↓] Matches  [PgUp/PgDn] Scroll  [Esc] Clear & Close")
 		}
 		return dim.Render(" [↑/↓] Scroll  [i] Type  [/] Search  [u] Upload  [f] Files  [I] Info  [p] Status  [?] Help  [Esc/h] Back")
 	case !m.focusLeft && m.viewMode == ModeInfo:

@@ -247,9 +247,11 @@ type Model struct {
 	replyToMsg *graph.Message
 
 	// Search in chat
-	isSearching bool
-	searchInput textinput.Model
-	searchQuery string
+	isSearching      bool
+	searchInput      textinput.Model
+	searchQuery      string
+	searchCursor     int // index of the currently highlighted result (within the filtered list)
+	searchMatchCount int // number of messages that match the current query
 
 	// Token renewal
 	tokenRenewing             bool

@@ -2,10 +2,10 @@ package ui
 
 import (
 	"fmt"
+	"lazyteams/internal/graph"
 	"regexp"
 	"sort"
 	"strings"
-	"lazyteams/internal/graph"
 	"time"
 
 	"github.com/charmbracelet/glamour"
@@ -50,6 +50,7 @@ func cleanHTMLForEdit(content string) string {
 }
 
 var mentionToken = regexp.MustCompile(`\x1E(.*?)\x1F`)
+var searchToken = regexp.MustCompile(`\x11(.*?)\x12`)
 var ansiToken = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 
 func highlightMentions(text string) string {
@@ -61,6 +62,20 @@ func highlightMentions(text string) string {
 		}
 		clean := ansiToken.ReplaceAllString(sub[1], "")
 		return mentionStyle.Render(clean)
+	})
+}
+
+// highlightSearchMatches wraps search matches (already delimited by the \x11/\x12
+// sentinels injected by filterMessages) in brackets with an underline style.
+func highlightSearchMatches(text string) string {
+	searchStyle := lipgloss.NewStyle().Underline(true).Foreground(lipgloss.Color("220"))
+	return searchToken.ReplaceAllStringFunc(text, func(m string) string {
+		sub := searchToken.FindStringSubmatch(m)
+		if len(sub) < 2 {
+			return m
+		}
+		clean := ansiToken.ReplaceAllString(sub[1], "")
+		return searchStyle.Render("[" + clean + "]")
 	})
 }
 
@@ -127,7 +142,7 @@ func replyCount(msgs []graph.Message, parentID string) int {
 	return len(repliesFor(msgs, parentID))
 }
 
-func formatMessagesWithCursor(messages []graph.Message, width, cursor int, cursorMode bool) string {
+func formatMessagesWithCursor(messages []graph.Message, width, cursor int, cursorMode bool, searchCursor int) string {
 	var content string
 	roots := rootMessages(messages)
 
@@ -139,7 +154,9 @@ func formatMessagesWithCursor(messages []graph.Message, width, cursor int, curso
 	for i := len(roots) - 1; i >= 0; i-- {
 		msg := roots[i]
 		cursorStr := "  "
-		if cursorMode && i == cursor {
+		if searchCursor >= 0 && searchCursor < len(messages) && msg.ID == messages[searchCursor].ID {
+			cursorStr = symCursor
+		} else if cursorMode && i == cursor {
 			cursorStr = symCursor
 		}
 		timeStr := msg.CreatedAt.Local().Format("02/01 15:04")
@@ -198,10 +215,11 @@ func formatMessagesWithCursor(messages []graph.Message, width, cursor int, curso
 
 		content += "\n"
 	}
+	content = highlightSearchMatches(content)
 	return content
 }
 
-func formatMessagesDM(messages []graph.Message, width int, selfName, selfID string, cursor int, cursorMode bool) string {
+func formatMessagesDM(messages []graph.Message, width int, selfName, selfID string, cursor int, cursorMode bool, searchCursor int) string {
 	var content string
 	var lastDate string
 	actualW := width - 4
@@ -236,7 +254,9 @@ func formatMessagesDM(messages []graph.Message, width int, selfName, selfID stri
 		lastDate = msgDate
 
 		cursorStr := "  "
-		if cursorMode && i == cursor {
+		if searchCursor >= 0 && searchCursor < len(messages) && msg.ID == messages[searchCursor].ID {
+			cursorStr = symCursor
+		} else if cursorMode && i == cursor {
 			cursorStr = symCursor
 		}
 
@@ -348,5 +368,6 @@ func formatMessagesDM(messages []graph.Message, width int, selfName, selfID stri
 			content += "\n"
 		}
 	}
+	content = highlightSearchMatches(content)
 	return content
 }

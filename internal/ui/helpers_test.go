@@ -37,6 +37,70 @@ func TestFilterMessagesMatchesBodyAndSenderCaseInsensitively(t *testing.T) {
 	}
 }
 
+func TestFilterMessagesInjectsSearchSentinels(t *testing.T) {
+	m := Model{}
+	messages := []graph.Message{
+		{Body: "The exam is tomorrow", FromName: "Alice"},
+		{Body: "Project notes", FromName: "Bob"},
+	}
+
+	got := m.filterMessages(messages, "exam")
+	if len(got) != 1 {
+		t.Fatalf("expected 1 match, got %d", len(got))
+	}
+	if got[0].Body != "The \x11exam\x12 is tomorrow" {
+		t.Errorf("body did not get search sentinels: %q", got[0].Body)
+	}
+
+	got = m.filterMessages(messages, "bob")
+	if len(got) != 1 {
+		t.Fatalf("expected 1 sender match, got %d", len(got))
+	}
+	if got[0].FromName != "\x11Bob\x12" {
+		t.Errorf("sender did not get search sentinels: %q", got[0].FromName)
+	}
+}
+
+func TestFilterMessagesDoesNotMutateOriginal(t *testing.T) {
+	m := Model{}
+	original := []graph.Message{{Body: "The exam is tomorrow", FromName: "Alice"}}
+	m.filterMessages(original, "exam")
+	if original[0].Body != "The exam is tomorrow" {
+		t.Error("filterMessages must not mutate the source messages")
+	}
+}
+
+func TestCountSearchMatches(t *testing.T) {
+	m := Model{}
+	messages := []graph.Message{
+		{Body: "The exam is tomorrow", FromName: "Alice"},
+		{Body: "Project notes about exams", FromName: "Bob"},
+		{Body: "Lunch plans", FromName: "Carla"},
+	}
+	if got := m.countSearchMatches(messages, "exam"); got != 2 {
+		t.Errorf("countSearchMatches(exam) = %d, want 2", got)
+	}
+	if got := m.countSearchMatches(messages, "alice"); got != 1 {
+		t.Errorf("countSearchMatches(alice) = %d, want 1", got)
+	}
+	if got := m.countSearchMatches(messages, "zzz"); got != 0 {
+		t.Errorf("countSearchMatches(zzz) = %d, want 0", got)
+	}
+	if got := m.countSearchMatches(messages, ""); got != 0 {
+		t.Errorf("countSearchMatches(empty) = %d, want 0", got)
+	}
+}
+
+func TestHighlightSearchMatchesWrapsInBrackets(t *testing.T) {
+	got := highlightSearchMatches("hello \x11world\x12!")
+	if !strings.Contains(got, "[world]") {
+		t.Errorf("highlightSearchMatches did not wrap match in brackets: %q", got)
+	}
+	if strings.Contains(got, "\x11") || strings.Contains(got, "\x12") {
+		t.Errorf("highlightSearchMatches left sentinels behind: %q", got)
+	}
+}
+
 func TestFilterMessagesReturnsOriginalSliceForEmptyQuery(t *testing.T) {
 	m := Model{}
 	messages := []graph.Message{{Body: "one"}, {Body: "two"}}

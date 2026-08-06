@@ -398,11 +398,13 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		if m.searchQuery != "" {
 			m.searchQuery = ""
+			m.searchMatchCount = 0
+			m.searchCursor = 0
 			var content string
 			if m.workspace == WorkspaceDMs {
-				content = formatMessagesDM(m.messages, m.viewport.Width, m.userName, m.selfID, m.messageCursor, m.cursorMode)
+				content = formatMessagesDM(m.messages, m.viewport.Width, m.userName, m.selfID, m.messageCursor, m.cursorMode, m.activeSearchCursor())
 			} else {
-				content = formatMessagesWithCursor(m.messages, m.viewport.Width, m.messageCursor, m.cursorMode)
+				content = formatMessagesWithCursor(m.messages, m.viewport.Width, m.messageCursor, m.cursorMode, m.activeSearchCursor())
 			}
 			m.viewport.SetContent(content)
 			return m, nil
@@ -815,9 +817,9 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 							msgsToRender = m.filterMessages(m.messages, m.searchQuery)
 						}
 						if m.workspace == WorkspaceDMs {
-							fresh = formatMessagesDM(msgsToRender, m.viewport.Width, m.userName, m.selfID, m.messageCursor, m.cursorMode)
+							fresh = formatMessagesDM(msgsToRender, m.viewport.Width, m.userName, m.selfID, m.messageCursor, m.cursorMode, m.activeSearchCursor())
 						} else {
-							fresh = formatMessagesWithCursor(msgsToRender, m.viewport.Width, m.messageCursor, m.cursorMode)
+							fresh = formatMessagesWithCursor(msgsToRender, m.viewport.Width, m.messageCursor, m.cursorMode, m.activeSearchCursor())
 						}
 						m.viewport.SetContent(fresh)
 					}
@@ -980,9 +982,9 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.messageCursor = 0
 			var content string
 			if m.workspace == WorkspaceDMs {
-				content = formatMessagesDM(m.messages, m.viewport.Width, m.userName, m.selfID, m.messageCursor, m.cursorMode)
+				content = formatMessagesDM(m.messages, m.viewport.Width, m.userName, m.selfID, m.messageCursor, m.cursorMode, m.activeSearchCursor())
 			} else {
-				content = formatMessagesWithCursor(m.messages, m.viewport.Width, m.messageCursor, m.cursorMode)
+				content = formatMessagesWithCursor(m.messages, m.viewport.Width, m.messageCursor, m.cursorMode, m.activeSearchCursor())
 			}
 			m.viewport.SetContent(content)
 		} else if m.workspace == WorkspaceTeams && m.focusList == 1 && m.teamThreadID != "" {

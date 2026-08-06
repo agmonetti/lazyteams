@@ -107,9 +107,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					msgsToRender = m.filterMessages(m.messages, m.searchQuery)
 				}
 				if m.workspace == WorkspaceDMs {
-					content = formatMessagesDM(msgsToRender, rightInnerWidth, m.userName, m.selfID, m.messageCursor, m.cursorMode)
+					content = formatMessagesDM(msgsToRender, rightInnerWidth, m.userName, m.selfID, m.messageCursor, m.cursorMode, m.activeSearchCursor())
 				} else {
-					content = formatMessagesWithCursor(msgsToRender, rightInnerWidth, m.messageCursor, m.cursorMode)
+					content = formatMessagesWithCursor(msgsToRender, rightInnerWidth, m.messageCursor, m.cursorMode, m.activeSearchCursor())
 				}
 				m.viewport.SetContent(content)
 			} else if m.viewMode == ModeFiles {
@@ -244,9 +244,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					msgsToRender = m.filterMessages(m.messages, m.searchQuery)
 				}
 				if m.workspace == WorkspaceDMs {
-					partial = formatMessagesDM(msgsToRender, m.viewport.Width, m.userName, m.selfID, m.messageCursor, m.cursorMode)
+					partial = formatMessagesDM(msgsToRender, m.viewport.Width, m.userName, m.selfID, m.messageCursor, m.cursorMode, m.activeSearchCursor())
 				} else {
-					partial = formatMessagesWithCursor(msgsToRender, m.viewport.Width, m.messageCursor, m.cursorMode)
+					partial = formatMessagesWithCursor(msgsToRender, m.viewport.Width, m.messageCursor, m.cursorMode, m.activeSearchCursor())
 				}
 				m.viewport.SetContent(partial + "\n\n(partial load due to network error)")
 			}
@@ -380,9 +380,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		yBefore := m.viewport.YOffset
 		var content string
 		if m.workspace == WorkspaceDMs {
-			content = formatMessagesDM(m.messages, m.viewport.Width, m.userName, m.selfID, m.messageCursor, m.cursorMode)
+			content = formatMessagesDM(m.messages, m.viewport.Width, m.userName, m.selfID, m.messageCursor, m.cursorMode, m.activeSearchCursor())
 		} else {
-			content = formatMessagesWithCursor(m.messages, m.viewport.Width, m.messageCursor, m.cursorMode)
+			content = formatMessagesWithCursor(m.messages, m.viewport.Width, m.messageCursor, m.cursorMode, m.activeSearchCursor())
 		}
 		m.viewport.SetContent(content)
 		m.viewport.SetYOffset(yBefore)
