@@ -9,20 +9,20 @@
 TUI client for Microsoft Teams. Runs entirely in the terminal — no Electron, no browser. Built with **Clean Architecture + Elm Architecture (Bubble Tea)**. Single static binary.
 
 ```
-╔══════════════════════╦════════════════════════════════════════════════════╗
-║ Chats                ║            TEAMS-TUI                               ║
-║                      ║                                                    ║
-║ ▼ Direct Messages    ║  Microsoft Teams Terminal UI                       ║
-║ ▶ Personal notes     ║  v1.0.0-beta                                       ║
-║   PRIVATE CHAT 1     ║                                                    ║
-║   PRIVATE CHAT 2     ║  [↑/↓] Navigate chats · [Enter]                    ║
-║                      ║                                                    ║
-║ ▼ Group Chats        ║                                                    ║
-║   GROUP CHAT 1       ║                                                    ║
-║                      ║                                                    ║
-╠══════════════════════╩════════════════════════════════════════════════════╣
-║ [1-4] Workspace  [↑/↓] Navigate  [Enter] Open  [n] New DM  [p] Status  [q] Quit
-╚═══════════════════════════════════════════════════════════════════════════╝
+╔════════════════════════════╦════════════════════════════════════════════════════╗
+║ Chats                      ║                    LAZYTEAMS                       ║
+║                            ║                                                    ║
+║ ▼ Direct Messages          ║            Microsoft Teams Terminal UI             ║
+║   Personal notes           ║                   v1.0.0-beta                      ║
+║   PRIVATE CHAT 1           ║                                                    ║
+║   PRIVATE CHAT 2           ║          [↑/↓] Navigate chats · [Enter]            ║
+║                            ║                                                    ║
+║ ▼ Group Chats              ║                                                    ║
+║   GROUP CHAT 1             ║                                                    ║
+║                            ║                                                    ║
+╠════════════════════════════╩════════════════════════════════════════════════════╣
+║ [1-4] Workspace  [↑/↓] Navigate  [Enter] Open  [n] New DM  [p] Status  [q] Quit ║
+╚═════════════════════════════════════════════════════════════════════════════════╝
 ```
 
 ## Highlights
@@ -65,7 +65,7 @@ First-time setup requires granting a set of Microsoft Graph permissions once (se
 
 Full documentation — first-time setup, token system, configuration files, keybindings, platform support, and architecture — lives on the docs site:
 
-**<https://ms-teams-tui.agmonetti.workers.dev/>**
+[Documentation](https://ms-teams-tui.agmonetti.workers.dev/)
 
 Security-sensitive data handling is described in [`SECURITY.md`](SECURITY.md).
 
