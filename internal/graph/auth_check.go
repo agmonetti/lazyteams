@@ -55,10 +55,12 @@ func (c *Client) CheckAllTokens() []string {
 	return expired
 }
 
-// checkEndpoint returns true if the token is expired (401).
+// checkEndpoint returns true if the token is expired (401) or missing.
+// An empty token is treated as expired: in tokens.env an empty value is
+// functionally identical to an expired one and must trigger a renewal.
 func (c *Client) checkEndpoint(url, token string) bool {
 	if token == "" {
-		return false // Skip if token not configured
+		return true // missing token must be renewed
 	}
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {

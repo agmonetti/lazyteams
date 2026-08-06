@@ -53,6 +53,9 @@ func printBox(lines []string) {
 	width := 47
 	fmt.Println("  ┌" + strings.Repeat("─", width) + "┐")
 	for _, line := range lines {
+		// Tabs render wider than a single rune, so expand them before
+		// measuring to keep the box borders aligned.
+		line = strings.ReplaceAll(line, "\t", "    ")
 		runes := []rune(line)
 		padding := width - len(runes) - 1
 		if padding < 0 {
@@ -1000,7 +1003,7 @@ func fullRenewal(pw *playwright.Playwright, page playwright.Page, ctx playwright
 		globalSpin.SetLabel("Navigating to Teams to capture tokens...")
 	}
 
-	captureResult := captureLoop(page, pw, sessionDir, captured, browserClosed)
+	captureResult := captureLoop(page, ctx, pw, sessionDir, captured, browserClosed)
 	if captureResult == captureClosed {
 		return
 	}
@@ -1078,7 +1081,7 @@ func fullRenewal(pw *playwright.Playwright, page playwright.Page, ctx playwright
 				}
 			}
 
-			captureResult = captureLoop(visiblePage, pw, sessionDir, captured, browserClosed)
+			captureResult = captureLoop(visiblePage, visibleCtx, pw, sessionDir, captured, browserClosed)
 			visibleCtx.Close()
 			if captureResult == captureClosed {
 				return
@@ -1215,6 +1218,10 @@ func fullRenewal(pw *playwright.Playwright, page playwright.Page, ctx playwright
 				for time.Now().Before(deadline) {
 					select {
 					case <-skipCh:
+						if globalSpin != nil {
+							globalSpin.Stop("")
+							globalSpin = nil
+						}
 						fmt.Println("\n  · TEAMS_FABRIC_TOKEN — skipped by user")
 						// Force Firefox to flush cookies to disk via page navigation
 						visiblePage.Goto("about:blank", playwright.PageGotoOptions{
@@ -1242,6 +1249,10 @@ func fullRenewal(pw *playwright.Playwright, page playwright.Page, ctx playwright
 				}
 			}
 
+			if globalSpin != nil {
+				globalSpin.Stop("")
+				globalSpin = nil
+			}
 			visibleCtx.Close()
 			return
 		}
@@ -1279,7 +1290,7 @@ func fullRenewal(pw *playwright.Playwright, page playwright.Page, ctx playwright
 //   - captureStale when nothing was captured within 45s (Teams never loaded —
 //     the saved session's Microsoft login expired)
 //   - captureClosed when the browser was closed by the user
-func captureLoop(page playwright.Page, pw *playwright.Playwright, sessionDir string, captured *tokens, browserClosed <-chan struct{}) string {
+func captureLoop(page playwright.Page, ctx playwright.BrowserContext, pw *playwright.Playwright, sessionDir string, captured *tokens, browserClosed <-chan struct{}) string {
 	page.Goto("https://teams.microsoft.com/v2/#/teams/", playwright.PageGotoOptions{
 		Timeout: playwright.Float(15000),
 	})
@@ -1359,12 +1370,22 @@ func captureLoop(page playwright.Page, pw *playwright.Playwright, sessionDir str
 					WaitUntil: playwright.WaitUntilStateNetworkidle,
 				},
 			)
-			time.Sleep(5 * time.Second)
+			time.Sleep(3 * time.Second)
 
-			page.Locator(`[role="navigation"] span:text-is("Assignments")`).First().Click(
-				playwright.LocatorClickOptions{Timeout: playwright.Float(5000)},
-			)
-			time.Sleep(5 * time.Second)
+			eduSelectors := []string{
+				`[role="navigation"] span:text-is("Assignments")`,
+				`[data-tid="app-bar-edu-assignments"]`,
+				`span:text-is("Assignments") >> nth=0`,
+			}
+			clickAssignments(page, eduSelectors, 15*time.Second)
+			time.Sleep(3 * time.Second)
+
+			// Extract from every page because Teams may open Assignments in a new tab.
+			for _, candidate := range ctx.Pages() {
+				if err := tryExtractEduTokenFromJS(candidate, captured); err != nil {
+					debugPrintf("  ⚠ EDU token JS extraction failed on %s: %v\n", candidate.URL(), err)
+				}
+			}
 		}
 
 		// Step 4 (55s): try to extract EDU_TOKEN from JS
@@ -1645,6 +1666,10 @@ func manualFabricTokenCapture(pw *playwright.Playwright, sessionDir string, capt
 	for time.Now().Before(deadline) {
 		select {
 		case <-skipCh:
+			if globalSpin != nil {
+				globalSpin.Stop("")
+				globalSpin = nil
+			}
 			fmt.Println("\n  · TEAMS_FABRIC_TOKEN — skipped by user")
 			return
 		default:
@@ -1667,6 +1692,10 @@ func manualFabricTokenCapture(pw *playwright.Playwright, sessionDir string, capt
 	}
 
 	fmt.Println("\n  · TEAMS_FABRIC_TOKEN — timed out waiting for manual action")
+	if globalSpin != nil {
+		globalSpin.Stop("")
+		globalSpin = nil
+	}
 }
 
 func extractNameFromToken(token string) string {
