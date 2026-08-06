@@ -59,13 +59,13 @@ go build -o lazyteams-auth ./cmd/auth-helper/
 ./lazyteams --help
 ```
 
-First-time setup requires granting a set of Microsoft Graph permissions once (see [the docs](https://ms-teams-tui.agmonetti.workers.dev/#first-time-setup)). The TUI renews expired tokens automatically in the background.
+First-time setup requires granting a set of Microsoft Graph permissions once (see [the docs](https://lazyteams.agmonetti.workers.dev/#first-time-setup)). The TUI renews expired tokens automatically in the background.
 
 ## Documentation
 
 Full documentation — first-time setup, token system, configuration files, keybindings, platform support, and architecture — lives on the docs site:
 
-[Documentation](https://ms-teams-tui.agmonetti.workers.dev/)
+[Documentation](https://lazyteams.agmonetti.workers.dev)
 
 Security-sensitive data handling is described in [`SECURITY.md`](SECURITY.md).
 
