@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"teamsTUI/internal/graph"
 )
 
@@ -292,6 +293,86 @@ func TestUpdateChannelMemberRoleErrorIsPersistent(t *testing.T) {
 	}
 	if got.channelMembers[0].Role != "Owner" {
 		t.Error("failed role change must not alter the local member list")
+	}
+}
+
+func TestIsLastChannelOwner(t *testing.T) {
+	owner := graph.TeamMember{ID: "u1", Role: "Owner"}
+	member := graph.TeamMember{ID: "u2", Role: "Member"}
+
+	if !isLastChannelOwner([]graph.TeamMember{owner, member}, "u1") {
+		t.Error("single owner that is selected should be the last owner")
+	}
+	if isLastChannelOwner([]graph.TeamMember{owner, member}, "u2") {
+		t.Error("a member must never be considered the last owner")
+	}
+	if isLastChannelOwner([]graph.TeamMember{
+		{ID: "u1", Role: "Owner"},
+		{ID: "u3", Role: "Owner"},
+	}, "u1") {
+		t.Error("with two owners neither is the last owner")
+	}
+	if isLastChannelOwner(nil, "u1") {
+		t.Error("empty member list must not report a last owner")
+	}
+}
+
+func TestChangeChannelRoleBlocksDemotingLastOwner(t *testing.T) {
+	m := Model{
+		channelMembers:             []graph.TeamMember{{ID: "u1", Role: "Owner"}, {ID: "u2", Role: "Member"}},
+		showChangeChannelRolePopup: true,
+		changeChannelRoleCursor:    1, // "Member"
+		channelMemberCursor:        0, // the owner
+		teams:                      []graph.Team{{ID: "team-a"}},
+		channels:                   []graph.Channel{{ID: "channel-a"}},
+	}
+	updated, cmd, _ := m.handleChangeChannelRolePopup(tea.KeyMsg{Type: tea.KeyEnter})
+	got := updated.(Model)
+	if got.showChangeChannelRolePopup {
+		t.Error("popup should close after a blocked demotion")
+	}
+	if got.channelRoleErr == "" {
+		t.Error("blocked demotion should set a persistent channelRoleErr")
+	}
+	if got.channelMembers[0].Role != "Owner" {
+		t.Error("blocked demotion must not alter the local member list")
+	}
+	if cmd != nil {
+		t.Error("blocked demotion must not issue a network command")
+	}
+}
+
+func TestChangeChannelRoleAllowsDemotingNonLastOwner(t *testing.T) {
+	m := Model{
+		channelMembers: []graph.TeamMember{
+			{ID: "u1", Role: "Owner"},
+			{ID: "u2", Role: "Owner"},
+			{ID: "u3", Role: "Member"},
+		},
+		showChangeChannelRolePopup: true,
+		changeChannelRoleCursor:    1, // "Member"
+		channelMemberCursor:        0, // first owner (not last)
+		teams:                      []graph.Team{{ID: "team-a"}},
+		channels:                   []graph.Channel{{ID: "channel-a"}},
+	}
+	_, cmd, _ := m.handleChangeChannelRolePopup(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Error("demoting a non-last owner should issue the update command")
+	}
+}
+
+func TestClearDownloadStatusRefreshesInfoView(t *testing.T) {
+	m := Model{
+		viewMode:         ModeInfo,
+		channelInfo:      &graph.Channel{ID: "channel-a", DisplayName: "General"},
+		channelMembers:   []graph.TeamMember{{ID: "u1", Role: "Owner"}},
+		downloadStatus:   "✓ Role updated to Member",
+		downloadStatusID: 5,
+	}
+	updated, _ := m.Update(clearDownloadStatusMsg{id: 5})
+	got := updated.(Model)
+	if got.downloadStatus != "" {
+		t.Error("matching clear message should empty downloadStatus")
 	}
 }
 

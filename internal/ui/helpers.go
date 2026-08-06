@@ -352,6 +352,28 @@ func appendFolderNode(stack []FolderNode, node FolderNode) []FolderNode {
 	return append(stack, node)
 }
 
+// isLastChannelOwner reports whether userID is the only Owner in the given
+// channel member list. Used to block demoting the last owner, since the Teams
+// Fabric API does not enforce that restriction server-side.
+func isLastChannelOwner(members []graph.TeamMember, userID string) bool {
+	ownerCount := 0
+	for _, member := range members {
+		if member.Role == "Owner" {
+			ownerCount++
+		}
+	}
+	return ownerCount == 1 && containsTeamMemberID(members, userID, "Owner")
+}
+
+func containsTeamMemberID(members []graph.TeamMember, userID, role string) bool {
+	for _, member := range members {
+		if member.ID == userID && member.Role == role {
+			return true
+		}
+	}
+	return false
+}
+
 func markNotifReadCmd(client *graph.Client, msgID string) tea.Cmd {
 	return func() tea.Msg {
 		err := client.MarkNotificationRead(msgID)

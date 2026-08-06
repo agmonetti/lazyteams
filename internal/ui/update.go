@@ -658,6 +658,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.downloadStatus = ""
 			if m.viewMode == ModeFiles {
 				m.viewport.SetContent(renderFilesContent(&m))
+			} else if m.viewMode == ModeInfo && m.channelInfo != nil {
+				m.viewport.SetContent(renderInfoContent(&m))
 			}
 		}
 		return m, nil

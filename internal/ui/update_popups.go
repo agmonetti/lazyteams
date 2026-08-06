@@ -780,6 +780,15 @@ func (m Model) handleChangeChannelRolePopup(msg tea.KeyMsg) (tea.Model, tea.Cmd,
 				return m, nil, true
 			}
 			m.showChangeChannelRolePopup = false
+			// The Teams Fabric API does not enforce the last-owner restriction,
+			// so block demoting the only owner here instead of relying on it.
+			if role == "Member" && isLastChannelOwner(m.channelMembers, member.ID) {
+				m.channelRoleErr = "Cannot demote the only owner."
+				if m.viewMode == ModeInfo {
+					m.viewport.SetContent(renderInfoContent(&m))
+				}
+				return m, nil, true
+			}
 			m.channelRoleErr = ""
 			teamGUID := m.teams[m.selectedTeam].ID
 			channelID := m.channels[m.selectedChan].ID
