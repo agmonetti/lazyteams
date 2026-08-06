@@ -495,7 +495,8 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					_ = groupChats
 				}
 			} else if m.workspace == WorkspaceActivity {
-				if len(m.notifications) > 0 && m.selectedNotif > 0 {
+				filtered := m.filteredNotifications()
+				if len(filtered) > 0 && m.selectedNotif > 0 {
 					m.selectedNotif--
 				}
 			} else if m.workspace == WorkspaceAssignments {
@@ -633,7 +634,8 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					}
 				}
 			} else if m.workspace == WorkspaceActivity {
-				if len(m.notifications) > 0 && m.selectedNotif < len(m.notifications)-1 {
+				filtered := m.filteredNotifications()
+				if len(filtered) > 0 && m.selectedNotif < len(filtered)-1 {
 					m.selectedNotif++
 				}
 			} else if m.workspace == WorkspaceAssignments {
@@ -854,8 +856,9 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		// In WorkspaceActivity, right panel: navigate to notification's channel
 		if m.workspace == WorkspaceActivity && !m.focusLeft {
-			if m.selectedNotif < len(m.notifications) {
-				n := m.notifications[m.selectedNotif]
+			filtered := m.filteredNotifications()
+			if len(filtered) > 0 && m.selectedNotif >= 0 && m.selectedNotif < len(filtered) {
+				n := filtered[m.selectedNotif]
 				if n.SourceThread != "" {
 					teamID, known := m.channelToTeam[n.SourceThread]
 					if known {
@@ -1093,11 +1096,14 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			savePrefs(m.prefs)
 			return m, nil
 		}
-		if m.focusLeft && m.workspace == WorkspaceActivity && len(m.notifications) > 0 {
-			n := &m.notifications[m.selectedNotif]
-			if !n.IsRead {
-				n.IsRead = true
-				cmds = append(cmds, markNotifReadCmd(m.client, n.ID))
+		if m.focusLeft && m.workspace == WorkspaceActivity {
+			filtered := m.filteredNotifications()
+			if len(filtered) > 0 && m.selectedNotif >= 0 && m.selectedNotif < len(filtered) {
+				n := &m.notifications[m.notifOriginalIndex(filtered[m.selectedNotif].ID)]
+				if !n.IsRead {
+					n.IsRead = true
+					cmds = append(cmds, markNotifReadCmd(m.client, n.ID))
+				}
 			}
 			m.focusLeft = false
 		} else if m.focusLeft && m.workspace == WorkspaceAssignments {

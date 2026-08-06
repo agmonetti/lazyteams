@@ -22,6 +22,9 @@ const asciiLogo = `
                                                                                         
                                                                                          `
 
+// asciiLogoWidth is the max line width of asciiLogo (87 visible chars + 1 trailing space).
+const asciiLogoWidth = 88
+
 func renderInfoContent(m *Model) string {
 	if m.channelInfo == nil {
 		return "Loading info..."
@@ -396,7 +399,7 @@ func (m Model) View() string {
 			statusLine = lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Render(m.downloadStatus)
 		}
 		logoLine := ""
-		if rightInnerWidth >= 74 {
+		if rightInnerWidth >= asciiLogoWidth && rightInnerHeight >= 20 {
 			logoLine = splashLogoStyle.Render(asciiLogo)
 		}
 		splashContent := lipgloss.JoinVertical(lipgloss.Center,
@@ -423,7 +426,7 @@ func (m Model) View() string {
 			statusLine = lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Render(m.downloadStatus)
 		}
 		logoLine := ""
-		if rightInnerWidth >= 74 {
+		if rightInnerWidth >= asciiLogoWidth && rightInnerHeight >= 20 {
 			logoLine = splashLogoStyle.Render(asciiLogo)
 		}
 		splashContent := lipgloss.JoinVertical(lipgloss.Center,
@@ -1669,24 +1672,11 @@ func renderNotifList(m Model) string {
 			helpStyle.Render("No notifications in this category."))
 	}
 
-	// Map filtered index back to original index for selection
-	origIdx := make([]int, len(filtered))
-	filteredMap := map[int]int{} // filtered index → original index
-	for fi, n := range filtered {
-		for oi, on := range m.notifications {
-			if n.ID == on.ID {
-				origIdx[fi] = oi
-				filteredMap[fi] = oi
-				break
-			}
-		}
-	}
-
 	lines := make([]string, 0, len(filtered))
 	for fi, n := range filtered {
 		cursor := "  "
 		style := normalItemStyle
-		if origIdx[fi] == m.selectedNotif {
+		if fi == m.selectedNotif {
 			if m.focusLeft {
 				cursor = symCursor
 				style = selectedItemStyle
@@ -1718,11 +1708,12 @@ func renderNotifList(m Model) string {
 }
 
 func renderNotifDetail(m Model) string {
-	if len(m.notifications) == 0 || m.selectedNotif >= len(m.notifications) {
+	filtered := m.filteredNotifications()
+	if len(filtered) == 0 || m.selectedNotif < 0 || m.selectedNotif >= len(filtered) {
 		return helpStyle.Render("Select a notification to view details.")
 	}
 
-	n := m.notifications[m.selectedNotif]
+	n := filtered[m.selectedNotif]
 	label := graph.ActivityTypeLabel(n.Subtype)
 
 	var b strings.Builder
@@ -1805,6 +1796,15 @@ func (m Model) filteredNotifications() []graph.NotificationItem {
 		}
 	}
 	return result
+}
+
+func (m Model) notifOriginalIndex(id string) int {
+	for i, n := range m.notifications {
+		if n.ID == id {
+			return i
+		}
+	}
+	return -1
 }
 
 func filteredAssignments(m Model) []graph.Assignment {

@@ -291,24 +291,25 @@ func (m Model) handlePollNotificationsMsg(msg pollNotificationsMsg) (tea.Model, 
 
 func updateNotifications(m *Model, items []graph.NotificationItem) {
 	selectedID := ""
-	if m.selectedNotif >= 0 && m.selectedNotif < len(m.notifications) {
-		selectedID = m.notifications[m.selectedNotif].ID
+	if m.selectedNotif >= 0 && m.selectedNotif < len(m.filteredNotifications()) {
+		selectedID = m.filteredNotifications()[m.selectedNotif].ID
 	}
 
 	m.notifications = items
 	m.notifLoaded = true
 	m.notifErr = nil
 	m.notificationsRefreshing = false
+	filtered := m.filteredNotifications()
 	if selectedID != "" {
-		for i, item := range items {
+		for i, item := range filtered {
 			if item.ID == selectedID {
 				m.selectedNotif = i
 				return
 			}
 		}
 	}
-	if m.selectedNotif >= len(items) {
-		m.selectedNotif = len(items) - 1
+	if m.selectedNotif >= len(filtered) {
+		m.selectedNotif = len(filtered) - 1
 	}
 	if m.selectedNotif < 0 {
 		m.selectedNotif = 0

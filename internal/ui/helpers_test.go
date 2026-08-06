@@ -325,6 +325,53 @@ func TestUpdateNotificationsUsesServerReadStateAndPreservesSelection(t *testing.
 	}
 }
 
+func TestUpdateNotificationsPreservesSelectionInFilteredList(t *testing.T) {
+	m := Model{
+		activityFilter: NotifFilterUnread,
+		notifications: []graph.NotificationItem{
+			{ID: "a", IsRead: false},
+			{ID: "b", IsRead: true},
+			{ID: "c", IsRead: false},
+		},
+		selectedNotif:           1, // points at "c" in the unread-filtered list
+		notificationsRefreshing: true,
+	}
+	updateNotifications(&m, []graph.NotificationItem{
+		{ID: "c", IsRead: false},
+		{ID: "d", IsRead: false},
+	})
+
+	filtered := m.filteredNotifications()
+	if m.selectedNotif < 0 || m.selectedNotif >= len(filtered) {
+		t.Fatalf("selected notification index %d out of range [0,%d)", m.selectedNotif, len(filtered))
+	}
+	if got := filtered[m.selectedNotif].ID; got != "c" {
+		t.Errorf("selected notification ID = %q, want %q (selection must follow the item across refreshes)", got, "c")
+	}
+}
+
+func TestUpdateNotificationsClampsSelectionWhenItemDisappears(t *testing.T) {
+	m := Model{
+		activityFilter: NotifFilterUnread,
+		notifications: []graph.NotificationItem{
+			{ID: "a", IsRead: false},
+			{ID: "b", IsRead: false},
+		},
+		selectedNotif: 1,
+	}
+	updateNotifications(&m, []graph.NotificationItem{
+		{ID: "z", IsRead: true},
+	})
+
+	filtered := m.filteredNotifications()
+	if len(filtered) != 0 {
+		t.Fatalf("expected empty filtered list, got %d items", len(filtered))
+	}
+	if m.selectedNotif != 0 {
+		t.Errorf("selected notification index = %d, want 0 when the filtered list is empty", m.selectedNotif)
+	}
+}
+
 func TestUpdateChannelMemberRoleUpdatesOptimistically(t *testing.T) {
 	m := Model{
 		channelMembers: []graph.TeamMember{{ID: "u1", Role: "Member"}, {ID: "u2", Role: "Owner"}},
