@@ -1,6 +1,6 @@
 package ui
 
-import "teamsTUI/internal/graph"
+import "lazyteams/internal/graph"
 
 type tickMsg struct{}
 type presenceTickMsg struct{}

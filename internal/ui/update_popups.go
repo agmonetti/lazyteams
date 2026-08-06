@@ -2,8 +2,8 @@ package ui
 
 import (
 	"strings"
-	"teamsTUI/internal/graph"
-	"teamsTUI/internal/ui/components/directorypicker"
+	"lazyteams/internal/graph"
+	"lazyteams/internal/ui/components/directorypicker"
 
 	tea "github.com/charmbracelet/bubbletea"
 )

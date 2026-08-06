@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
-	"teamsTUI/internal/graph"
+	"lazyteams/internal/graph"
 	"time"
 
 	"github.com/charmbracelet/glamour"

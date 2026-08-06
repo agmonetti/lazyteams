@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"teamsTUI/internal/helpers"
+	"lazyteams/internal/helpers"
 )
 
 var (

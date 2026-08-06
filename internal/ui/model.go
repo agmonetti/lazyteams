@@ -3,8 +3,8 @@ package ui
 import (
 	"os"
 
-	"teamsTUI/internal/graph"
-	"teamsTUI/internal/ui/components/directorypicker"
+	"lazyteams/internal/graph"
+	"lazyteams/internal/ui/components/directorypicker"
 
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"

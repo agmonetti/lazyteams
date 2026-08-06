@@ -11,8 +11,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"teamsTUI/internal/graph"
-	"teamsTUI/internal/helpers"
+	"lazyteams/internal/graph"
+	"lazyteams/internal/helpers"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"

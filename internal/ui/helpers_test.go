@@ -7,7 +7,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"teamsTUI/internal/graph"
+	"lazyteams/internal/graph"
 )
 
 func TestFilterMessagesMatchesBodyAndSenderCaseInsensitively(t *testing.T) {

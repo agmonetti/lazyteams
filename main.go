@@ -5,10 +5,10 @@ import (
 	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"teamsTUI/internal/auth"
-	"teamsTUI/internal/graph"
-	"teamsTUI/internal/helpers"
-	"teamsTUI/internal/ui"
+	"lazyteams/internal/auth"
+	"lazyteams/internal/graph"
+	"lazyteams/internal/helpers"
+	"lazyteams/internal/ui"
 )
 
 func main() {

@@ -8,8 +8,8 @@ import (
 	"runtime"
 	"sort"
 	"strings"
-	"teamsTUI/internal/graph"
-	"teamsTUI/internal/teams"
+	"lazyteams/internal/graph"
+	"lazyteams/internal/teams"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"

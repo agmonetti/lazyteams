@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"teamsTUI/internal/graph"
+	"lazyteams/internal/graph"
 )
 
 func TestAggregateChatAttachmentsDeduplicatesAndSortsNewestFirst(t *testing.T) {

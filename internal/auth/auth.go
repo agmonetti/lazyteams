@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"teamsTUI/internal/helpers"
+	"lazyteams/internal/helpers"
 )
 
 // loadTokensFile reads the tokens file into a map.

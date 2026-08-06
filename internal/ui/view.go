@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"teamsTUI/internal/graph"
+	"lazyteams/internal/graph"
 
 	"github.com/charmbracelet/lipgloss"
 )

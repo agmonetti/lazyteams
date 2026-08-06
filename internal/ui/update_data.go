@@ -3,8 +3,8 @@ package ui
 import (
 	"fmt"
 	"strings"
-	"teamsTUI/internal/graph"
-	"teamsTUI/internal/teams"
+	"lazyteams/internal/graph"
+	"lazyteams/internal/teams"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
