@@ -219,6 +219,10 @@ func (m Model) handleTickMsg(msg tickMsg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 	// Poll: refresh chats if we're in DMs and the loaded conversation is still open
 	cmds = append(cmds, pollChatsCmd(m.client))
+	if !m.notificationsRefreshing {
+		m.notificationsRefreshing = true
+		cmds = append(cmds, pollNotificationsCmd(m.client))
+	}
 	// Refresh messages if a conversation is open and the user isn't typing.
 	// DM files are aggregated from messages, so they refresh together.
 	if m.loadedConvID != "" && !m.isTyping && !m.focusLeft &&
@@ -268,10 +272,47 @@ func (m Model) handlePresenceResultMsg(msg presenceTickResultMsg) (tea.Model, te
 }
 
 func (m Model) handleNotificationsMsg(msg notificationsMsg) (tea.Model, tea.Cmd) {
-	m.notifications = msg.items
+	updateNotifications(&m, msg.items)
+	m.notificationsRefreshing = false
+	return m, nil
+}
+
+func (m Model) handlePollNotificationsMsg(msg pollNotificationsMsg) (tea.Model, tea.Cmd) {
+	m.notificationsRefreshing = false
+	if msg.err != nil {
+		if is401(msg.err) {
+			return m, queueTokenRenewal(&m, "notif")
+		}
+		return m, nil
+	}
+	updateNotifications(&m, msg.items)
+	return m, nil
+}
+
+func updateNotifications(m *Model, items []graph.NotificationItem) {
+	selectedID := ""
+	if m.selectedNotif >= 0 && m.selectedNotif < len(m.notifications) {
+		selectedID = m.notifications[m.selectedNotif].ID
+	}
+
+	m.notifications = items
 	m.notifLoaded = true
 	m.notifErr = nil
-	return m, nil
+	m.notificationsRefreshing = false
+	if selectedID != "" {
+		for i, item := range items {
+			if item.ID == selectedID {
+				m.selectedNotif = i
+				return
+			}
+		}
+	}
+	if m.selectedNotif >= len(items) {
+		m.selectedNotif = len(items) - 1
+	}
+	if m.selectedNotif < 0 {
+		m.selectedNotif = 0
+	}
 }
 
 func (m Model) handlePollChatsMsg(msg pollChatsMsg) (tea.Model, tea.Cmd) {

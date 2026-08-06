@@ -59,6 +59,10 @@ type notificationsMsg struct {
 type notificationsErrMsg struct {
 	err error
 }
+type pollNotificationsMsg struct {
+	items []graph.NotificationItem
+	err   error
+}
 
 type assignmentsMsg struct {
 	items []graph.Assignment
@@ -270,12 +274,13 @@ type Model struct {
 	presenceError    string
 
 	// Activity / Notifications
-	notifications  []graph.NotificationItem
-	notifLoaded    bool
-	selectedNotif  int
-	notifErr       error
-	activityFilter NotifFilter
-	mobileMode     bool
+	notifications           []graph.NotificationItem
+	notifLoaded             bool
+	notificationsRefreshing bool
+	selectedNotif           int
+	notifErr                error
+	activityFilter          NotifFilter
+	mobileMode              bool
 
 	// Assignments / Tasks
 	assignments      []graph.Assignment
@@ -425,31 +430,32 @@ func New(client *graph.Client, userName string, debug bool) Model {
 	prefs := loadPrefs()
 
 	m := Model{
-		client:                client,
-		focusLeft:             true,
-		focusList:             0,
-		loading:               true,
-		input:                 ta,
-		searchInput:           searchInput,
-		editInput:             editInput,
-		createFolderInput:     createFolderInput,
-		newDMQuery:            newDMInput,
-		createTeamInput:       createTeamInput,
-		createChannelInput:    createChannelInput,
-		createChannelType:     "Standard",
-		addMemberInput:        addMemberInput,
-		addChannelMemberInput: addChannelMemberInput,
-		assignFilter:          FilterUpcoming,
-		prefs:                 prefs,
-		chatUnread:            make(map[string]bool),
-		presence:              make(map[string]string),
-		selectedFiles:         make(map[int]bool),
-		folderCache:           make(map[string][]graph.DriveItem),
-		channelToTeam:         make(map[string]string),
-		userName:              userName,
-		debug:                 debug,
-		presenceOptions:       []string{"Available", "Busy", "DoNotDisturb", "BeRightBack", "Away", "Reset (Automatic)"},
-		reactionOptions:       []string{"like", "heart", "laugh", "surprised", "sad", "angry"},
+		client:                  client,
+		focusLeft:               true,
+		focusList:               0,
+		loading:                 true,
+		input:                   ta,
+		searchInput:             searchInput,
+		editInput:               editInput,
+		createFolderInput:       createFolderInput,
+		newDMQuery:              newDMInput,
+		createTeamInput:         createTeamInput,
+		createChannelInput:      createChannelInput,
+		createChannelType:       "Standard",
+		addMemberInput:          addMemberInput,
+		addChannelMemberInput:   addChannelMemberInput,
+		assignFilter:            FilterUpcoming,
+		prefs:                   prefs,
+		notificationsRefreshing: true,
+		chatUnread:              make(map[string]bool),
+		presence:                make(map[string]string),
+		selectedFiles:           make(map[int]bool),
+		folderCache:             make(map[string][]graph.DriveItem),
+		channelToTeam:           make(map[string]string),
+		userName:                userName,
+		debug:                   debug,
+		presenceOptions:         []string{"Available", "Busy", "DoNotDisturb", "BeRightBack", "Away", "Reset (Automatic)"},
+		reactionOptions:         []string{"like", "heart", "laugh", "surprised", "sad", "angry"},
 	}
 	loadPrefsIntoModel(&m, prefs)
 	return m

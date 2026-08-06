@@ -234,6 +234,31 @@ func TestChannelRootMessageResetsStackAndIgnoresStaleChannel(t *testing.T) {
 	}
 }
 
+func TestUpdateNotificationsUsesServerReadStateAndPreservesSelection(t *testing.T) {
+	m := Model{
+		notifications: []graph.NotificationItem{
+			{ID: "old", IsRead: false},
+			{ID: "selected", IsRead: true},
+		},
+		selectedNotif:           1,
+		notificationsRefreshing: true,
+	}
+	updateNotifications(&m, []graph.NotificationItem{
+		{ID: "selected", IsRead: false},
+		{ID: "new", IsRead: true},
+	})
+
+	if m.selectedNotif != 0 {
+		t.Errorf("selected notification index = %d, want 0", m.selectedNotif)
+	}
+	if m.notifications[0].IsRead {
+		t.Error("notification read state was not taken from the server response")
+	}
+	if m.notificationsRefreshing {
+		t.Error("notification refresh should be marked complete")
+	}
+}
+
 func TestFormatDownloadResultsKeepsEachResultVisible(t *testing.T) {
 	got := formatDownloadResults([]string{
 		"✓ first.pdf → /tmp/first.pdf",

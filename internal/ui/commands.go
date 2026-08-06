@@ -488,6 +488,13 @@ func loadNotificationsCmd(client *graph.Client) tea.Cmd {
 	}
 }
 
+func pollNotificationsCmd(client *graph.Client) tea.Cmd {
+	return func() tea.Msg {
+		items, err := client.FetchNotifications()
+		return pollNotificationsMsg{items: items, err: err}
+	}
+}
+
 func loadAssignmentsCmd(client *graph.Client) tea.Cmd {
 	return func() tea.Msg {
 		items, err := client.FetchAssignments()

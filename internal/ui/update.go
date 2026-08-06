@@ -556,7 +556,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case notificationsMsg:
 		return m.handleNotificationsMsg(msg)
 
+	case pollNotificationsMsg:
+		return m.handlePollNotificationsMsg(msg)
+
 	case notificationsErrMsg:
+		m.notificationsRefreshing = false
 		if is401(msg.err) {
 			cmd := queueTokenRenewal(&m, "notif")
 			m.notifLoaded = true
