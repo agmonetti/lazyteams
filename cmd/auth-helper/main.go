@@ -1794,9 +1794,19 @@ type spinner struct {
 	label  string
 }
 
+// spinnerFrames returns braille dots on Unix/Windows Terminal and an ASCII
+// fallback for legacy Windows consoles (cmd.exe/PowerShell conhost), which
+// cannot render U+2800 glyphs.
+func spinnerFrames() []string {
+	if runtime.GOOS == "windows" && os.Getenv("WT_SESSION") == "" {
+		return []string{"|", "/", "-", "\\"}
+	}
+	return []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+}
+
 func newSpinner(label string) *spinner {
 	return &spinner{
-		frames: []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"},
+		frames: spinnerFrames(),
 		stop:   make(chan struct{}),
 		label:  label,
 	}
