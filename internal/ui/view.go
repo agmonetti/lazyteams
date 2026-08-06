@@ -2,6 +2,8 @@ package ui
 
 import (
 	"fmt"
+	"os"
+	"runtime"
 	"strings"
 	"time"
 
@@ -10,7 +12,14 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-var tokenRenewalSpinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+// Braille dots on Unix/Windows Terminal; ASCII fallback for legacy Windows
+// consoles (cmd.exe/PowerShell conhost), which cannot render U+2800 glyphs.
+var tokenRenewalSpinnerFrames = func() []string {
+	if runtime.GOOS == "windows" && os.Getenv("WT_SESSION") == "" {
+		return []string{"|", "/", "-", "\\"}
+	}
+	return []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+}()
 
 const asciiLogo = `
                                                                                         
