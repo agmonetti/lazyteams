@@ -31,7 +31,7 @@ var HelpData = []HelpCategory{
 			{Key: "4", Description: "Workspace: Assignments"},
 			{Key: "Tab", Description: "Toggle focus"},
 			{Key: "↑/↓", Description: "Navigate lists/scroll"},
-			{Key: "g/G", Description: "Jump to top/bottom"},
+			{Key: "g/G", Description: "Jump to top/bottom (End = latest message)"},
 			{Key: "Enter", Description: "Open selected item"},
 			{Key: "p", Description: "Set Presence / Status"},
 			{Key: "?", Description: "Toggle this help menu"},

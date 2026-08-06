@@ -1438,7 +1438,7 @@ func (m Model) footerText() string {
 		if m.isSearching {
 			return dim.Render(" [↑/↓] Matches  [PgUp/PgDn] Scroll  [Esc] Clear & Close")
 		}
-		return dim.Render(" [↑/↓] Scroll  [i] Type  [/] Search  [u] Upload  [f] Files  [I] Info  [p] Status  [?] Help  [Esc/h] Back")
+		return dim.Render(" [↑/↓] Scroll  [G/End] Latest  [i] Type  [/] Search  [u] Upload  [f] Files  [I] Info  [p] Status  [?] Help  [Esc/h] Back")
 	case !m.focusLeft && m.viewMode == ModeInfo:
 		if m.channelInfo != nil && strings.ToLower(m.channelInfo.MembershipType) == "private" {
 			return dim.Render(" [↑/↓] Scroll  [a] Add member  [x] Remove  [r] Change role  [f] Files  [I] Chat  [p] Status  [?] Help  [Esc/h] Back")
