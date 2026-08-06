@@ -22,3 +22,5 @@ prefs.json
 *.env
 .config/lazyteams/
 coverage.out
+lazyteams
+lazyteams-auth
