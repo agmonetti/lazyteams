@@ -258,7 +258,7 @@ OPTIONS:
 	// Kill any stale browser holding our profile from a previous crashed run,
 	// so launching a fresh Playwright session can never fail on a locked profile.
 	helpers.KillZombieBrowser()
-
+	fmt.Println()
 	fmt.Println("╔════════════════════════════════════════════╗")
 	fmt.Println("║          lazyteams — Auth Helper           ║")
 	fmt.Println("╚════════════════════════════════════════════╝")
