@@ -229,7 +229,8 @@ func renderFilesContent(m *Model) string {
 	}
 
 	if m.downloadStatus != "" {
-		b.WriteString("\n\n  " + lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Render(m.downloadStatus))
+		status := strings.ReplaceAll(m.downloadStatus, "\n", "\n  ")
+		b.WriteString("\n\n  " + lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Render(status))
 	}
 
 	return b.String()
@@ -376,7 +377,7 @@ func sortChats(chats []graph.Chat, unreadMap map[string]bool, selfChatID string)
 		if p1 != p2 {
 			return p1 < p2
 		}
-		
+
 		u1, u2 := unreadMap[a.ID], unreadMap[b.ID]
 		if u1 && !u2 {
 			return true
@@ -384,7 +385,7 @@ func sortChats(chats []graph.Chat, unreadMap map[string]bool, selfChatID string)
 		if !u1 && u2 {
 			return false
 		}
-		
+
 		return a.LastUpdatedDateTime > b.LastUpdatedDateTime
 	})
 }

@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -189,5 +190,25 @@ func TestSmallHelpers(t *testing.T) {
 	}
 	if indexOf([]int{3, 5, 8}, 5) != 1 || indexOf([]int{3, 5, 8}, 9) != -1 {
 		t.Error("indexOf returned an unexpected result")
+	}
+}
+
+func TestFormatDownloadResultsKeepsEachResultVisible(t *testing.T) {
+	got := formatDownloadResults([]string{
+		"✓ first.pdf → /tmp/first.pdf",
+		"✓ second.docx → /tmp/second.docx",
+	})
+	want := "✓ first.pdf → /tmp/first.pdf\n✓ second.docx → /tmp/second.docx"
+	if got != want {
+		t.Errorf("formatDownloadResults() = %q, want %q", got, want)
+	}
+}
+
+func TestDownloadStatusIndentsEveryResultLine(t *testing.T) {
+	status := "first result\nsecond result\nthird result"
+	want := "first result\n  second result\n  third result"
+	got := strings.ReplaceAll(status, "\n", "\n  ")
+	if got != want {
+		t.Errorf("indented download status = %q, want %q", got, want)
 	}
 }

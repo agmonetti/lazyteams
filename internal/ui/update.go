@@ -637,7 +637,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case downloadDoneMsg:
 		m.downloading = false
-		m.downloadStatus = strings.Join(msg.results, " | ")
+		m.downloadStatus = formatDownloadResults(msg.results)
 		m.downloadStatusID++
 		if m.viewMode == ModeFiles {
 			m.viewport.SetContent(renderFilesContent(&m))
@@ -1175,6 +1175,10 @@ func containsString(values []string, target string) bool {
 		}
 	}
 	return false
+}
+
+func formatDownloadResults(results []string) string {
+	return strings.Join(results, "\n")
 }
 
 func queueTokenRenewal(m *Model, tokenType string) tea.Cmd {
