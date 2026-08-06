@@ -68,7 +68,15 @@ var HelpData = []HelpCategory{
 			{Key: "u", Description: "Upload a file"},
 		},
 	},
-
+	{
+		Title: "Channel Info (Private)",
+		Shortcuts: []Shortcut{
+			{Key: "a", Description: "Add channel member"},
+			{Key: "x", Description: "Remove channel member"},
+			{Key: "r", Description: "Change member role"},
+			{Key: "Esc/h", Description: "Back to chat"},
+		},
+	},
 	{
 		Title: "Files & Drive",
 		Shortcuts: []Shortcut{
@@ -79,6 +87,15 @@ var HelpData = []HelpCategory{
 			{Key: "F", Description: "New folder"},
 			{Key: "Del", Description: "Delete file/folder"},
 			{Key: "h/Esc", Description: "Back to parent"},
+		},
+	},
+	{
+		Title: "Activity",
+		Shortcuts: []Shortcut{
+			{Key: "Enter", Description: "View notification details"},
+			{Key: "o", Description: "Go to channel"},
+			{Key: "←/→", Description: "Filter notifications"},
+			{Key: "r", Description: "Retry loading"},
 		},
 	},
 	{
@@ -131,18 +148,19 @@ func renderHelpMenu() string {
 	var col2Sections []string
 	var col3Sections []string
 
-	for i, cat := range HelpData {
+	for _, cat := range HelpData {
 		rendered := renderCategory(cat)
-		if i == 0 || i == 1 { // Global & Navigation (11) + Workspaces (8)
+		switch cat.Title {
+		case "Global & Navigation", "Workspaces (Left Panel)":
 			col1Sections = append(col1Sections, rendered)
-			if i == 0 {
+			if cat.Title == "Global & Navigation" {
 				col1Sections = append(col1Sections, "\n")
 			}
-		} else if i == 2 { // Chat & Messages (10)
+		case "Chat & Messages", "Channel Info (Private)", "Activity":
 			col2Sections = append(col2Sections, rendered)
-		} else { // Files & Drive (7) + Assignments & Tasks (7)
+		default:
 			col3Sections = append(col3Sections, rendered)
-			if i == 3 {
+			if cat.Title == "Files & Drive" {
 				col3Sections = append(col3Sections, "\n")
 			}
 		}
