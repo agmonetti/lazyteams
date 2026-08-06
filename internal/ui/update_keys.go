@@ -2,11 +2,11 @@ package ui
 
 import (
 	"fmt"
-	"strings"
 	"lazyteams/internal/graph"
 	"lazyteams/internal/helpers"
 	"lazyteams/internal/teams"
 	"lazyteams/internal/ui/components/directorypicker"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -702,7 +702,7 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.folderStack = m.folderStack[:len(m.folderStack)-1]
 				m.selectedFiles = make(map[int]bool)
 				if len(m.folderStack) == 0 {
-					m.currentFilesDriveID = ""
+					m.currentFilesDriveID = m.currentFilesRoot.DriveID
 					// Check cache for root
 					cacheKey := "root:" + m.channels[m.selectedChan].ID
 					if cached, ok := m.folderCache[cacheKey]; ok {
@@ -712,7 +712,9 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 						m.viewport.GotoTop()
 					} else {
 						m.loading = true
-						cmds = append(cmds, loadFilesCmd(m.client, m.teams[m.selectedTeam].ID, m.channels[m.selectedChan].DisplayName, m.channels[m.selectedChan].ID))
+						ch := m.channels[m.selectedChan]
+						isPrivate := strings.EqualFold(ch.MembershipType, "private")
+						cmds = append(cmds, loadFilesCmd(m.client, m.teams[m.selectedTeam].ID, ch.ID, ch.DisplayName, isPrivate, m.currentFilesRoot))
 					}
 				} else {
 					if len(m.folderStack) == 0 {
@@ -767,7 +769,9 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					m.loading = true
 					// Start a fresh auto-refresh timer on entering Files so the
 					// first background refresh happens 30s after entering.
-					cmds = append(cmds, loadChannelRootCmd(m.client, m.teams[m.selectedTeam].ID, m.channels[m.selectedChan].ID, m.channels[m.selectedChan].DisplayName))
+					ch := m.channels[m.selectedChan]
+					isPrivate := strings.EqualFold(ch.MembershipType, "private")
+					cmds = append(cmds, loadChannelRootCmd(m.client, m.teams[m.selectedTeam].ID, ch.ID, ch.DisplayName, isPrivate))
 					cmds = append(cmds, filesRefreshTickCmd())
 				} else {
 					m.viewMode = ModeChat
@@ -1180,6 +1184,10 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				currentDriveID := ""
 				if len(m.folderStack) > 0 {
 					currentDriveID = m.folderStack[len(m.folderStack)-1].DriveID
+				} else {
+					// At the channel root the current drive lives in the
+					// root node (private channels have their own drive).
+					currentDriveID = m.currentFilesRoot.DriveID
 				}
 				node := FolderNode{ID: selected.ID, Name: selected.Name, DriveID: currentDriveID}
 				m.folderStack = appendFolderNode(m.folderStack, node)

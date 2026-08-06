@@ -889,25 +889,32 @@ func sendMessageCmd(client *graph.Client, channelID, content string, mentions []
 	}
 }
 
-func loadChannelRootCmd(client *graph.Client, teamID, channelID, channelName string) tea.Cmd {
+func loadChannelRootCmd(client *graph.Client, teamID, channelID, channelName string, isPrivate bool) tea.Cmd {
 	return func() tea.Msg {
-		folder, err := client.GetChannelFolder(teamID, channelName)
+		folder, err := client.GetChannelFolder(teamID, channelID, channelName, isPrivate)
 		if err != nil {
 			return channelRootMsg{channelID: channelID, err: err}
 		}
 		return channelRootMsg{
 			channelID: channelID,
 			node: FolderNode{
-				ID:   folder.ID,
-				Name: folder.Name,
+				ID:      folder.ID,
+				Name:    folder.Name,
+				DriveID: folder.ParentReference.DriveID,
 			},
 		}
 	}
 }
 
-func loadFilesCmd(client *graph.Client, teamID, channelName, channelID string) tea.Cmd {
+func loadFilesCmd(client *graph.Client, teamID, channelID, channelName string, isPrivate bool, rootNode FolderNode) tea.Cmd {
 	return func() tea.Msg {
-		files, err := client.GetChannelFiles(teamID, channelName)
+		var files []graph.DriveItem
+		var err error
+		if isPrivate && rootNode.DriveID != "" {
+			files, err = client.GetItemChildren(rootNode.DriveID, rootNode.ID)
+		} else {
+			files, err = client.GetChannelFiles(teamID, channelName)
+		}
 		if err != nil {
 			return filesErrMsg{err}
 		}
@@ -917,9 +924,15 @@ func loadFilesCmd(client *graph.Client, teamID, channelName, channelID string) t
 
 // refreshFilesCmd is loadFilesCmd for background auto-refresh: it keeps the
 // current selection instead of resetting to the top of the list.
-func refreshFilesCmd(client *graph.Client, teamID, channelName, channelID string) tea.Cmd {
+func refreshFilesCmd(client *graph.Client, teamID, channelID, channelName string, isPrivate bool, rootNode FolderNode) tea.Cmd {
 	return func() tea.Msg {
-		files, err := client.GetChannelFiles(teamID, channelName)
+		var files []graph.DriveItem
+		var err error
+		if isPrivate && rootNode.DriveID != "" {
+			files, err = client.GetItemChildren(rootNode.DriveID, rootNode.ID)
+		} else {
+			files, err = client.GetChannelFiles(teamID, channelName)
+		}
 		if err != nil {
 			return filesRefreshErrMsg{err: err}
 		}

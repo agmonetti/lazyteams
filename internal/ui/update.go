@@ -3,11 +3,11 @@ package ui
 import (
 	"errors"
 	"fmt"
-	"os"
-	"strings"
 	"lazyteams/internal/graph"
 	"lazyteams/internal/teams"
 	"lazyteams/internal/ui/components/directorypicker"
+	"os"
+	"strings"
 
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -410,6 +410,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// The channel root is represented by the header; only real subfolders belong in the stack.
 		m.folderStack = nil
+		m.currentFilesRoot = msg.node
 		m.currentFilesDriveID = msg.node.DriveID
 		// Check cache for root
 		cacheKey := "root:" + m.channels[m.selectedChan].ID
@@ -421,7 +422,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.viewport.SetContent(renderFilesContent(&m))
 			m.viewport.GotoTop()
 		} else {
-			cmds = append(cmds, loadFilesCmd(m.client, m.teams[m.selectedTeam].ID, m.channels[m.selectedChan].DisplayName, m.channels[m.selectedChan].ID))
+			ch := m.channels[m.selectedChan]
+			isPrivate := strings.EqualFold(ch.MembershipType, "private")
+			cmds = append(cmds, loadFilesCmd(m.client, m.teams[m.selectedTeam].ID, ch.ID, ch.DisplayName, isPrivate, msg.node))
 		}
 		return m, tea.Batch(cmds...)
 
@@ -545,7 +548,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				cmds = append(cmds, refreshFolderCmd(m.client, teamID, node))
 			} else {
 				ch := m.channels[m.selectedChan]
-				cmds = append(cmds, refreshFilesCmd(m.client, teamID, ch.DisplayName, ch.ID))
+				isPrivate := strings.EqualFold(ch.MembershipType, "private")
+				cmds = append(cmds, refreshFilesCmd(m.client, teamID, ch.ID, ch.DisplayName, isPrivate, m.currentFilesRoot))
 			}
 			// Re-arm the ticker only while the files view is active, so the
 			// refresh loop dies as soon as the user leaves Files.

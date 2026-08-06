@@ -12,15 +12,15 @@ import (
 )
 
 type DriveItem struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	WebUrl      string `json:"webUrl"`
-	DownloadUrl string `json:"@microsoft.graph.downloadUrl"`
+	ID              string `json:"id"`
+	Name            string `json:"name"`
+	WebUrl          string `json:"webUrl"`
+	DownloadUrl     string `json:"@microsoft.graph.downloadUrl"`
 	ParentReference *struct {
 		DriveID string `json:"driveId"`
 		ID      string `json:"id"`
 	} `json:"parentReference,omitempty"`
-	Folder      *struct {
+	Folder *struct {
 		ChildCount int `json:"childCount"`
 	} `json:"folder,omitempty"`
 	// RemoteItem indicates that this DriveItem is actually a "shortcut"
@@ -247,9 +247,35 @@ func (c *Client) DeleteRemoteItem(driveID, itemID string) error {
 	return nil
 }
 
+// GetChannelFilesFolder returns the channel's shared folder (filesFolder) via
+// the Graph endpoint. For private channels this resolves to the channel's own
+// SharePoint drive (parentReference.driveId), which is where its files live.
+func (c *Client) GetChannelFilesFolder(teamID, channelID string) (*DriveItem, error) {
+	endpoint := fmt.Sprintf("/teams/%s/channels/%s/filesFolder", teamID, channelID)
+	body, err := c.doReq(endpoint)
+	if err != nil {
+		return nil, err
+	}
+	var item DriveItem
+	if err := json.Unmarshal(body, &item); err != nil {
+		return nil, fmt.Errorf("error parsing channel files folder: %w", err)
+	}
+	return &item, nil
+}
+
 // GetChannelFolder gets the channel folder metadata (ID, name) from the drive.
 // GET /groups/{teamID}/drive/root:/{channelName}
-func (c *Client) GetChannelFolder(teamID, channelName string) (*DriveItem, error) {
+func (c *Client) GetChannelFolder(teamID, channelID, channelName string, isPrivate bool) (*DriveItem, error) {
+	if isPrivate {
+		item, err := c.GetChannelFilesFolder(teamID, channelID)
+		if err != nil {
+			return nil, err
+		}
+		if item.Name == "" {
+			item.Name = channelName
+		}
+		return item, nil
+	}
 	endpoint := fmt.Sprintf("/groups/%s/drive/root:/%s", teamID, url.PathEscape(channelName))
 	body, err := c.doReq(endpoint)
 	if err != nil {

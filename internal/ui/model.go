@@ -173,11 +173,12 @@ type Model struct {
 	height       int
 
 	// Viewports and state
-	leftVp      viewport.Model
-	viewport    viewport.Model
-	ready       bool
-	channelErr  error
-	folderStack []FolderNode // Stack of nodes for navigating back in subfolders and building the path
+	leftVp           viewport.Model
+	viewport         viewport.Model
+	ready            bool
+	channelErr       error
+	folderStack      []FolderNode // Stack of nodes for navigating back in subfolders and building the path
+	currentFilesRoot FolderNode   // Root node of the current channel (holds DriveID for private channels)
 
 	// File downloads
 	currentFilesDriveID string       // "" = default team drive; otherwise explicit drive ID
