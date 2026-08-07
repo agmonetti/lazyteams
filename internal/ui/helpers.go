@@ -91,6 +91,11 @@ func getAssignFile(a graph.Assignment, cursor int) *graph.AssignmentFile {
 // buildSharePointViewerURL converts a raw SharePoint file URL into
 // an Office Online viewer URL that works even for read-only files.
 func buildSharePointViewerURL(webURL string) string {
+	// empty URL case
+	if webURL == "" {
+	    return ""
+	}
+
 	// Extract base (scheme + host) and path
 	u, err := url.Parse(webURL)
 	if err != nil {
