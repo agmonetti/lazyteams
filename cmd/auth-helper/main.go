@@ -36,6 +36,21 @@ type tokens struct {
 var globalSpin *spinner
 var debugMode bool
 
+// legacyWindowsConsole reports whether output goes to a legacy Windows console
+// (cmd.exe/PowerShell conhost), where Unicode glyphs may render as '?'.
+func legacyWindowsConsole() bool {
+	return runtime.GOOS == "windows" && os.Getenv("WT_SESSION") == ""
+}
+
+// symOK is the check mark; ASCII "OK" on legacy Windows consoles.
+var symOK = "✓"
+
+func init() {
+	if legacyWindowsConsole() {
+		symOK = "OK"
+	}
+}
+
 func debugPrintf(format string, args ...interface{}) {
 	if debugMode {
 		fmt.Printf(format, args...)
@@ -68,10 +83,10 @@ func printBox(lines []string) {
 
 func notifyTokenCaptured(name string) {
 	if globalSpin != nil {
-		fmt.Printf("\r\033[K  ✓  %-45s\n", name)
+		fmt.Printf("\r\033[K  %s  %-45s\n", symOK, name)
 		globalSpin.SetLabel("Waiting for next token...")
 	} else {
-		fmt.Printf("  ✓  %-45s\n", name)
+		fmt.Printf("  %s  %-45s\n", symOK, name)
 	}
 }
 
@@ -216,7 +231,7 @@ func printTokenStatus(t *tokens) {
 	fmt.Println()
 	for _, tk := range tokens {
 		if tk.val != "" {
-			fmt.Printf("  ✓  %s\n", tk.name)
+			fmt.Printf("  %s  %s\n", symOK, tk.name)
 			captured++
 		} else {
 			fmt.Printf("  ·  %s\n", tk.name)
@@ -298,7 +313,7 @@ OPTIONS:
 		if err := os.RemoveAll(sessionDir); err != nil {
 			fmt.Printf("  ⚠ Error clearing session: %v\n", err)
 		} else {
-			fmt.Println("  ✓ Browser session cleared.")
+			fmt.Println("  " + symOK + "  Browser session cleared.")
 			fmt.Println("  Next run will require login.")
 		}
 		if !clearTokens {
@@ -312,7 +327,7 @@ OPTIONS:
 		if err := os.Remove(tokensPath); err != nil && !os.IsNotExist(err) {
 			fmt.Printf("  ⚠ Error clearing tokens: %v\n", err)
 		} else {
-			fmt.Println("  ✓ Tokens cleared.")
+			fmt.Println("  " + symOK + "  Tokens cleared.")
 		}
 		os.Exit(0)
 	}
@@ -434,7 +449,7 @@ OPTIONS:
 		if renewOnly == "" && !intentional && incomplete {
 			fmt.Println("\n\n[!] Browser closed before login completed. Clearing session...")
 			os.RemoveAll(sessionDir)
-			fmt.Println("  ✓ Session cleared. Next run will require login.")
+			fmt.Println("  " + symOK + "  Session cleared. Next run will require login.")
 		}
 		select {
 		case browserClosed <- struct{}{}:
@@ -567,7 +582,7 @@ OPTIONS:
 			has := captured.graphToken != ""
 			captured.mu.Unlock()
 			if has {
-				fmt.Println("  ✓ Token captured! Browser closes in 3s...")
+				fmt.Println("  " + symOK + "  Token captured! Browser closes in 3s...")
 				time.Sleep(3 * time.Second)
 				break
 			}
@@ -586,7 +601,7 @@ OPTIONS:
 
 	fmt.Println()
 	if captured.allCaptured() {
-		fmt.Println("✓ All tokens captured.")
+		fmt.Println(symOK + " All tokens captured.")
 	} else {
 		fmt.Println("⚠ Partial tokens — saving what's available.")
 	}
@@ -863,7 +878,7 @@ func waitForTeamsPage(ctx playwright.BrowserContext, timeout time.Duration) (pla
 				lastURL = candidateURL
 			}
 			if isTeamsURL(candidateURL) {
-				debugPrintf("  ✓ Login completed: %s\n", candidateURL)
+				debugPrintf("  %s  Login completed: %s\n", symOK, candidateURL)
 				return candidate, nil
 			}
 		}
@@ -1242,7 +1257,7 @@ func fullRenewal(pw *playwright.Playwright, page playwright.Page, ctx playwright
 							globalSpin.Stop("")
 							globalSpin = nil
 						}
-						fmt.Println("  ✓ Token captured! Browser closes in 10s...")
+						fmt.Println("  " + symOK + "  Token captured! Browser closes in 10s...")
 						time.Sleep(10 * time.Second)
 						break
 					}
@@ -1636,7 +1651,7 @@ func manualFabricTokenCapture(pw *playwright.Playwright, sessionDir string, capt
 			if captured.fabricToken == "" {
 				captured.fabricToken = token
 				notifyTokenCaptured("TEAMS_FABRIC_TOKEN")
-				fmt.Println("\n  ✓ TEAMS_FABRIC_TOKEN manually captured!")
+				fmt.Println("\n  " + symOK + "  TEAMS_FABRIC_TOKEN manually captured!")
 			}
 			captured.mu.Unlock()
 		}
@@ -1685,7 +1700,7 @@ func manualFabricTokenCapture(pw *playwright.Playwright, sessionDir string, capt
 				globalSpin.Stop("")
 				globalSpin = nil
 			}
-			fmt.Println("  ✓ Token captured! Browser closes in 10s...")
+			fmt.Println("  " + symOK + "  Token captured! Browser closes in 10s...")
 			time.Sleep(10 * time.Second) // wait before closing browser
 			return
 		}
@@ -1798,7 +1813,7 @@ type spinner struct {
 // fallback for legacy Windows consoles (cmd.exe/PowerShell conhost), which
 // cannot render U+2800 glyphs.
 func spinnerFrames() []string {
-	if runtime.GOOS == "windows" && os.Getenv("WT_SESSION") == "" {
+	if legacyWindowsConsole() {
 		return []string{"|", "/", "-", "\\"}
 	}
 	return []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
