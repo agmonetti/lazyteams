@@ -1,18 +1,20 @@
+//go:build unix
+
 package ui
 
 import "testing"
 
-func TestReactionEmojiOnUNIX(t *testing.T) {
-    cases := []struct {
-        input    string
-        expected string
-    }{
-        {"like","👍"},
-        {"yes-tone0","👍"},
-        {"heart", "\u2764\ufe0f"},
-        {"laugh", "😂"},
+func TestReactionEmojiOnUnix(t *testing.T) {
+	cases := []struct {
+		input    string
+		expected string
+	}{
+		{"like", "👍"},
+		{"yes-tone0", "👍"},
+		{"heart", "\u2764\ufe0f"},
+		{"laugh", "😂"},
 		{"surprised", "😮"},
-		{"sad","😢"},
+		{"sad", "😢"},
 		{"angry", "😡"},
 		// Skin tone variants
 		{"yes-tone1", "👍\U0001F3FB"},
@@ -48,29 +50,29 @@ func TestReactionEmojiOnUNIX(t *testing.T) {
 		//  hex codepoint
 		{"1f525_fire", "🔥"},
 		{"1f4a9_poop", "💩"},
-		{"1f600_grinning"  , "😀"},
-		{"1f601_beaming"   , "😁"},
-		{"1f602_joy"       , "😂"},
-		{"1f923_rofl"      , "🤣"},
-		{"1f60a_blush"     , "😊"},
-		{"1f60d_hearts"    , "😍"},
-		{"1f914_think"     , "🤔"},
-		{"1f44f_clap"      , "👏"},
-		{"1f4a5_boom"      , "💥"},
-		{"1f6b6_walking"   , "🚶"},
-		{"1f355_pizza"     , "🍕"},
-		{"1f40d_snake"     , "🐍"},
-		{"1f980_crab"      , "🦀"},
-		{"1f47e_alien"     , "👾"},
+		{"1f600_grinning", "😀"},
+		{"1f601_beaming", "😁"},
+		{"1f602_joy", "😂"},
+		{"1f923_rofl", "🤣"},
+		{"1f60a_blush", "😊"},
+		{"1f60d_hearts", "😍"},
+		{"1f914_think", "🤔"},
+		{"1f44f_clap", "👏"},
+		{"1f4a5_boom", "💥"},
+		{"1f6b6_walking", "🚶"},
+		{"1f355_pizza", "🍕"},
+		{"1f40d_snake", "🐍"},
+		{"1f980_crab", "🦀"},
+		{"1f47e_alien", "👾"},
 
-		//not known 
-		{"unknown","●"},
-		{"xyz_something","●"},
-    }
-    for _, tc := range cases {
-        got := reactionEmoji(tc.input)
-        if got != tc.expected {
-            t.Errorf("emoji(%q) = %q, want %q", tc.input, got, tc.expected)
-        }
-    }
+		//not known
+		{"unknown", "●"},
+		{"xyz_something", "●"},
+	}
+	for _, tc := range cases {
+		got := reactionEmoji(tc.input)
+		if got != tc.expected {
+			t.Errorf("emoji(%q) = %q, want %q", tc.input, got, tc.expected)
+		}
+	}
 }

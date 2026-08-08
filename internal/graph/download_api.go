@@ -18,7 +18,7 @@ func (c *Client) DownloadAMSImage(imageURL string) (io.ReadCloser, error) {
 	req.Header.Set("Accept", "image/*, application/json, text/plain, */*")
 	req.Header.Set("x-ms-client-caller", "newChat")
 	req.Header.Set("x-ms-client-type", "web")
-	
+
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
 		return nil, err

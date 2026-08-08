@@ -186,7 +186,7 @@ func (c *Client) SearchUsers(query string) ([]UserSearchResult, error) {
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("ConsistencyLevel", "eventual")
 	resp, err := c.HTTPClient.Do(req)
-	
+
 	var results []UserSearchResult
 	if err == nil {
 		defer resp.Body.Close()

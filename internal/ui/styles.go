@@ -16,8 +16,8 @@ var (
 	colorRed      = lipgloss.Color("9")
 	colorYellow   = lipgloss.Color("11")
 	colorGreen    = lipgloss.Color("10")
-	colorSelBg    = lipgloss.Color("235")     // Dark background for selected item
-	colorSelBgF   = lipgloss.Color("236")     // Background for focused selected item
+	colorSelBg    = lipgloss.Color("235") // Dark background for selected item
+	colorSelBgF   = lipgloss.Color("236") // Background for focused selected item
 
 	// === Panels ===
 	paneStyle = lipgloss.NewStyle().
@@ -74,7 +74,7 @@ var (
 				Padding(0, 1)
 
 	tabDividerStyle = lipgloss.NewStyle().
-				Foreground(colorMuted)
+			Foreground(colorMuted)
 
 	// === Meta (timestamps, dates) ===
 	metaStyle = lipgloss.NewStyle().

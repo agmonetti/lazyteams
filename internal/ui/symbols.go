@@ -60,7 +60,7 @@ func reactionEmoji(key string) string {
 		case "1f410_goat":
 			return "[GOAT]"
 		}
-		
+
 		// Fallback for dynamic emojis like "1f44d_thumbsup"
 		parts := strings.SplitN(key, "_", 2)
 		if len(parts) == 2 {
@@ -71,53 +71,92 @@ func reactionEmoji(key string) string {
 
 	switch key {
 	// Standard
-	case "like", "yes-tone0":      return "👍"
-	case "heart":                   return "❤️"
-	case "laugh":                   return "😂"
-	case "surprised":               return "😮"
-	case "sad":                     return "😢"
-	case "angry":                   return "😡"
+	case "like", "yes-tone0":
+		return "👍"
+	case "heart":
+		return "❤️"
+	case "laugh":
+		return "😂"
+	case "surprised":
+		return "😮"
+	case "sad":
+		return "😢"
+	case "angry":
+		return "😡"
 	// Skin tone variants
-	case "yes-tone1":               return "👍🏻"
-	case "yes-tone2":               return "👍🏼"
-	case "yes-tone3":               return "👍🏽"
-	case "yes-tone4":               return "👍🏾"
-	case "yes-tone5":               return "👍🏿"
+	case "yes-tone1":
+		return "👍🏻"
+	case "yes-tone2":
+		return "👍🏼"
+	case "yes-tone3":
+		return "👍🏽"
+	case "yes-tone4":
+		return "👍🏾"
+	case "yes-tone5":
+		return "👍🏿"
 	// Extra
-	case "heartlightblue":          return "💙"
+	case "heartlightblue":
+		return "💙"
 
 	// Expressions
-	case "speechless":              return "😶"
-	case "fire":                    return "🔥"
-	case "faceinclouds":            return "😶‍🌫️"
-	case "think":                   return "🤔"
-	case "rofl":                    return "🤣"
-	case "fingerscrossed":          return "🤞"
-	case "cool":                    return "😎"
-	case "lipssealed":              return "🤐"
-	case "angryface":               return "😠"
-	case "sweat":                   return "😓"
-	case "diagonalmouth":           return "😑"
+	case "speechless":
+		return "😶"
+	case "fire":
+		return "🔥"
+	case "faceinclouds":
+		return "😶‍🌫️"
+	case "think":
+		return "🤔"
+	case "rofl":
+		return "🤣"
+	case "fingerscrossed":
+		return "🤞"
+	case "cool":
+		return "😎"
+	case "lipssealed":
+		return "🤐"
+	case "angryface":
+		return "😠"
+	case "sweat":
+		return "😓"
+	case "diagonalmouth":
+		return "😑"
 
 	// Gestures
-	case "no", "no-tone0":          return "🙅"
-	case "no-tone1":                return "🙅🏻"
-	case "no-tone2":                return "🙅🏼"
-	case "no-tone3":                return "🙅🏽"
-	case "no-tone4":                return "🙅🏾"
-	case "no-tone5":                return "🙅🏿"
-	case "clappinghands", "clappinghands-tone0": return "👏"
-	case "clappinghands-tone1":     return "👏🏻"
-	case "clappinghands-tone2":     return "👏🏼"
-	case "clappinghands-tone3":     return "👏🏽"
-	case "clappinghands-tone4":     return "👏🏾"
-	case "clappinghands-tone5":     return "👏🏿"
-	case "follow":                  return "👀"
+	case "no", "no-tone0":
+		return "🙅"
+	case "no-tone1":
+		return "🙅🏻"
+	case "no-tone2":
+		return "🙅🏼"
+	case "no-tone3":
+		return "🙅🏽"
+	case "no-tone4":
+		return "🙅🏾"
+	case "no-tone5":
+		return "🙅🏿"
+	case "clappinghands", "clappinghands-tone0":
+		return "👏"
+	case "clappinghands-tone1":
+		return "👏🏻"
+	case "clappinghands-tone2":
+		return "👏🏼"
+	case "clappinghands-tone3":
+		return "👏🏽"
+	case "clappinghands-tone4":
+		return "👏🏾"
+	case "clappinghands-tone5":
+		return "👏🏿"
+	case "follow":
+		return "👀"
 
 	// Objects / symbols
-	case "soccerball":              return "⚽"
-	case "1f389_partypopper":       return "🎉"
-	case "1f410_goat":              return "🐐"
+	case "soccerball":
+		return "⚽"
+	case "1f389_partypopper":
+		return "🎉"
+	case "1f410_goat":
+		return "🐐"
 
 	default:
 		parts := strings.SplitN(key, "_", 2)

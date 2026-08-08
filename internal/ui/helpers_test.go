@@ -508,107 +508,107 @@ func TestDownloadStatusIndentsEveryResultLine(t *testing.T) {
 }
 
 func TestIsTextFile(t *testing.T) {
-    cases := []struct {
-        input    string
-        expected bool
-    }{
-        {"README.md", true},
-        {"data.json", true},
-        {"image.png", false},
-        {"archive.zip", false},
-        {"SCRIPT.GO", true},  // case insensitive
-        {"noextension", false},
-        {"doc.js0n", false},
-        {"file1.npm", false},
-        {"file.os.txt", true},
-        {"file.txts", false},
-        {"file.docx", false},
-        {"file.rar", false},
-        {"", false},
-        {".gitignore", false},
-        {"file.go.bak", false},
-    }
+	cases := []struct {
+		input    string
+		expected bool
+	}{
+		{"README.md", true},
+		{"data.json", true},
+		{"image.png", false},
+		{"archive.zip", false},
+		{"SCRIPT.GO", true}, // case insensitive
+		{"noextension", false},
+		{"doc.js0n", false},
+		{"file1.npm", false},
+		{"file.os.txt", true},
+		{"file.txts", false},
+		{"file.docx", false},
+		{"file.rar", false},
+		{"", false},
+		{".gitignore", false},
+		{"file.go.bak", false},
+	}
 
-    for _, tc := range cases {
-        got := isTextFile(tc.input)
-        if got != tc.expected {
-            t.Errorf("isTextFile(%q) = %v, want %v", tc.input, got, tc.expected)
-        }
-    }
+	for _, tc := range cases {
+		got := isTextFile(tc.input)
+		if got != tc.expected {
+			t.Errorf("isTextFile(%q) = %v, want %v", tc.input, got, tc.expected)
+		}
+	}
 }
 
 func TestBuildSharePointViewerURL(t *testing.T) {
-    cases := []struct {
-        input    string
-        expected string
-    }{
-        {
-            // normal case
-            input:    "https://tenant.sharepoint.com/sites/team/file.docx",
-            expected: "https://tenant.sharepoint.com/:b:/r/sites/team/file.docx?csf=1&web=1",
-        },
-        {
-            // existing query params stay
-            input:    "https://tenant.sharepoint.com/sites/team/file.docx?version=2",
-            expected: "https://tenant.sharepoint.com/:b:/r/sites/team/file.docx?csf=1&version=2&web=1",
-        },
-        {
-            //invalid URL → same URL
-            input:    "://invalid",
-            expected: "://invalid",
-        },
-        {
-            // empty URL → empty URL
-            input:    "",
-            expected: "",
-        },
-    }
+	cases := []struct {
+		input    string
+		expected string
+	}{
+		{
+			// normal case
+			input:    "https://tenant.sharepoint.com/sites/team/file.docx",
+			expected: "https://tenant.sharepoint.com/:b:/r/sites/team/file.docx?csf=1&web=1",
+		},
+		{
+			// existing query params stay
+			input:    "https://tenant.sharepoint.com/sites/team/file.docx?version=2",
+			expected: "https://tenant.sharepoint.com/:b:/r/sites/team/file.docx?csf=1&version=2&web=1",
+		},
+		{
+			//invalid URL → same URL
+			input:    "://invalid",
+			expected: "://invalid",
+		},
+		{
+			// empty URL → empty URL
+			input:    "",
+			expected: "",
+		},
+	}
 
-    for _, tc := range cases {
-        got := buildSharePointViewerURL(tc.input)
-        if got != tc.expected {
-            t.Errorf("buildSharePointViewerURL(%q)\n  got:  %q\n  want: %q", tc.input, got, tc.expected)
-        }
-    }
+	for _, tc := range cases {
+		got := buildSharePointViewerURL(tc.input)
+		if got != tc.expected {
+			t.Errorf("buildSharePointViewerURL(%q)\n  got:  %q\n  want: %q", tc.input, got, tc.expected)
+		}
+	}
 }
 func TestIsSharePointURL(t *testing.T) {
-    cases := []struct {
-        input    string
-        expected bool
-    }{
-        {"sHarepoint.com", true},
-        {"SHAREPOINT.COM", true},
-        {"sharepo1nt.com", false},
-        {"sharepoint.live.com", false},
-        {"onedrive.live.com", true},  
-        {"onedrive.com", false},
-        {"onedrive.sharepoint.com", true},
-        {"", false},
-        {"drive.live.com", false},
-    }
+	cases := []struct {
+		input    string
+		expected bool
+	}{
+		{"sHarepoint.com", true},
+		{"SHAREPOINT.COM", true},
+		{"sharepo1nt.com", false},
+		{"sharepoint.live.com", false},
+		{"onedrive.live.com", true},
+		{"onedrive.com", false},
+		{"onedrive.sharepoint.com", true},
+		{"", false},
+		{"drive.live.com", false},
+	}
 
-    for _, tc := range cases {
-        got := isSharePointURL(tc.input)
-        if got != tc.expected {
-            t.Errorf("isSharePointURL(%q) = %v, want %v", tc.input, got, tc.expected)
-        }
-    }
+	for _, tc := range cases {
+		got := isSharePointURL(tc.input)
+		if got != tc.expected {
+			t.Errorf("isSharePointURL(%q) = %v, want %v", tc.input, got, tc.expected)
+		}
+	}
 }
 
 func TestPluralS(t *testing.T) {
-    cases := []struct {
-        input    int
-        expected string
-    }{
-        {1, ""},
-        {0, "s"},
-        {2, "s"},
-        {-1, "s"},
-    }
-    for _, tc := range cases {
-        got := pluralS(tc.input)
-        if got != tc.expected {
-            t.Errorf("pluralS(%d) = %q, want %q", tc.input, got, tc.expected)
-        }
-    }
+	cases := []struct {
+		input    int
+		expected string
+	}{
+		{1, ""},
+		{0, "s"},
+		{2, "s"},
+		{-1, "s"},
+	}
+	for _, tc := range cases {
+		got := pluralS(tc.input)
+		if got != tc.expected {
+			t.Errorf("pluralS(%d) = %q, want %q", tc.input, got, tc.expected)
+		}
+	}
 }

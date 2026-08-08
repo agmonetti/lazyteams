@@ -93,7 +93,7 @@ func getAssignFile(a graph.Assignment, cursor int) *graph.AssignmentFile {
 func buildSharePointViewerURL(webURL string) string {
 	// empty URL case
 	if webURL == "" {
-	    return ""
+		return ""
 	}
 
 	// Extract base (scheme + host) and path

@@ -122,18 +122,18 @@ func (c *Client) FetchAssignments() ([]Assignment, error) {
 	assignments := make([]Assignment, 0, len(raw.Value))
 	for _, v := range raw.Value {
 		a := Assignment{
-			ID:                v.ID,
-			DisplayName:       v.DisplayName,
-			ClassID:           v.ClassID,
-			Status:            v.Status,
-			IsCompleted:       v.IsCompleted,
-			WebUrl:            v.WebUrl,
-			SubmissionStatus:  "working", // default fallback
+			ID:               v.ID,
+			DisplayName:      v.DisplayName,
+			ClassID:          v.ClassID,
+			Status:           v.Status,
+			IsCompleted:      v.IsCompleted,
+			WebUrl:           v.WebUrl,
+			SubmissionStatus: "working", // default fallback
 		}
 		if v.Instructions != nil {
 			a.Instructions = cleanHTML(v.Instructions.Content)
 		}
-		
+
 		if len(v.Submissions) > 0 {
 			a.SubmissionID = v.Submissions[0].ID
 			sub := v.Submissions[0]
@@ -152,7 +152,7 @@ func (c *Client) FetchAssignments() ([]Assignment, error) {
 					a.SubmittedDateTime = t
 				}
 			}
-			
+
 			for _, r := range sub.Resources {
 				if r.Resource.DisplayName != "" {
 					fu := r.Resource.FileUrl
@@ -166,7 +166,7 @@ func (c *Client) FetchAssignments() ([]Assignment, error) {
 					})
 				}
 			}
-			
+
 			for _, sr := range sub.SubmittedResources {
 				if sr.Resource.DisplayName != "" {
 					fu := sr.Resource.FileUrl
@@ -235,20 +235,20 @@ func (c *Client) FetchAssignmentFiles(classID, assignmentID string) (refFiles, m
 	var res struct {
 		Value []struct {
 			ResourcesFolderUrl string `json:"resourcesFolderUrl"`
-				Resources         []struct {
-					ID       string `json:"id"`
-					Resource struct {
-						DisplayName string `json:"displayName"`
-						FileUrl     string `json:"fileUrl"`
-					} `json:"resource"`
-				} `json:"resources"`
-				SubmittedResources []struct {
-					ID       string `json:"id"`
-					Resource struct {
-						DisplayName string `json:"displayName"`
-						FileUrl     string `json:"fileUrl"`
-					} `json:"resource"`
-				} `json:"submittedResources"`
+			Resources          []struct {
+				ID       string `json:"id"`
+				Resource struct {
+					DisplayName string `json:"displayName"`
+					FileUrl     string `json:"fileUrl"`
+				} `json:"resource"`
+			} `json:"resources"`
+			SubmittedResources []struct {
+				ID       string `json:"id"`
+				Resource struct {
+					DisplayName string `json:"displayName"`
+					FileUrl     string `json:"fileUrl"`
+				} `json:"resource"`
+			} `json:"submittedResources"`
 		} `json:"value"`
 	}
 

@@ -1,8 +1,8 @@
 package ui
 
 import (
-	"strings"
 	"lazyteams/internal/graph"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
