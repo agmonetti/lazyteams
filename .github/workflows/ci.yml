@@ -21,6 +21,15 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Check formatting
+        run: |
+          files=$(gofmt -s -l .)
+          if [ -n "$files" ]; then
+            echo "Unformatted files:"
+            echo "$files"
+            exit 1
+          fi
+
       - name: Run tests
         run: go test ./...
 
