@@ -43,7 +43,7 @@ func cleanHTMLForEdit(content string) string {
 		if len(sub) < 2 {
 			return match
 		}
-		return "@" + sub[1]
+		return "@" + strings.TrimPrefix(sub[1], "@")
 	})
 
 	return strings.TrimSpace(content)

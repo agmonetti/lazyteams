@@ -69,7 +69,7 @@ func cleanHTML(s string) string {
 	s = MentionSpan.ReplaceAllStringFunc(s, func(m string) string {
 		sub := MentionSpan.FindStringSubmatch(m)
 		if len(sub) > 1 {
-			return "\x1E@" + sub[1] + "\x1F"
+			return "\x1E@" + strings.TrimPrefix(sub[1], "@") + "\x1F"
 		}
 		return m
 	})
