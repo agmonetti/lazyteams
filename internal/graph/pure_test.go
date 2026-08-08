@@ -104,6 +104,24 @@ func TestCleanHTML(t *testing.T) {
 	}
 }
 
+func TestCleanHTMLMentionNormalizesSingleAt(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"span already contains @", `<p>Hi <span itemtype="http://schema.skype.com/Mention">@Alice</span></p>`, "\x1E@Alice\x1F"},
+		{"span without @", `<p>Hi <span itemtype="http://schema.skype.com/Mention">Bob</span></p>`, "\x1E@Bob\x1F"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := cleanHTML(tt.in); !strings.Contains(got, tt.want) {
+				t.Errorf("cleanHTML(%q) = %q, want it to contain %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestChatSvcError(t *testing.T) {
 	err := (&ChatSvcError{StatusCode: 401, Message: "expired"}).Error()
 	if err != "chatsvc error 401: expired" {
