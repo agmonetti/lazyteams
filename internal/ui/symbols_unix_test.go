@@ -46,6 +46,10 @@ func TestReactionEmojiOnUnix(t *testing.T) {
 		{"soccerball", "⚽"},
 		{"1f389_partypopper", "🎉"},
 		{"1f410_goat", "🐐"},
+		{"faceinclouds", "😶‍🌫️"},
+		{"fingerscrossed", "🤞"},
+		{"sweat", "😓"},
+		{"diagonalmouth", "😑"},
 
 		//  hex codepoint
 		{"1f525_fire", "🔥"},
