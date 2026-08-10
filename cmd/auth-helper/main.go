@@ -18,6 +18,7 @@ import (
 	"github.com/mxschmitt/playwright-go"
 
 	"lazyteams/internal/helpers"
+	"lazyteams/internal/version"
 )
 
 type tokens struct {
@@ -243,6 +244,10 @@ func printTokenStatus(t *tokens) {
 func main() {
 	args := os.Args[1:]
 	for _, arg := range args {
+		if arg == "--version" || arg == "-v" {
+			fmt.Println(version.Version)
+			return
+		}
 		if arg == "--help" || arg == "-h" {
 			fmt.Print(`lazyteams-auth — Microsoft Teams authentication helper
 
@@ -251,6 +256,7 @@ USAGE:
   ./lazyteams-auth --renew <token>         Renew one token
   ./lazyteams-auth --renew edu --show      Renew EDU with visible browser
   ./lazyteams-auth --debug                 Enable detailed diagnostic output
+  ./lazyteams-auth --version               Show the build version
   ./lazyteams-auth --help                  Show this help
 
 OPTIONS:

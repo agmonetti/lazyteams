@@ -11,7 +11,6 @@ debug_mensajes.json
 debug_api.go
 debug*.log
 debug*.json
-cmd/debug-*/
 .plan/
 
 # Credentials
@@ -24,3 +23,4 @@ prefs.json
 coverage.out
 lazyteams
 lazyteams-auth
+dist/

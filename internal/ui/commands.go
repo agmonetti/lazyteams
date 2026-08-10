@@ -7,6 +7,7 @@ import (
 	"io"
 	"lazyteams/internal/graph"
 	"lazyteams/internal/helpers"
+	"lazyteams/internal/version"
 	"net/http"
 	"os"
 	"os/exec"
@@ -25,6 +26,21 @@ const unreadSweepBatchSize = 8
 const unreadSweepDelay = 500 * time.Millisecond
 const filesRefreshInterval = 30
 const tokenRenewalSpinnerInterval = 80 * time.Millisecond
+
+const githubReleasesURL = "https://api.github.com/repos/agmonetti/lazyteams/releases/latest"
+
+// checkUpdateCmd queries the GitHub releases API once and reports the latest
+// tag. Any failure is swallowed and reported as an empty update so a missing
+// network or rate limit never disturbs the UI.
+func checkUpdateCmd() tea.Cmd {
+	return func() tea.Msg {
+		tag, err := version.LatestRelease(githubReleasesURL)
+		if err != nil {
+			return updateCheckMsg{}
+		}
+		return updateCheckMsg{latest: tag}
+	}
+}
 
 func reloadChannelsAfterDelayCmd() tea.Cmd {
 	return tea.Tick(2*time.Second, func(t time.Time) tea.Msg {

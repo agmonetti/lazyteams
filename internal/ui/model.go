@@ -285,6 +285,9 @@ type Model struct {
 	activityFilter          NotifFilter
 	mobileMode              bool
 
+	// Latest release tag when an update is available (from the GitHub check).
+	latestVersion string
+
 	// Assignments / Tasks
 	assignments      []graph.Assignment
 	assignLoaded     bool
@@ -478,6 +481,7 @@ func (m Model) Init() tea.Cmd {
 		unreadSweepCmd(),
 		filesRefreshTickCmd(),
 		loadNotificationsCmd(m.client),
+		checkUpdateCmd(),
 	)
 }
 

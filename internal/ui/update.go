@@ -6,6 +6,7 @@ import (
 	"lazyteams/internal/graph"
 	"lazyteams/internal/teams"
 	"lazyteams/internal/ui/components/directorypicker"
+	"lazyteams/internal/version"
 	"os"
 	"strings"
 
@@ -165,6 +166,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			enqueueTokenRenewal(&m, tokenType)
 		}
 		return m, startNextTokenRenewal(&m)
+
+	case updateCheckMsg:
+		if msg.latest != "" && version.Compare(version.Version, msg.latest) < 0 {
+			m.latestVersion = msg.latest
+		}
+		return m, nil
 
 	case tokenRenewalTickMsg:
 		if !m.tokenRenewing {

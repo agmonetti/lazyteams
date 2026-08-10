@@ -9,21 +9,27 @@ import (
 	"lazyteams/internal/graph"
 	"lazyteams/internal/helpers"
 	"lazyteams/internal/ui"
+	"lazyteams/internal/version"
 )
 
 func main() {
 	// Kill any stale browser holding our profile from a previous crashed run.
 	helpers.KillZombieBrowser()
 
-	// Handle --help flag
+	// Handle --help and --version flags
 	debugMode := false
 	for _, arg := range os.Args[1:] {
+		if arg == "--version" || arg == "-v" {
+			fmt.Println(version.Version)
+			os.Exit(0)
+		}
 		if arg == "--help" || arg == "-h" {
 			fmt.Print(`lazyteams — Microsoft Teams Terminal UI
 
 USAGE:
   ./lazyteams                         Start the TUI
   ./lazyteams --help                  Show this help
+  ./lazyteams --version               Show the build version
   ./lazyteams --debug                 Enable detailed auth-helper logging
 
 AUTH (run ./lazyteams-auth):

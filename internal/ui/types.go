@@ -30,6 +30,10 @@ type navigateToThreadMsg struct {
 }
 type markNotifReadMsg struct{ err error }
 
+// updateCheckMsg carries the result of the GitHub release check. latest is
+// empty when no update is available or the check failed silently.
+type updateCheckMsg struct{ latest string }
+
 type tokenRenewedMsg struct {
 	tokenType string
 	err       error

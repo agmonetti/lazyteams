@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"lazyteams/internal/graph"
+	"lazyteams/internal/version"
 
 	"github.com/charmbracelet/lipgloss"
 )
@@ -415,7 +416,7 @@ func (m Model) View() string {
 			logoLine,
 			"",
 			splashTitleStyle.Render("Microsoft Teams Terminal UI"),
-			splashSubStyle.Render("v1.0.0-beta"),
+			splashSubStyle.Render(version.Version),
 			"",
 			splashHintStyle.Render("[↑/↓] Navigate teams  ·  [Enter] Open channel"),
 			"",
@@ -442,7 +443,7 @@ func (m Model) View() string {
 			logoLine,
 			"",
 			splashTitleStyle.Render("Microsoft Teams Terminal UI"),
-			splashSubStyle.Render("v1.0.0-beta"),
+			splashSubStyle.Render(version.Version),
 			"",
 			splashHintStyle.Render("[↑/↓] Navigate teams  ·  [Enter] Open channel"),
 			"",
@@ -1384,6 +1385,14 @@ func renderThreeTabs(current ViewMode, nameA, nameB, nameC string) (string, stri
 }
 
 func (m Model) footerText() string {
+	text := m.footerTextInner()
+	if m.latestVersion != "" {
+		text += "  " + lipgloss.NewStyle().Foreground(colorYellow).Render("New version "+m.latestVersion+" available")
+	}
+	return text
+}
+
+func (m Model) footerTextInner() string {
 	dim := lipgloss.NewStyle().Foreground(colorMuted)
 
 	workspaceHint := dim.Render("[1-4] Workspace")
