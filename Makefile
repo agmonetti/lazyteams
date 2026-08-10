@@ -9,6 +9,8 @@ build: ## Build the TUI and auth-helper with the injected version
 
 release: ## Tag and cross-compile binaries (make release VERSION=v1.2.3)
 	@test "$(VERSION)" != "dev" || (echo "Usage: make release VERSION=v1.2.3" && exit 1)
+	@echo "About to tag and push $(VERSION) — Ctrl-C to abort"
+	@sleep 3
 	@git tag $(VERSION) && git push origin $(VERSION)
 	@mkdir -p dist
 	@for t in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64; do \
