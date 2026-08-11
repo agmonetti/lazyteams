@@ -1,10 +1,22 @@
 <p align="center">
-  <img src="assets/banner.svg" alt="ms-teams-TUI" width="900">
+  <img src="assets/banner.svg" alt="lazyteams" width="900">
 </p>
 
 <p align="center">
   A fast, keyboard-driven Microsoft Teams client for the terminal.
 </p>
+
+<p align="center">
+  <a href="https://lazyteams.agmonetti.workers.dev">Explore</a> ✦
+  <a href="#quick-start">Quick Start</a> ✦
+  <a href="https://lazyteams.agmonetti.workers.dev/#first-time-setup">Getting Started</a> ✦
+  <a href="https://lazyteams.agmonetti.workers.dev">Documentation</a> ✦
+  <a href="CONTRIBUTING.md">Contributing</a> ✦
+  <a href="SECURITY.md">Security</a> ✦
+  <a href="LICENSE">License</a>
+</p>
+
+TUI client for Microsoft Teams...
 
 TUI client for Microsoft Teams. Runs entirely in the terminal — no Electron, no browser. Built with **Clean Architecture + Elm Architecture (Bubble Tea)**. Single static binary.
 
