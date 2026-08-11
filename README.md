@@ -16,8 +16,6 @@
   <a href="LICENSE">License</a>
 </p>
 
-TUI client for Microsoft Teams...
-
 TUI client for Microsoft Teams. Runs entirely in the terminal — no Electron, no browser. Built with **Clean Architecture + Elm Architecture (Bubble Tea)**. Single static binary.
 
 ```
