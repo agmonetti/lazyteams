@@ -10,6 +10,75 @@ import (
 	"lazyteams/internal/graph"
 )
 
+func TestMessageLink(t *testing.T) {
+	tests := []struct {
+		name string
+		msg  graph.Message
+		want string
+	}{
+		{
+			name: "link attachment preferred",
+			msg: graph.Message{
+				Attachments: []graph.Attachment{
+					{Name: "Form", URL: "https://forms.cloud.microsoft/Pages/ResponsePage.aspx?id=1", Type: "link"},
+				},
+				Body: "See the form https://example.com/other",
+			},
+			want: "https://forms.cloud.microsoft/Pages/ResponsePage.aspx?id=1",
+		},
+		{
+			name: "markdown link in body",
+			msg: graph.Message{
+				Body: "Here: [docs](https://example.com/page)",
+			},
+			want: "https://example.com/page",
+		},
+		{
+			name: "plain url in body",
+			msg: graph.Message{
+				Body: "Visit https://example.com/foo now",
+			},
+			want: "https://example.com/foo",
+		},
+		{
+			name: "url stops at closing paren",
+			msg: graph.Message{
+				Body: "Go to https://example.com/a)b)",
+			},
+			want: "https://example.com/a",
+		},
+		{
+			name: "forms url with underscore preserved",
+			msg: graph.Message{
+				Body: "https://forms.cloud.microsoft/Pages/ResponsePage.aspx?id=0HlJNB3TV0yLoEka_0rK7X7PrFheVB5IhOuu9wZSryVUMEQwRURFUlc4VlpVVEtKVk9PNzAzNzcwVS4u",
+			},
+			want: "https://forms.cloud.microsoft/Pages/ResponsePage.aspx?id=0HlJNB3TV0yLoEka_0rK7X7PrFheVB5IhOuu9wZSryVUMEQwRURFUlc4VlpVVEtKVk9PNzAzNzcwVS4u",
+		},
+		{
+			name: "file attachment fallback",
+			msg: graph.Message{
+				Attachments: []graph.Attachment{
+					{Name: "file.pdf", URL: "https://example.com/files/file.pdf", Type: "file"},
+				},
+				Body: "attachment",
+			},
+			want: "https://example.com/files/file.pdf",
+		},
+		{
+			name: "no link",
+			msg:  graph.Message{Body: "just text, no url"},
+			want: "",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := messageLink(tt.msg); got != tt.want {
+				t.Errorf("messageLink() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestFilterMessagesMatchesBodyAndSenderCaseInsensitively(t *testing.T) {
 	m := Model{}
 	messages := []graph.Message{

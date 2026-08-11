@@ -55,6 +55,7 @@ var HelpData = []HelpCategory{
 		Title: "Chat & Messages",
 		Shortcuts: []Shortcut{
 			{Key: "c", Description: "Toggle cursor mode"},
+			{Key: "o", Description: "Open link in browser (cursor mode)"},
 			{Key: "Enter", Description: "Reply to thread/DM"},
 			{Key: "v", Description: "View/Download Image"},
 			{Key: "e / E", Description: "React / Edit"},

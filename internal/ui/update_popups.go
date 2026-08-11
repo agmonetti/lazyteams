@@ -410,6 +410,20 @@ func (m Model) handleCursorModeTeams(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) 
 			m.viewport.SetYOffset(cursorLine - m.viewport.Height + 3)
 		}
 		return m, nil, true
+	case "o":
+		rootMsgs := rootMessages(m.messages)
+		if m.messageCursor < len(rootMsgs) {
+			link := messageLink(rootMsgs[m.messageCursor])
+			if link != "" {
+				openBrowser(link)
+				m.downloadStatus = "✓ Opening link in browser"
+			} else {
+				m.downloadStatus = "✗ No link in this message"
+			}
+			m.downloadStatusID++
+			return m, clearStatusAfter(m.downloadStatusID), true
+		}
+		return m, nil, true
 	case "enter":
 		rootMsgs := rootMessages(m.messages)
 		if m.messageCursor < len(rootMsgs) {
@@ -431,6 +445,20 @@ func (m Model) handleCursorModeTeams(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) 
 
 func (m Model) handleCursorModeDMs(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
 	switch msg.String() {
+	case "o":
+		validMsgs := validDMMessages(m.messages)
+		if m.messageCursor < len(validMsgs) {
+			link := messageLink(validMsgs[m.messageCursor])
+			if link != "" {
+				openBrowser(link)
+				m.downloadStatus = "✓ Opening link in browser"
+			} else {
+				m.downloadStatus = "✗ No link in this message"
+			}
+			m.downloadStatusID++
+			return m, clearStatusAfter(m.downloadStatusID), true
+		}
+		return m, nil, true
 	case "enter":
 		validMsgs := validDMMessages(m.messages)
 		if m.messageCursor < len(validMsgs) {

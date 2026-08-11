@@ -44,6 +44,34 @@ func makeClickableLink(text, url string) string {
 	return fmt.Sprintf("\x1b]8;;%s\x1b\\%s\x1b]8;;\x1b\\", safeURL, text)
 }
 
+var (
+	markdownLinkRe = regexp.MustCompile(`\[[^\]]*\]\((https?://[^)\s]+)\)`)
+	plainURLRe     = regexp.MustCompile(`https?://[^\s)\x1e\x1f]+`)
+)
+
+// messageLink returns the first openable link in a message: an explicit link
+// attachment, then the first http(s) URL in the body, then any other
+// attachment URL. Returns "" when the message carries no link.
+func messageLink(msg graph.Message) string {
+	for _, att := range msg.Attachments {
+		if att.Type == "link" && att.URL != "" {
+			return att.URL
+		}
+	}
+	if m := markdownLinkRe.FindStringSubmatch(msg.Body); len(m) > 1 {
+		return m[1]
+	}
+	if m := plainURLRe.FindString(msg.Body); m != "" {
+		return m
+	}
+	for _, att := range msg.Attachments {
+		if att.URL != "" && att.Type != "link" {
+			return att.URL
+		}
+	}
+	return ""
+}
+
 func openBrowser(url string) {
 	// Security filter: only allow safe web schemes to prevent local file execution
 	if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {

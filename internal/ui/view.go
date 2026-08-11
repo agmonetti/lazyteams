@@ -1201,6 +1201,11 @@ func (m Model) View() string {
 				leftBanner = lipgloss.NewStyle().
 					Foreground(colorMuted).
 					Render("⟳ Creating team...")
+			} else if m.downloadStatus != "" {
+				// Transient operation feedback (uploads, downloads, link open, ...)
+				leftBanner = lipgloss.NewStyle().
+					Foreground(colorMuted).
+					Render(m.downloadStatus)
 			} else {
 				// Notification summary
 				var parts []string
@@ -1404,9 +1409,9 @@ func (m Model) footerTextInner() string {
 	case m.showThread:
 		return dim.Render(" [↑/↓] Navigate  [i/r] Reply  [e] React  [E] Edit  [Del] Delete  [Esc] Close")
 	case m.cursorMode && m.workspace == WorkspaceDMs:
-		return dim.Render(" [↑/↓] Navigate  [Enter] Reply  [e] React  [E] Edit  [Del] Delete  [Esc] Exit")
+		return dim.Render(" [↑/↓] Navigate  [Enter] Reply  [o] Open link  [e] React  [E] Edit  [Del] Delete  [Esc] Exit")
 	case m.cursorMode:
-		return dim.Render(" [↑/↓] Navigate  [Enter] Thread  [e] React  [E] Edit  [Del] Delete  [Esc] Exit")
+		return dim.Render(" [↑/↓] Navigate  [Enter] Thread  [o] Open link  [e] React  [E] Edit  [Del] Delete  [Esc] Exit")
 	case m.showCreateChannelPopup && m.createChannelStep == 0:
 		return dim.Render(" [Enter] Next   [Esc] Cancel")
 	case m.showCreateChannelPopup && m.createChannelStep == 1:
