@@ -1,11 +1,14 @@
 package ui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
 
 	"lazyteams/internal/graph"
+
+	"github.com/charmbracelet/lipgloss"
 )
 
 func TestRootMessages(t *testing.T) {
@@ -129,6 +132,67 @@ func TestCleanHTMLForEdit(t *testing.T) {
 				t.Errorf("cleanHTMLForEdit(%q) = %q, want %q", tt.in, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestRenderMarkdownWrapsLongURL(t *testing.T) {
+	const url = "https://forms.cloud.microsoft/Pages/ResponsePage.aspx?id=0HlJNB3TV0yLoEka_0rK7X7PrFheVB5IhOuu9wZSryVUMEQwRURFUlc4VlpVVEtKVk9PNzAzNzcwVS4u"
+
+	for _, width := range []int{49, 60, 90} {
+		t.Run(fmt.Sprintf("width%d", width), func(t *testing.T) {
+			out := renderMarkdown(url, width)
+			for i, line := range strings.Split(out, "\n") {
+				if w := lipgloss.Width(line); w > width {
+					t.Errorf("line %d width = %d > %d: %q", i, w, width, line)
+				}
+			}
+			reconstructed := ansiToken.ReplaceAllString(out, "")
+			reconstructed = strings.ReplaceAll(reconstructed, " ", "")
+			reconstructed = strings.ReplaceAll(reconstructed, "\n", "")
+			if reconstructed != url {
+				t.Errorf("URL not fully preserved after wrapping:\n got: %q\nwant: %q", reconstructed, url)
+			}
+		})
+	}
+}
+
+func TestRenderMarkdownWrapsLongURLNeverBreaksAtUnderscore(t *testing.T) {
+	const url = "https://forms.cloud.microsoft/Pages/ResponsePage.aspx?id=0HlJNB3TV0yLoEka_0rK7X7PrFheVB5IhOuu9wZSryVUMEQwRURFUlc4VlpVVEtKVk9PNzAzNzcwVS4u"
+
+	out := renderMarkdown(url, 60)
+	for i, line := range strings.Split(out, "\n") {
+		clean := ansiToken.ReplaceAllString(line, "")
+		if strings.HasSuffix(clean, "_") {
+			t.Errorf("line %d ends with an underscore: %q", i, clean)
+		}
+	}
+}
+
+func TestWrapAnsiPreservesUTF8(t *testing.T) {
+	const emoji = "🚀"
+	content := "hello " + emoji + " " + "https://example.com/aaa/bbb-" + strings.Repeat("x", 40) + " bye"
+
+	out := wrapAnsi(content, 30)
+	reconstructed := ansiToken.ReplaceAllString(out, "")
+	reconstructed = strings.ReplaceAll(reconstructed, "\n", "")
+	reconstructed = strings.ReplaceAll(reconstructed, " ", "")
+	if reconstructed != strings.ReplaceAll(content, " ", "") {
+		t.Errorf("wrapAnsi corrupted UTF-8:\n got: %q\nwant: %q", reconstructed, strings.ReplaceAll(content, " ", ""))
+	}
+	if !strings.Contains(out, emoji) {
+		t.Errorf("emoji not preserved as a whole unit:\n%q", out)
+	}
+}
+
+func TestWrapAnsiNormalizesCRLF(t *testing.T) {
+	out := wrapAnsi("first line\r\nsecond line\r\nthird line", 40)
+	for i, line := range strings.Split(out, "\n") {
+		if strings.Contains(line, "\r") {
+			t.Errorf("line %d still contains a carriage return: %q", i, line)
+		}
+	}
+	if strings.Count(out, "\n") != 2 {
+		t.Errorf("wrapAnsi should keep the two line breaks, got %d: %q", strings.Count(out, "\n"), out)
 	}
 }
 
