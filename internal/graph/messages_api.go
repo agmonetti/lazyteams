@@ -309,6 +309,11 @@ type MessagePage struct {
 
 // GetMessagesFromLink fetches a page of messages using a backwardLink URL directly.
 func (c *Client) GetMessagesFromLink(link string) (MessagePage, error) {
+	// The link comes from a server response; never attach the WebToken to a
+	// non-Microsoft host.
+	if err := validateMicrosoftURL(link); err != nil {
+		return MessagePage{}, err
+	}
 	req, err := http.NewRequest(http.MethodGet, link, nil)
 	if err != nil {
 		return MessagePage{}, err

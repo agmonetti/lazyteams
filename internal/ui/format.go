@@ -315,7 +315,7 @@ func formatMessagesWithCursor(messages []graph.Message, width, cursor int, curso
 		}
 		timeStr := msg.CreatedAt.Local().Format("02/01 15:04")
 		formattedTime := metaStyle.Render(fmt.Sprintf("[%s]", timeStr))
-		sender := selectedItemStyle.Render(msg.FromName)
+		sender := selectedItemStyle.Render(sanitizeName(msg.FromName))
 
 		var attachmentsStr string
 		for _, att := range msg.Attachments {
@@ -479,7 +479,7 @@ func formatMessagesDM(messages []graph.Message, width int, selfName, selfID stri
 			}
 			content += "\n"
 		} else {
-			sender := selectedItemStyle.Render(msg.FromName)
+			sender := selectedItemStyle.Render(sanitizeName(msg.FromName))
 			tsRaw := metaStyle.Render(timeStr)
 			header := fmt.Sprintf("%s %s:", tsRaw, sender)
 

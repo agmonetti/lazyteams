@@ -41,7 +41,19 @@ func copyToClipboard(text string) error {
 func makeClickableLink(text, url string) string {
 	// Strip any escape characters from the URL to prevent terminal injection
 	safeURL := strings.ReplaceAll(url, "\x1b", "")
-	return fmt.Sprintf("\x1b]8;;%s\x1b\\%s\x1b]8;;\x1b\\", safeURL, text)
+	// Strip terminal control characters from the visible text as well: sender
+	// and attachment names come from untrusted server data.
+	safeText := sanitizeName(text)
+	return fmt.Sprintf("\x1b]8;;%s\x1b\\%s\x1b]8;;\x1b\\", safeURL, safeText)
+}
+
+// nameControlRe strips C0/C1 control bytes (ESC, BEL, CR, LF, ...) from
+// single-line names rendered into the terminal, preserving the \x11/\x12
+// search sentinels and the \x1E/\x1F mention sentinels.
+var nameControlRe = regexp.MustCompile(`[\x00-\x10\x13-\x1D\x7F\x80-\x9F]`)
+
+func sanitizeName(s string) string {
+	return nameControlRe.ReplaceAllString(s, "")
 }
 
 var (
@@ -225,7 +237,7 @@ func renderFilesContent(m *Model) string {
 		if f.LastModifiedDateTime != "" {
 			if t, err := time.Parse(time.RFC3339, f.LastModifiedDateTime); err == nil {
 				age := t.Local().Format("02 Jan 2006")
-				who := f.LastModifiedBy.User.DisplayName
+				who := sanitizeName(f.LastModifiedBy.User.DisplayName)
 				if who != "" {
 					if len(who) > 25 {
 						who = who[:25]

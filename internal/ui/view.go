@@ -56,7 +56,7 @@ func renderInfoContent(m *Model) string {
 			"Type:    %s\n"+
 			"Email:   %s\n"+
 			"Created: %s\n",
-		ch.DisplayName, ch.MembershipType, email, created,
+		sanitizeName(ch.DisplayName), ch.MembershipType, email, created,
 	)
 
 	if len(m.channelMembers) > 0 {
@@ -73,7 +73,7 @@ func renderInfoContent(m *Model) string {
 			content += fmt.Sprintf("%s%s%s  %s\n",
 				cursor,
 				roleIcon,
-				member.DisplayName,
+				sanitizeName(member.DisplayName),
 				metaStyle.Render(member.Mail),
 			)
 		}
@@ -90,7 +90,7 @@ func renderInfoContent(m *Model) string {
 	}
 
 	if m.downloadStatus != "" {
-		content += "\n\n" + lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Render(m.downloadStatus)
+		content += "\n\n" + lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Render(sanitizeName(m.downloadStatus))
 	}
 
 	return content
@@ -198,7 +198,7 @@ func (m Model) View() string {
 					if m.chatUnread[ch.ID] {
 						badge = unreadDotStyle.Render(" ●")
 					}
-					name := ch.DisplayName(m.selfID)
+					name := sanitizeName(ch.DisplayName(m.selfID))
 					presence := ""
 					for _, mem := range ch.Members {
 						if mem.UserID != m.selfID {
@@ -241,7 +241,7 @@ func (m Model) View() string {
 						if m.chatUnread[ch.ID] {
 							badge = unreadDotStyle.Render(" ●")
 						}
-						name := ch.DisplayName(m.selfID)
+						name := sanitizeName(ch.DisplayName(m.selfID))
 						line := style.Render(name) + badge
 						leftContent += cursor + line + "\n"
 					}
@@ -406,7 +406,7 @@ func (m Model) View() string {
 	if m.loading && m.focusLeft && m.workspace != WorkspaceActivity && m.workspace != WorkspaceAssignments {
 		statusLine := ""
 		if m.downloadStatus != "" {
-			statusLine = lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Render(m.downloadStatus)
+			statusLine = lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Render(sanitizeName(m.downloadStatus))
 		}
 		logoLine := ""
 		if rightInnerWidth >= asciiLogoWidth && rightInnerHeight >= 20 {
@@ -433,7 +433,7 @@ func (m Model) View() string {
 		// === SPLASH SCREEN ===
 		statusLine := ""
 		if m.downloadStatus != "" {
-			statusLine = lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Render(m.downloadStatus)
+			statusLine = lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Render(sanitizeName(m.downloadStatus))
 		}
 		logoLine := ""
 		if rightInnerWidth >= asciiLogoWidth && rightInnerHeight >= 20 {
@@ -458,7 +458,7 @@ func (m Model) View() string {
 		// Header: only if data is loaded
 		if m.loadedConvID != "" && m.loadedConvID == m.activeConversationID() && len(m.chats) > 0 && m.selectedChat < len(m.chats) {
 			tabChat, tabFiles := renderTabs(m.viewMode, ModeChat, "Messages", "Files")
-			title := fmt.Sprintf("@ %s", m.chats[m.selectedChat].DisplayName(m.selfID))
+			title := fmt.Sprintf("@ %s", sanitizeName(m.chats[m.selectedChat].DisplayName(m.selfID)))
 			header := titleStyle.Render(title)
 			rightContent += fmt.Sprintf("%s\n%s %s %s\n\n", header, tabChat, tabDividerStyle.Render("·"), tabFiles)
 		}
@@ -490,7 +490,7 @@ func (m Model) View() string {
 			}
 
 			if m.replyToMsg != nil {
-				name := m.replyToMsg.FromName
+				name := sanitizeName(m.replyToMsg.FromName)
 				if name == "User" {
 					name = m.userName
 				}
@@ -513,10 +513,10 @@ func (m Model) View() string {
 		// Header: only if data is loaded
 		if m.loadedConvID != "" && m.loadedConvID == m.activeConversationID() && len(m.channels) > 0 && m.selectedChan < len(m.channels) {
 			tabChat, tabFiles, tabInfo := renderThreeTabs(m.viewMode, "Posts", "Files", "Info")
-			title := fmt.Sprintf("# %s", m.channels[m.selectedChan].DisplayName)
+			title := fmt.Sprintf("# %s", sanitizeName(m.channels[m.selectedChan].DisplayName))
 			if m.viewMode == ModeFiles && len(m.folderStack) > 0 {
 				for _, node := range m.folderStack {
-					title += fmt.Sprintf(" / %s", node.Name)
+					title += fmt.Sprintf(" / %s", sanitizeName(node.Name))
 				}
 			}
 			header := titleStyle.Render(title)
@@ -553,7 +553,7 @@ func (m Model) View() string {
 						cursor = symCursor
 						style = selectedItemStyle
 					}
-					popupLines = append(popupLines, fmt.Sprintf("%s%s", cursor, style.Render(s.DisplayName)))
+					popupLines = append(popupLines, fmt.Sprintf("%s%s", cursor, style.Render(sanitizeName(s.DisplayName))))
 				}
 				mentionPopup := lipgloss.NewStyle().
 					Border(lipgloss.RoundedBorder()).
@@ -675,7 +675,7 @@ func (m Model) View() string {
 					cursor = symCursor
 					style = selectedItemStyle
 				}
-				line := fmt.Sprintf("%s%s\n   %s", cursor, style.Render(u.DisplayName), metaStyle.Render(u.Mail))
+				line := fmt.Sprintf("%s%s\n   %s", cursor, style.Render(sanitizeName(u.DisplayName)), metaStyle.Render(u.Mail))
 				popupContent += line + "\n"
 			}
 		}
@@ -796,7 +796,7 @@ func (m Model) View() string {
 			rightPanel = lipgloss.Place(lipgloss.Width(rightPanel), lipgloss.Height(rightPanel), lipgloss.Center, lipgloss.Center, popup)
 		}
 	} else if m.showDeleteChannelPopup && m.selectedChan < len(m.channels) {
-		ch := m.channels[m.selectedChan].DisplayName
+		ch := sanitizeName(m.channels[m.selectedChan].DisplayName)
 		popupContent := fmt.Sprintf("Delete channel \"%s\"?\n\n[Enter/y] Confirm   [Esc/n] Cancel", ch)
 		popup := lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
@@ -811,7 +811,7 @@ func (m Model) View() string {
 			rightPanel = lipgloss.Place(lipgloss.Width(rightPanel), lipgloss.Height(rightPanel), lipgloss.Center, lipgloss.Center, popup)
 		}
 	} else if m.showDeleteTeamPopup && m.selectedTeam < len(m.teams) {
-		team := m.teams[m.selectedTeam].DisplayName
+		team := sanitizeName(m.teams[m.selectedTeam].DisplayName)
 		popupContent := fmt.Sprintf("Delete team \"%s\"?\n\n[Enter/y] Confirm   [Esc/n] Cancel", team)
 		popup := lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
@@ -827,7 +827,7 @@ func (m Model) View() string {
 		}
 	} else if m.showDeleteFilePopup && m.selectedFile < len(m.files) {
 		target := m.files[m.selectedFile]
-		popupContent := fmt.Sprintf("Delete \"%s\"?\n\n[Enter/y] Confirm   [Esc/n] Cancel", target.Name)
+		popupContent := fmt.Sprintf("Delete \"%s\"?\n\n[Enter/y] Confirm   [Esc/n] Cancel", sanitizeName(target.Name))
 		popup := lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(lipgloss.Color("#E74C3C")).
@@ -872,7 +872,7 @@ func (m Model) View() string {
 				"Archived:    %s\n"+
 				"Members:     %d  Owners: %d  Guests: %d\n\n"+
 				"[Esc] Close",
-			t.DisplayName, t.Description, t.Visibility,
+			sanitizeName(t.DisplayName), sanitizeName(t.Description), t.Visibility,
 			archived, t.Summary.MembersCount, t.Summary.OwnersCount, t.Summary.GuestsCount,
 		)
 		popup := lipgloss.NewStyle().
@@ -891,7 +891,7 @@ func (m Model) View() string {
 
 	if m.showRemoveMemberPopup && m.membersCursor < len(m.teamMembers) {
 		member := m.teamMembers[m.membersCursor]
-		content := fmt.Sprintf("Remove \"%s\" from team?\n\n[Enter/y] Confirm   [Esc/n] Cancel", member.DisplayName)
+		content := fmt.Sprintf("Remove \"%s\" from team?\n\n[Enter/y] Confirm   [Esc/n] Cancel", sanitizeName(member.DisplayName))
 		popup := lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(lipgloss.Color("#E74C3C")).
@@ -907,7 +907,7 @@ func (m Model) View() string {
 
 	if m.showRemoveChannelMemberPopup && m.channelMemberCursor < len(m.channelMembers) {
 		member := m.channelMembers[m.channelMemberCursor]
-		content := fmt.Sprintf("Remove \"%s\" from channel?\n\n[Enter/y] Confirm   [Esc/n] Cancel", member.DisplayName)
+		content := fmt.Sprintf("Remove \"%s\" from channel?\n\n[Enter/y] Confirm   [Esc/n] Cancel", sanitizeName(member.DisplayName))
 		popup := lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(lipgloss.Color("#E74C3C")).
@@ -930,7 +930,7 @@ func (m Model) View() string {
 		} else {
 			memberCursor = ">"
 		}
-		content := fmt.Sprintf("Change role of \"%s\":\n\n  %s Owner\n  %s Member\n\n[↑/↓] Select   [Enter] Confirm   [Esc] Cancel", member.DisplayName, ownerCursor, memberCursor)
+		content := fmt.Sprintf("Change role of \"%s\":\n\n  %s Owner\n  %s Member\n\n[↑/↓] Select   [Enter] Confirm   [Esc] Cancel", sanitizeName(member.DisplayName), ownerCursor, memberCursor)
 		popup := lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(lipgloss.Color("11")).
@@ -984,7 +984,7 @@ func (m Model) View() string {
 				line := fmt.Sprintf("%s%s%s\n   %s",
 					cursor,
 					roleIcon,
-					nameStyle.Render(member.DisplayName),
+					nameStyle.Render(sanitizeName(member.DisplayName)),
 					metaStyle.Render(member.Mail),
 				)
 				content += line + "\n"
@@ -1025,7 +1025,7 @@ func (m Model) View() string {
 					cursor = symCursor
 					style = selectedItemStyle
 				}
-				content += fmt.Sprintf("%s%s\n   %s\n", cursor, style.Render(u.DisplayName), metaStyle.Render(u.Mail))
+				content += fmt.Sprintf("%s%s\n   %s\n", cursor, style.Render(sanitizeName(u.DisplayName)), metaStyle.Render(u.Mail))
 			}
 		}
 		content += "\n" + helpStyle.Render("[↑/↓] Navigate  [Enter] Add  [Esc] Cancel")
@@ -1059,7 +1059,7 @@ func (m Model) View() string {
 					cursor = symCursor
 					style = selectedItemStyle
 				}
-				content += fmt.Sprintf("%s%s\n   %s\n", cursor, style.Render(u.DisplayName), metaStyle.Render(u.Mail))
+				content += fmt.Sprintf("%s%s\n   %s\n", cursor, style.Render(sanitizeName(u.DisplayName)), metaStyle.Render(u.Mail))
 			}
 		}
 		content += "\n" + helpStyle.Render("[↑/↓] Navigate  [Enter] Add  [Esc] Cancel")
@@ -1205,7 +1205,7 @@ func (m Model) View() string {
 				// Transient operation feedback (uploads, downloads, link open, ...)
 				leftBanner = lipgloss.NewStyle().
 					Foreground(colorMuted).
-					Render(m.downloadStatus)
+					Render(sanitizeName(m.downloadStatus))
 			} else {
 				// Notification summary
 				var parts []string
@@ -1500,7 +1500,7 @@ func renderThreadView(m *Model, width, height int) string {
 					cursor = symCursor
 					style = selectedItemStyle
 				}
-				popupLines = append(popupLines, fmt.Sprintf("%s%s", cursor, style.Render(s.DisplayName)))
+				popupLines = append(popupLines, fmt.Sprintf("%s%s", cursor, style.Render(sanitizeName(s.DisplayName))))
 			}
 			mentionPopup := lipgloss.NewStyle().
 				Border(lipgloss.RoundedBorder()).
@@ -1553,7 +1553,7 @@ func formatThread(parent graph.Message, replies []graph.Message, width int, self
 	content += fmt.Sprintf("%s%s %s:\n%s\n",
 		parentCursor,
 		metaStyle.Render(fmt.Sprintf("[%s]", timeStr)),
-		selectedItemStyle.Render(parent.FromName),
+		selectedItemStyle.Render(sanitizeName(parent.FromName)),
 		parentBody,
 	)
 	// Parent reactions
@@ -1589,9 +1589,9 @@ func formatThread(parent graph.Message, replies []graph.Message, width int, self
 			replyCursor = symCursor
 		}
 		timeStr := r.CreatedAt.Local().Format("02/01 15:04")
-		name := r.FromName
+		name := sanitizeName(r.FromName)
 		if name == "" || name == "User" {
-			name = selfName
+			name = sanitizeName(selfName)
 		}
 		var rAttStr string
 		for _, att := range r.Attachments {
@@ -1740,7 +1740,7 @@ func renderNotifDetail(m Model) string {
 	label := graph.ActivityTypeLabel(n.Subtype)
 
 	var b strings.Builder
-	b.WriteString(titleStyle.Render(fmt.Sprintf("%s %s", label, n.SenderName)))
+	b.WriteString(titleStyle.Render(fmt.Sprintf("%s %s", label, sanitizeName(n.SenderName))))
 	b.WriteString("\n")
 	b.WriteString(metaStyle.Render(formatAge(n.Timestamp)))
 	b.WriteString("\n\n")
@@ -1789,6 +1789,7 @@ func formatAge(t time.Time) string {
 }
 
 func truncate(s string, max int) string {
+	s = sanitizeName(s)
 	if len(s) <= max {
 		return s
 	}
@@ -1955,7 +1956,7 @@ func renderAssignDetail(m Model) string {
 	var b strings.Builder
 	b.WriteString(titleStyle.Render(graph.AssignmentStatusLabel(a) + " Assignment"))
 	b.WriteString("\n\n")
-	b.WriteString(selectedItemStyle.Render("Name:   ") + a.DisplayName + "\n")
+	b.WriteString(selectedItemStyle.Render("Name:   ") + sanitizeName(a.DisplayName) + "\n")
 	b.WriteString(selectedItemStyle.Render("Due:    ") + due + "\n")
 	b.WriteString(selectedItemStyle.Render("Status: ") + a.Status + "\n")
 
@@ -2009,7 +2010,7 @@ func renderAssignDetail(m Model) string {
 
 	if m.downloadStatus != "" {
 		b.WriteString("\n")
-		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Render(m.downloadStatus) + "\n")
+		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Render(sanitizeName(m.downloadStatus)) + "\n")
 	}
 
 	if !m.focusLeft {
@@ -2031,6 +2032,7 @@ func buildMobileUI(m *Model, leftContent, rightContent string, panelOuterHeight 
 }
 
 func truncateText(text string, maxWidth int) string {
+	text = sanitizeName(text)
 	if lipgloss.Width(text) <= maxWidth {
 		return text
 	}

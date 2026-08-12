@@ -17,8 +17,12 @@ import (
 )
 
 var (
-	stripTags         = regexp.MustCompile(`<[^>]*>`)
-	multipleSpaces    = regexp.MustCompile(`[ \t]+`)
+	stripTags      = regexp.MustCompile(`<[^>]*>`)
+	multipleSpaces = regexp.MustCompile(`[ \t]+`)
+	// bodyControlRe removes C0/C1 control bytes (ESC, BEL, CR, ...) that could
+	// inject escape sequences into the terminal. Newlines, tabs, and the
+	// \x11/\x12 (search) and \x1E/\x1F (mention) sentinels are preserved.
+	bodyControlRe     = regexp.MustCompile(`[\x00-\x08\x0B-\x10\x13-\x1D\x7F\x80-\x9F]`)
 	MentionSpan       = regexp.MustCompile(`<span[^>]*itemtype="http://schema\.skype\.com/Mention"[^>]*>([^<]+)</span>`)
 	boldRe            = regexp.MustCompile(`(?i)<(b|strong)(\s+[^>]*)?>`)
 	boldCloseRe       = regexp.MustCompile(`(?i)</(b|strong)\s*>`)
@@ -171,6 +175,11 @@ func cleanHTML(s string) string {
 
 	// Step 6: collapse horizontal whitespace
 	s = multipleSpaces.ReplaceAllString(s, " ")
+
+	// Step 6b: strip terminal control characters. Message content is
+	// untrusted, so ESC/C1 bytes must not reach the terminal renderer.
+	// The \x11/\x12 (search) and \x1E/\x1F (mention) sentinels are preserved.
+	s = bodyControlRe.ReplaceAllString(s, "")
 
 	// Step 7: trim lines, preserve single blank lines for Markdown structure
 	lines := strings.Split(s, "\n")

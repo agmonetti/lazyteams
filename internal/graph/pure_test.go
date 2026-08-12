@@ -104,6 +104,27 @@ func TestCleanHTML(t *testing.T) {
 	}
 }
 
+func TestCleanHTMLStripsControlChars(t *testing.T) {
+	got := cleanHTML("<p>Hi \x1b[2Jthere\x1b]0;evil\x07</p>")
+	if strings.Contains(got, "\x1b") {
+		t.Errorf("cleanHTML left an ESC byte in output: %q", got)
+	}
+	if !strings.Contains(got, "there") {
+		t.Errorf("cleanHTML dropped visible text: %q", got)
+	}
+
+	gotMention := cleanHTML(`<p>Hello <span itemtype="http://schema.skype.com/Mention">\x1b[1mAlice\x1b[0m</span></p>`)
+	if strings.Contains(gotMention, "\x1b") {
+		t.Errorf("cleanHTML must strip ESC from mentions: %q", gotMention)
+	}
+	if !strings.Contains(gotMention, "\x1E@") || !strings.Contains(gotMention, "\x1F") {
+		t.Errorf("cleanHTML must preserve mention sentinels: %q", gotMention)
+	}
+	if !strings.Contains(gotMention, "Alice") {
+		t.Errorf("cleanHTML dropped mention name: %q", gotMention)
+	}
+}
+
 func TestCleanHTMLMentionNormalizesSingleAt(t *testing.T) {
 	tests := []struct {
 		name string

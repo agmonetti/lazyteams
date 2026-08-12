@@ -138,7 +138,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			var numbered strings.Builder
 			width := len(fmt.Sprintf("%d", len(lines)))
 			for i, line := range lines {
-				numbered.WriteString(fmt.Sprintf("%*d │ %s\n", width, i+1, line))
+				numbered.WriteString(fmt.Sprintf("%*d │ %s\n", width, i+1, sanitizeName(line)))
 			}
 			m.previewContent = numbered.String()
 		}

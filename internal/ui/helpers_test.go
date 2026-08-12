@@ -681,3 +681,38 @@ func TestPluralS(t *testing.T) {
 		}
 	}
 }
+
+func TestSanitizeName(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"plain", "Alice Smith", "Alice Smith"},
+		{"esc sequence", "Alice\x1b[1mSmith", "Alice[1mSmith"},
+		{"osctl title", "\x1b]0;evil\x07", "]0;evil"},
+		{"newline and tab", "A\nB\tC", "ABC"},
+		{"bell and backspace", "a\x07b\x08c", "abc"},
+		{"c1 bytes", "\u009bhi", "hi"},
+		{"search sentinels preserved", "x\x11match\x12y", "x\x11match\x12y"},
+		{"mention sentinels preserved", "@\x1EAl\x1F", "@\x1EAl\x1F"},
+		{"empty", "", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := sanitizeName(tt.in); got != tt.want {
+				t.Errorf("sanitizeName(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestMakeClickableLinkSanitizesText(t *testing.T) {
+	got := makeClickableLink("evil\x1b]0;x\x07", "https://example.com")
+	if !strings.Contains(got, "evil]0;x") {
+		t.Errorf("makeClickableLink left control chars in text: %q", got)
+	}
+	if strings.Contains(got, "\x1b]0;") {
+		t.Errorf("makeClickableLink allowed OSC injection: %q", got)
+	}
+}

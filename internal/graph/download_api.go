@@ -10,6 +10,12 @@ import (
 )
 
 func (c *Client) DownloadAMSImage(imageURL string) (io.ReadCloser, error) {
+	// The URL comes from an <img> tag inside a message. Only download from
+	// Microsoft's image hosts: attaching the WebToken to an attacker-controlled
+	// URL would leak a live session token.
+	if err := validateMediaURL(imageURL); err != nil {
+		return nil, err
+	}
 	req, err := http.NewRequest("GET", imageURL, nil)
 	if err != nil {
 		return nil, err
@@ -90,6 +96,10 @@ func (c *Client) ResolveSharedItem(shareURL string) (*DriveItem, error) {
 }
 
 func (c *Client) downloadContent(endpoint string) (io.ReadCloser, error) {
+	// Defensive: never attach the GraphToken to a non-Microsoft host.
+	if err := validateMicrosoftURL(endpoint); err != nil {
+		return nil, err
+	}
 	req, err := http.NewRequest("GET", endpoint, nil)
 	if err != nil {
 		return nil, err

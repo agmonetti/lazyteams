@@ -599,6 +599,11 @@ func navigateToThreadCmd(client *graph.Client, teams []graph.Team, threadID stri
 
 func openAssignmentFileCmd(client *graph.Client, file graph.AssignmentFile) tea.Cmd {
 	return func() tea.Msg {
+		// FileUrl comes from the assignments API; only send the GraphToken to
+		// Microsoft-owned hosts to avoid leaking it to a malicious URL.
+		if err := graph.ValidateMicrosoftURL(file.FileUrl); err != nil {
+			return downloadDoneMsg{results: []string{"✗ " + file.Name + ": untrusted URL"}}
+		}
 		req, _ := http.NewRequest("GET", file.FileUrl, nil)
 		req.Header.Set("Authorization", "Bearer "+client.GraphToken)
 		resp, err := client.HTTPClient.Do(req)
