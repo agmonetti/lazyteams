@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Version is the current build version. It defaults to "dev" and is meant to
@@ -15,6 +16,10 @@ import (
 //
 //	go build -ldflags "-X lazyteams/internal/version.Version=v1.2.3" ./...
 var Version = "dev"
+
+// httpClient is the HTTP client used for the GitHub update check. The timeout
+// prevents a stalled network connection from hanging the check goroutine.
+var httpClient = &http.Client{Timeout: 10 * time.Second}
 
 // Compare compares two semantic version strings (e.g. "v1.2.3") and returns
 // -1, 0 or 1. Segments are compared numerically, so "v1.10.0" is newer than
@@ -57,7 +62,7 @@ func LatestRelease(apiURL string) (string, error) {
 	// GitHub's API rejects requests without a User-Agent header.
 	req.Header.Set("User-Agent", "lazyteams")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return "", err
 	}
