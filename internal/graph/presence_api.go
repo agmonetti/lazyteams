@@ -76,6 +76,11 @@ func (c *Client) ClearPresence(userID string) error {
 	return nil
 }
 
+// maxConcurrentPresenceChecks caps how many presence requests run in parallel.
+// Large teams can have hundreds of members; without a limit, GetPresences would
+// spawn one goroutine per member and fan out hundreds of concurrent requests.
+const maxConcurrentPresenceChecks = 10
+
 func (c *Client) GetPresences(userIDs []string) (map[string]string, error) {
 	if len(userIDs) == 0 {
 		return nil, nil
@@ -89,8 +94,13 @@ func (c *Client) GetPresences(userIDs []string) (map[string]string, error) {
 	}
 
 	ch := make(chan presResult, len(userIDs))
+	sem := make(chan struct{}, maxConcurrentPresenceChecks)
 	for _, uid := range userIDs {
+		// Acquire a semaphore slot before spawning; blocks while all slots
+		// are busy so at most maxConcurrentPresenceChecks requests run at once.
+		sem <- struct{}{}
 		go func(id string) {
+			defer func() { <-sem }()
 			avail, err := c.getPresence(id)
 			ch <- presResult{id: id, avail: avail, err: err}
 		}(uid)
