@@ -12,6 +12,9 @@ import (
 // Possible values for availability and activity:
 // "Available", "Busy", "DoNotDisturb", "BeRightBack", "Away", "Offline"
 func (c *Client) SetPresence(userID, availability, activity string) error {
+	if userID == "" {
+		return fmt.Errorf("SetPresence: empty userID")
+	}
 	endpoint := fmt.Sprintf("%s/users/%s/presence/setUserPreferredPresence", baseURL, userID)
 
 	payload := map[string]interface{}{
@@ -47,6 +50,9 @@ func (c *Client) SetPresence(userID, availability, activity string) error {
 
 // ClearPresence clears the preferred presence (reverts to the presence automatically calculated by Teams).
 func (c *Client) ClearPresence(userID string) error {
+	if userID == "" {
+		return fmt.Errorf("ClearPresence: empty userID")
+	}
 	endpoint := fmt.Sprintf("%s/users/%s/presence/clearUserPreferredPresence", baseURL, userID)
 
 	req, err := http.NewRequest("POST", endpoint, nil)

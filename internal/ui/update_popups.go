@@ -1031,9 +1031,16 @@ func (m Model) handlePresenceMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
 	case "enter":
 		m.showPresenceMenu = false
 		avail := m.presenceOptions[m.presenceCursor]
-		// m.selfID is already available from initial load
 		if m.selfID != "" {
 			cmds = append(cmds, setPresenceCmd(m.client, m.selfID, avail))
+			// Optimistic update: reflect the choice immediately instead of
+			// waiting for the Graph GET round-trip. "Reset (Automatic)" is not
+			// a real presence state, so let the poll confirm the cleared one.
+			if avail != "Reset (Automatic)" {
+				m.presence[m.selfID] = avail
+			}
+		} else {
+			m.presenceError = "Cannot set presence: user ID not loaded yet"
 		}
 	}
 	return m, tea.Batch(cmds...), true
