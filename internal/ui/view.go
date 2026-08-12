@@ -1537,7 +1537,7 @@ func formatThread(parent graph.Message, replies []graph.Message, width int, self
 		if att.Type == "file" {
 			icon = "[File]"
 		}
-		linkStr := makeClickableLink(att.Name, att.URL)
+		linkStr := makeClickableLink(sanitizeName(att.Name), att.URL)
 		parentAttStr += fmt.Sprintf("  %s %s\n", systemEventStyle.Render(icon), linkStr)
 	}
 	var parentBody string
@@ -1599,7 +1599,7 @@ func formatThread(parent graph.Message, replies []graph.Message, width int, self
 			if att.Type == "file" {
 				icon = "[File]"
 			}
-			linkStr := makeClickableLink(att.Name, att.URL)
+			linkStr := makeClickableLink(sanitizeName(att.Name), att.URL)
 			rAttStr += fmt.Sprintf("  %s %s\n", systemEventStyle.Render(icon), linkStr)
 		}
 		var rBody string
@@ -1981,7 +1981,7 @@ func renderAssignDetail(m Model) string {
 			if !m.focusLeft && m.assignFileCursor == i {
 				cursor = symCursor
 			}
-			b.WriteString(cursor + makeClickableLink(f.Name, buildSharePointViewerURL(f.FileUrl)) + "\n")
+			b.WriteString(cursor + makeClickableLink(sanitizeName(f.Name), buildSharePointViewerURL(f.FileUrl)) + "\n")
 		}
 	} else {
 		b.WriteString("\n" + selectedItemStyle.Render("Reference materials:") + " " + metaStyle.Render("(none)") + "\n")
@@ -1995,7 +1995,7 @@ func renderAssignDetail(m Model) string {
 			if !m.focusLeft && m.assignFileCursor == len(a.RefFiles)+i {
 				cursor = symCursor
 			}
-			b.WriteString(cursor + makeClickableLink(f.Name, buildSharePointViewerURL(f.FileUrl)) + "\n")
+			b.WriteString(cursor + makeClickableLink(sanitizeName(f.Name), buildSharePointViewerURL(f.FileUrl)) + "\n")
 		}
 	} else {
 		b.WriteString("\n" + selectedItemStyle.Render("My work:") + " " + metaStyle.Render("(none)") + "\n")

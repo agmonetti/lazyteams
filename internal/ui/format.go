@@ -352,7 +352,7 @@ func formatMessagesWithCursor(messages []graph.Message, width, cursor int, curso
 			if att.Type == "file" {
 				icon = "[File]"
 			}
-			linkStr := makeClickableLink(att.Name, att.URL)
+			linkStr := makeClickableLink(sanitizeName(att.Name), att.URL)
 			attachmentsStr += fmt.Sprintf("  %s %s\n", systemEventStyle.Render(icon), linkStr)
 		}
 

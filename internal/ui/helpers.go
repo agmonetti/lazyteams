@@ -39,12 +39,12 @@ func copyToClipboard(text string) error {
 }
 
 func makeClickableLink(text, url string) string {
-	// Strip any escape characters from the URL to prevent terminal injection
+	// Strip any escape characters from the URL to prevent terminal injection.
+	// The visible text is passed through unchanged: callers sanitize untrusted
+	// names before styling them, and this keeps lipgloss styling already
+	// applied to the text (e.g. renderFilesContent) intact.
 	safeURL := strings.ReplaceAll(url, "\x1b", "")
-	// Strip terminal control characters from the visible text as well: sender
-	// and attachment names come from untrusted server data.
-	safeText := sanitizeName(text)
-	return fmt.Sprintf("\x1b]8;;%s\x1b\\%s\x1b]8;;\x1b\\", safeURL, safeText)
+	return fmt.Sprintf("\x1b]8;;%s\x1b\\%s\x1b]8;;\x1b\\", safeURL, text)
 }
 
 // nameControlRe strips C0/C1 control bytes (ESC, BEL, CR, LF, ...) from

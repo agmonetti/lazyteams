@@ -707,12 +707,17 @@ func TestSanitizeName(t *testing.T) {
 	}
 }
 
-func TestMakeClickableLinkSanitizesText(t *testing.T) {
-	got := makeClickableLink("evil\x1b]0;x\x07", "https://example.com")
-	if !strings.Contains(got, "evil]0;x") {
-		t.Errorf("makeClickableLink left control chars in text: %q", got)
+func TestMakeClickableLinkPreservesStyling(t *testing.T) {
+	// Styled text must pass through intact: renderFilesContent passes a
+	// lipgloss-styled line here, and stripping ESC would destroy the styling.
+	styled := "\x1b[1mfile.txt\x1b[0m"
+	got := makeClickableLink(styled, "https://example.com")
+	if !strings.Contains(got, styled) {
+		t.Errorf("makeClickableLink stripped styling from text: %q", got)
 	}
-	if strings.Contains(got, "\x1b]0;") {
-		t.Errorf("makeClickableLink allowed OSC injection: %q", got)
+	// The URL is still stripped of escape characters.
+	gotURL := makeClickableLink("link", "https://example.com/\x1b]0;x\x07")
+	if strings.Contains(gotURL, "\x1b]0;") {
+		t.Errorf("makeClickableLink allowed OSC injection in URL: %q", gotURL)
 	}
 }
