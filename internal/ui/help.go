@@ -81,7 +81,7 @@ var HelpData = []HelpCategory{
 	{
 		Title: "Files & Drive",
 		Shortcuts: []Shortcut{
-			{Key: "Space", Description: "Select multiple files"},
+			{Key: "Space", Description: "Select files"},
 			{Key: "v", Description: "Preview file"},
 			{Key: "o", Description: "Download selected"},
 			{Key: "u", Description: "Upload to folder"},

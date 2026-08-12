@@ -11,7 +11,7 @@ var (
 	symReplying  = "↩"
 	symCursor    = "▶ "
 	symArrowDown = "▼"
-	symLock      = " 🔒"
+	symLock      = " *"
 )
 
 func init() {
