@@ -1,9 +1,5 @@
 # Contributing to lazyteams
 
-First off, thank you for considering contributing to lazyteams! It's people like you that make the open-source community such a great place to learn, inspire, and create.
-
-## How Can I Contribute?
-
 ### Reporting Bugs
 This section guides you through submitting a bug report for lazyteams.
 * Use the GitHub Issues tab to report bugs.
