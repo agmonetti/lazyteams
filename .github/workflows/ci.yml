@@ -43,5 +43,10 @@ jobs:
       - name: Run vet
         run: go vet ./...
 
+      - name: Run govulncheck
+        uses: golang/govulncheck-action@v1
+        with:
+          go-version-file: go.mod
+
       - name: Build all packages
         run: go build ./...

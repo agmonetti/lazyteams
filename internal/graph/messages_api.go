@@ -119,6 +119,11 @@ func (c *Client) GetMessagesWithLink(teamID, channelID string, pageSize int) ([]
 	var lastBackwardLink string
 
 	for page := 0; page < maxPages && len(allMsgs) < pageSize; page++ {
+		// urlStr comes from res.Metadata.BackwardLink after the first page;
+		// never attach the WebToken to a non-Microsoft host.
+		if err := validateMicrosoftURL(urlStr); err != nil {
+			return allMsgs, lastBackwardLink, err
+		}
 		req, err := http.NewRequest(http.MethodGet, urlStr, nil)
 		if err != nil {
 			return allMsgs, lastBackwardLink, err
