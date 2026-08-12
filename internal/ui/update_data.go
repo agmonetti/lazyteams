@@ -5,6 +5,7 @@ import (
 	"lazyteams/internal/graph"
 	"lazyteams/internal/teams"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -266,6 +267,14 @@ func (m Model) handlePresenceMsg(msg presenceTickMsg) (tea.Model, tea.Cmd) {
 
 func (m Model) handlePresenceResultMsg(msg presenceTickResultMsg) (tea.Model, tea.Cmd) {
 	for k, v := range msg.presences {
+		// Graph propagates preferred-presence changes slowly ("a few minutes"
+		// per the official docs). Within that window a refresh would return the
+		// stale effective presence and overwrite the value the user just chose,
+		// so the optimistic value is kept until propagation settles.
+		if k == m.selfID && m.preferredPresence != "" &&
+			time.Since(m.preferredPresenceSetAt) < presencePropagationWindow {
+			continue
+		}
 		m.presence[k] = v
 	}
 	return m, nil

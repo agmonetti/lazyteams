@@ -5,6 +5,7 @@ import (
 	"lazyteams/internal/graph"
 	"lazyteams/internal/ui/components/directorypicker"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -1036,8 +1037,12 @@ func (m Model) handlePresenceMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
 			// Optimistic update: reflect the choice immediately instead of
 			// waiting for the Graph GET round-trip. "Reset (Automatic)" is not
 			// a real presence state, so let the poll confirm the cleared one.
-			if avail != "Reset (Automatic)" {
+			if avail == "Reset (Automatic)" {
+				m.preferredPresence = ""
+			} else {
 				m.presence[m.selfID] = avail
+				m.preferredPresence = avail
+				m.preferredPresenceSetAt = time.Now()
 			}
 		} else {
 			m.presenceError = "Cannot set presence: user ID not loaded yet"

@@ -2,6 +2,7 @@ package ui
 
 import (
 	"os"
+	"time"
 
 	"lazyteams/internal/graph"
 	"lazyteams/internal/ui/components/directorypicker"
@@ -275,6 +276,11 @@ type Model struct {
 	presenceCursor   int
 	presenceOptions  []string
 	presenceError    string
+
+	// Last preferred presence set via the menu, so a slow Graph refresh cannot
+	// override the optimistic value within the propagation window.
+	preferredPresence      string
+	preferredPresenceSetAt time.Time
 
 	// Activity / Notifications
 	notifications           []graph.NotificationItem

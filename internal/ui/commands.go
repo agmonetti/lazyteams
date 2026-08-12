@@ -21,6 +21,11 @@ import (
 
 const pollInterval = 3
 const presenceInterval = 60
+
+// presencePropagationWindow is how long the UI keeps the optimistic presence
+// value before letting a Graph refresh overwrite it. Graph can take a few
+// minutes to propagate a preferred-presence change.
+const presencePropagationWindow = 3 * time.Minute
 const unreadSweepInterval = 30
 const unreadSweepBatchSize = 8
 const unreadSweepDelay = 500 * time.Millisecond
