@@ -656,8 +656,17 @@ func (c *Client) AddReaction(channelID, messageID, key string) error {
 		"https://teams.microsoft.com/api/chatsvc/amer/v1/users/ME/conversations/%s/messages/%s/properties?name=emotions",
 		channelID, messageID,
 	)
-	payload := fmt.Sprintf(`{"emotions":{"key":"%s","value":%d}}`, key, time.Now().UnixMilli())
-	req, err := http.NewRequest("PUT", url, strings.NewReader(payload))
+	payload := map[string]any{
+		"emotions": map[string]any{
+			"key":   key,
+			"value": time.Now().UnixMilli(),
+		},
+	}
+	bodyBytes, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequest("PUT", url, bytes.NewBuffer(bodyBytes))
 	if err != nil {
 		return err
 	}
@@ -682,8 +691,16 @@ func (c *Client) RemoveReaction(channelID, messageID, key string) error {
 		"https://teams.microsoft.com/api/chatsvc/amer/v1/users/ME/conversations/%s/messages/%s/properties?name=emotions",
 		channelID, messageID,
 	)
-	payload := fmt.Sprintf(`{"emotions":{"key":"%s"}}`, key)
-	req, err := http.NewRequest("DELETE", url, strings.NewReader(payload))
+	payload := map[string]any{
+		"emotions": map[string]any{
+			"key": key,
+		},
+	}
+	bodyBytes, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequest("DELETE", url, bytes.NewBuffer(bodyBytes))
 	if err != nil {
 		return err
 	}
@@ -753,12 +770,19 @@ func (c *Client) MarkConversationAsRead(conversationID string, lastMsg Message) 
 	nowTs := time.Now().UnixMilli()
 	horizon := fmt.Sprintf("%d;%d;%d", ts, nowTs, ts)
 
-	payload := fmt.Sprintf(`{"consumptionhorizon":"%s"}`, horizon)
+	payload := struct {
+		ConsumptionHorizon string `json:"consumptionhorizon"`
+	}{ConsumptionHorizon: horizon}
+
+	bodyBytes, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
 
 	url := fmt.Sprintf("https://teams.microsoft.com/api/chatsvc/amer/v1/users/ME/conversations/%s/properties?name=consumptionhorizon",
 		conversationID)
 
-	req, err := http.NewRequest("PUT", url, strings.NewReader(payload))
+	req, err := http.NewRequest("PUT", url, bytes.NewBuffer(bodyBytes))
 	if err != nil {
 		return err
 	}

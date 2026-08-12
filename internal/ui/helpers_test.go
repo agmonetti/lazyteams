@@ -721,3 +721,32 @@ func TestMakeClickableLinkPreservesStyling(t *testing.T) {
 		t.Errorf("makeClickableLink allowed OSC injection in URL: %q", gotURL)
 	}
 }
+
+// TestMakeClickableLinkStripsURLControlBytes ensures no C0/C1 control byte
+// survives into the URL embedded in the OSC 8 hyperlink.
+func TestMakeClickableLinkStripsURLControlBytes(t *testing.T) {
+	payload := "\x1b]0;evil\x07" + "\x9b1;2" + "\x1b[31m" + "\x00" + "\x1c"
+	url := "https://example.com/" + payload
+	got := makeClickableLink("link", url)
+
+	const oscPrefix = "\x1b]8;;"
+	start := strings.Index(got, oscPrefix)
+	if start == -1 {
+		t.Fatalf("no OSC 8 link found in output: %q", got)
+	}
+	rest := got[start+len(oscPrefix):]
+	end := strings.Index(rest, "\x1b\\")
+	if end == -1 {
+		t.Fatalf("no OSC 8 terminator found in output: %q", got)
+	}
+	embedded := rest[:end]
+
+	if !strings.Contains(embedded, "https://example.com/") {
+		t.Errorf("embedded URL lost its content: %q", embedded)
+	}
+	for _, bad := range []string{"\x1b", "\x07", "\x9b", "\x00", "\x1c", "\x1f"} {
+		if strings.Contains(embedded, bad) {
+			t.Errorf("makeClickableLink left control byte %q in embedded URL %q", bad, embedded)
+		}
+	}
+}

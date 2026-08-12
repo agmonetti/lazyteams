@@ -38,13 +38,46 @@ func copyToClipboard(text string) error {
 	return cmd.Run()
 }
 
+// makeClickableLink wraps text in an OSC 8 terminal hyperlink pointing at url.
+// All C0/C1 control bytes (ESC, BEL, CSI, ...) are stripped from the URL so a
+// URL taken from the Graph API cannot inject escape sequences into the
+// terminal. The visible text is passed through unchanged: callers sanitize
+// untrusted names before styling them, and this keeps lipgloss styling already
+// applied to the text (e.g. renderFilesContent) intact.
 func makeClickableLink(text, url string) string {
-	// Strip any escape characters from the URL to prevent terminal injection.
-	// The visible text is passed through unchanged: callers sanitize untrusted
-	// names before styling them, and this keeps lipgloss styling already
-	// applied to the text (e.g. renderFilesContent) intact.
-	safeURL := strings.ReplaceAll(url, "\x1b", "")
+	safeURL := stripControlBytes(url)
 	return fmt.Sprintf("\x1b]8;;%s\x1b\\%s\x1b]8;;\x1b\\", safeURL, text)
+}
+
+// stripControlBytes removes C0 (0x00-0x1F), DEL (0x7F), and C1 (0x80-0x9F)
+// control bytes from s at the byte level. Working on raw bytes — instead of
+// regexp, which operates on decoded runes — guarantees a lone 0x9B/0x1B byte
+// smuggled through the API cannot survive into the terminal.
+func stripControlBytes(s string) string {
+	hasControl := false
+	for i := 0; i < len(s); i++ {
+		if isControlByte(s[i]) {
+			hasControl = true
+			break
+		}
+	}
+	if !hasControl {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := 0; i < len(s); i++ {
+		if c := s[i]; !isControlByte(c) {
+			b.WriteByte(c)
+		}
+	}
+	return b.String()
+}
+
+// isControlByte reports whether c is a C0, DEL, or C1 control byte. The C1
+// range includes the 8-bit CSI (0x9B), OSC (0x9D), and ST (0x9C) bytes.
+func isControlByte(c byte) bool {
+	return c < 0x20 || (c >= 0x7F && c < 0xA0)
 }
 
 // nameControlRe strips C0/C1 control bytes (ESC, BEL, CR, LF, ...) from

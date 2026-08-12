@@ -1,6 +1,7 @@
 package graph
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -273,23 +274,26 @@ func (c *Client) CreateOneOnOneChat(selfID, targetID string) (Chat, error) {
 		}, nil
 	}
 
-	payload := fmt.Sprintf(`{
-		"chatType": "oneOnOne",
-		"members": [
-			{
-				"@odata.type": "#microsoft.graph.aadUserConversationMember",
-				"roles": ["owner"],
-				"user@odata.bind": "https://graph.microsoft.com/v1.0/users/%s"
-			},
-			{
-				"@odata.type": "#microsoft.graph.aadUserConversationMember",
-				"roles": ["owner"],
-				"user@odata.bind": "https://graph.microsoft.com/v1.0/users/%s"
-			}
-		]
-	}`, selfID, targetID)
+	memberBind := func(userID string) map[string]any {
+		return map[string]any{
+			"@odata.type":     "#microsoft.graph.aadUserConversationMember",
+			"roles":           []string{"owner"},
+			"user@odata.bind": "https://graph.microsoft.com/v1.0/users/" + userID,
+		}
+	}
+	payload := struct {
+		ChatType string           `json:"chatType"`
+		Members  []map[string]any `json:"members"`
+	}{
+		ChatType: "oneOnOne",
+		Members:  []map[string]any{memberBind(selfID), memberBind(targetID)},
+	}
+	bodyBytes, err := json.Marshal(payload)
+	if err != nil {
+		return Chat{}, err
+	}
 
-	req, err := http.NewRequest("POST", baseURL+"/chats", strings.NewReader(payload))
+	req, err := http.NewRequest("POST", baseURL+"/chats", bytes.NewBuffer(bodyBytes))
 	if err != nil {
 		return Chat{}, err
 	}
@@ -319,21 +323,28 @@ func (c *Client) CreateOneOnOneChat(selfID, targetID string) (Chat, error) {
 // CreateOneOnOneChatViaChatSvc creates a 1:1 chat using the Teams ChatSvc API
 // instead of Graph API. This bypasses tenant restrictions on POST /v1.0/chats.
 func (c *Client) CreateOneOnOneChatViaChatSvc(selfID, targetID string) (Chat, error) {
-	payload := fmt.Sprintf(`{
-		"members": [
-			{"id": "8:orgid:%s", "role": "Admin"},
-			{"id": "8:orgid:%s", "role": "Admin"}
-		],
-		"properties": {
-			"threadType": "chat",
-			"fixedRoster": true,
-			"uniquerosterthread": true
-		}
-	}`, selfID, targetID)
+	payload := struct {
+		Members    []map[string]any `json:"members"`
+		Properties map[string]any   `json:"properties"`
+	}{
+		Members: []map[string]any{
+			{"id": "8:orgid:" + selfID, "role": "Admin"},
+			{"id": "8:orgid:" + targetID, "role": "Admin"},
+		},
+		Properties: map[string]any{
+			"threadType":         "chat",
+			"fixedRoster":        true,
+			"uniquerosterthread": true,
+		},
+	}
+	bodyBytes, err := json.Marshal(payload)
+	if err != nil {
+		return Chat{}, err
+	}
 
 	req, err := http.NewRequest("POST",
 		"https://teams.microsoft.com/api/chatsvc/amer/v1/threads",
-		strings.NewReader(payload),
+		bytes.NewBuffer(bodyBytes),
 	)
 	if err != nil {
 		return Chat{}, err

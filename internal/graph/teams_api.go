@@ -171,14 +171,18 @@ func sanitizeMailNickname(name string) string {
 }
 
 func (c *Client) CreateChannel(teamGUID, teamThreadID, name, channelType string) error {
-	payload := fmt.Sprintf(`{
-		"displayName": "%s",
+	payload := map[string]string{
+		"displayName": name,
 		"description": "",
-		"groupId": "%s",
-		"channelType": "%s"
-	}`, name, teamGUID, channelType)
+		"groupId":     teamGUID,
+		"channelType": channelType,
+	}
+	bodyBytes, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
 	url := fmt.Sprintf("https://teams.microsoft.com/api/mt/part/amer-02/beta/teams/%s/channels", teamThreadID)
-	req, err := http.NewRequest("POST", url, strings.NewReader(payload))
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(bodyBytes))
 	if err != nil {
 		return err
 	}
@@ -375,9 +379,19 @@ func (c *Client) GetChannelMembers(channelThreadID string) ([]TeamMember, error)
 }
 
 func (c *Client) AddTeamMember(teamThreadID, teamGUID, userMRI string) error {
-	payload := fmt.Sprintf(`{"users":[{"mri":"%s","role":0}],"groupId":"%s"}`, userMRI, teamGUID)
+	payload := struct {
+		Users   []map[string]any `json:"users"`
+		GroupID string           `json:"groupId"`
+	}{
+		Users:   []map[string]any{{"mri": userMRI, "role": 0}},
+		GroupID: teamGUID,
+	}
+	bodyBytes, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
 	url := fmt.Sprintf("https://teams.microsoft.com/api/mt/part/amer-02/beta/teams/%s/bulkUpdateRoledMembers?allowAsyncAddition=true", teamThreadID)
-	req, err := http.NewRequest("PUT", url, strings.NewReader(payload))
+	req, err := http.NewRequest("PUT", url, bytes.NewBuffer(bodyBytes))
 	if err != nil {
 		return err
 	}
@@ -440,12 +454,20 @@ func (c *Client) AddChannelMember(teamGUID, channelThreadID, userID, tenantID st
 		return err
 	}
 
-	payload := fmt.Sprintf(`{"users":[{"id":"%s","role":1}]}`, userOID)
+	payload := struct {
+		Users []map[string]any `json:"users"`
+	}{
+		Users: []map[string]any{{"id": userOID, "role": 1}},
+	}
+	bodyBytes, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
 	url := fmt.Sprintf(
 		"https://teams.microsoft.com/fabric/amer/templates/api/teams/%s/channels/%s/users?forceSync=false",
 		teamGUID, channelOID,
 	)
-	req, err := http.NewRequest("POST", url, strings.NewReader(payload))
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(bodyBytes))
 	if err != nil {
 		return err
 	}
@@ -469,9 +491,21 @@ func (c *Client) AddChannelMember(teamGUID, channelThreadID, userID, tenantID st
 }
 
 func (c *Client) RemoveTeamMember(teamThreadID, teamGUID, userID string) error {
-	payload := fmt.Sprintf(`{"userMri":"8:orgid:%s","updateType":"Left","groupId":"%s"}`, userID, teamGUID)
+	payload := struct {
+		UserMRI    string `json:"userMri"`
+		UpdateType string `json:"updateType"`
+		GroupID    string `json:"groupId"`
+	}{
+		UserMRI:    "8:orgid:" + userID,
+		UpdateType: "Left",
+		GroupID:    teamGUID,
+	}
+	bodyBytes, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
 	url := fmt.Sprintf("https://teams.microsoft.com/api/mt/part/amer-02/beta/teams/%s/members", teamThreadID)
-	req, err := http.NewRequest("PUT", url, strings.NewReader(payload))
+	req, err := http.NewRequest("PUT", url, bytes.NewBuffer(bodyBytes))
 	if err != nil {
 		return err
 	}
@@ -542,12 +576,20 @@ func (c *Client) UpdateChannelMemberRole(teamGUID, channelThreadID, userID, role
 		return err
 	}
 
-	payload := fmt.Sprintf(`{"users":[{"id":"%s","role":%d}]}`, userOID, roleNum)
+	payload := struct {
+		Users []map[string]any `json:"users"`
+	}{
+		Users: []map[string]any{{"id": userOID, "role": roleNum}},
+	}
+	bodyBytes, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
 	url := fmt.Sprintf(
 		"https://teams.microsoft.com/fabric/amer/templates/api/teams/%s/channels/%s/users?forceSync=false",
 		teamGUID, channelOID,
 	)
-	req, err := http.NewRequest("POST", url, strings.NewReader(payload))
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(bodyBytes))
 	if err != nil {
 		return err
 	}
