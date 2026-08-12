@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -19,6 +20,13 @@ func loadTokensFile() map[string]string {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return result
+	}
+
+	// Warn when the token file is readable by group/others (e.g. restored from
+	// a backup with default permissions). Do not block: the file still works,
+	// and Windows has no POSIX mode bits to enforce anyway.
+	if info, statErr := os.Stat(path); statErr == nil && info.Mode().Perm()&0o077 != 0 {
+		fmt.Fprintf(os.Stderr, "warning: %s is readable by other users (mode %#o); run chmod 600 on it\n", path, info.Mode().Perm())
 	}
 
 	for _, line := range strings.Split(string(data), "\n") {

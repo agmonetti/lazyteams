@@ -34,6 +34,12 @@ func ConfigDir() string {
 // that is still holding the persistent browser profile. It matches only the
 // profile path in the command line, so the user's personal Firefox is never
 // touched. Errors are ignored: killing nothing is the normal case.
+//
+// Accepted risk: the match pattern is derived from $HOME, so a local attacker
+// who can control the HOME environment variable could steer `pkill -9 -f`
+// toward arbitrary processes whose command line contains that path. This
+// requires local code execution already, and the profile path is hard to
+// collide with, so the risk is accepted for the crash-recovery benefit.
 func KillZombieBrowser() {
 	profile := ConfigDir() + string(os.PathSeparator) + "browser-session"
 	switch runtime.GOOS {
