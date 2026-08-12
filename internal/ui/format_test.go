@@ -196,6 +196,59 @@ func TestWrapAnsiNormalizesCRLF(t *testing.T) {
 	}
 }
 
+func TestWrapAnsiPreservesIndentation(t *testing.T) {
+	content := "  " + strings.Repeat("palabra ", 20)
+	out := wrapAnsi(content, 40)
+	lines := strings.Split(out, "\n")
+	if len(lines) < 2 {
+		t.Fatalf("expected wrapping, got a single line: %q", out)
+	}
+	for i, line := range lines {
+		clean := ansiToken.ReplaceAllString(line, "")
+		if !strings.HasPrefix(clean, "  ") {
+			t.Errorf("line %d lost its indentation: %q", i, clean)
+		}
+		if w := lipgloss.Width(clean); w > 40 {
+			t.Errorf("line %d width = %d > 40: %q", i, w, clean)
+		}
+	}
+}
+
+func TestWrapAnsiPreservesIndentedContent(t *testing.T) {
+	content := "  " + strings.Repeat("ab cd ", 10)
+	out := wrapAnsi(content, 20)
+	got := ansiToken.ReplaceAllString(out, "")
+	got = strings.ReplaceAll(got, "\n", " ")
+	got = strings.ReplaceAll(got, " ", "")
+	want := strings.ReplaceAll(content, " ", "")
+	if got != want {
+		t.Errorf("wrapAnsi altered indented content:\n got: %q\nwant: %q", got, want)
+	}
+}
+
+func TestWrapAnsiPreservesIndentationWithLongURL(t *testing.T) {
+	const url = "https://forms.cloud.microsoft/Pages/ResponsePage.aspx?id=0HlJNB3TV0yLoEka_0rK7X7PrFheVB5IhOuu9wZSryVUMEQwRURFUlc4VlpVVEtKVk9PNzAzNzcwVS4u"
+	content := "  " + url
+
+	out := wrapAnsi(content, 60)
+	lines := strings.Split(out, "\n")
+	for i, line := range lines {
+		clean := ansiToken.ReplaceAllString(line, "")
+		if !strings.HasPrefix(clean, "  ") {
+			t.Errorf("line %d lost its indentation: %q", i, clean)
+		}
+		if w := lipgloss.Width(clean); w > 60 {
+			t.Errorf("line %d width = %d > 60: %q", i, w, clean)
+		}
+	}
+	reconstructed := ansiToken.ReplaceAllString(out, "")
+	reconstructed = strings.ReplaceAll(reconstructed, " ", "")
+	reconstructed = strings.ReplaceAll(reconstructed, "\n", "")
+	if reconstructed != url {
+		t.Errorf("URL not fully preserved with indentation:\n got: %q\nwant: %q", reconstructed, url)
+	}
+}
+
 func TestHighlightMentions(t *testing.T) {
 	if got := highlightMentions("plain text"); got != "plain text" {
 		t.Errorf("highlightMentions without sentinels = %q, want unchanged", got)

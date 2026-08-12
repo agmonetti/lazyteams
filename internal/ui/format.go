@@ -214,15 +214,41 @@ func wrapAnsiLine(line string, width int) string {
 	if len(chars) == 0 {
 		return line
 	}
-	var out strings.Builder
+
+	// Preserve the source line's leading whitespace on every wrapped line so a
+	// paragraph that starts with an indent does not lose it when it wraps.
+	var indent []styledChar
 	start := 0
+	for start < len(chars) && (chars[start].r == ' ' || chars[start].r == '\t') {
+		indent = append(indent, chars[start])
+		start++
+	}
+	indentW := 0
+	for _, c := range indent {
+		indentW += runeDisplayWidth(c.r)
+	}
+	avail := width - indentW
+	if avail < 1 {
+		// Degenerate: the indent alone exceeds the limit. Wrap without indent.
+		indent = nil
+		start = 0
+		avail = width
+	}
+	if start >= len(chars) {
+		// The line is whitespace only: re-emit it instead of returning "".
+		var only strings.Builder
+		emitStyledChars(&only, indent)
+		return only.String()
+	}
+
+	var out strings.Builder
 	for start < len(chars) {
 		w := 0
 		j := start
 		lastBreak := -1
 		for j < len(chars) {
 			cw := runeDisplayWidth(chars[j].r)
-			if w+cw > width {
+			if w+cw > avail {
 				break
 			}
 			w += cw
@@ -232,6 +258,7 @@ func wrapAnsiLine(line string, width int) string {
 			j++
 		}
 		if j >= len(chars) {
+			emitStyledChars(&out, indent)
 			emitStyledChars(&out, chars[start:])
 			break
 		}
@@ -240,10 +267,12 @@ func wrapAnsiLine(line string, width int) string {
 			j = start + 1
 		}
 		if lastBreak != -1 {
+			emitStyledChars(&out, indent)
 			emitStyledChars(&out, chars[start:lastBreak+1])
 			out.WriteString("\n")
 			start = lastBreak + 1
 		} else {
+			emitStyledChars(&out, indent)
 			emitStyledChars(&out, chars[start:j])
 			out.WriteString("\n")
 			start = j
