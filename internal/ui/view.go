@@ -1201,11 +1201,6 @@ func (m Model) View() string {
 				leftBanner = lipgloss.NewStyle().
 					Foreground(colorMuted).
 					Render("⟳ Creating team...")
-			} else if m.downloadStatus != "" {
-				// Transient operation feedback (uploads, downloads, link open, ...)
-				leftBanner = lipgloss.NewStyle().
-					Foreground(colorMuted).
-					Render(sanitizeName(m.downloadStatus))
 			} else {
 				// Notification summary
 				var parts []string
