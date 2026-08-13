@@ -161,3 +161,32 @@ func TestChannelRoleNumber(t *testing.T) {
 		t.Error("Guest should not be a valid role for the change-role API")
 	}
 }
+
+func TestSortMessagesNewestFirst(t *testing.T) {
+	base := time.Date(2026, 8, 13, 10, 0, 0, 0, time.UTC)
+	newest := Message{ID: "n", CreatedAt: base}
+	middle := Message{ID: "m", CreatedAt: base.Add(-time.Hour)}
+	oldest := Message{ID: "o", CreatedAt: base.Add(-2 * time.Hour)}
+	sameA := Message{ID: "same-a", CreatedAt: middle.CreatedAt}
+	sameB := Message{ID: "same-b", CreatedAt: middle.CreatedAt}
+
+	msgs := []Message{oldest, sameB, newest, sameA, middle}
+	sortMessagesNewestFirst(msgs)
+
+	// Newest first, and the equal-timestamp group keeps its input relative
+	// order (sameB before sameA before middle) because the sort is stable.
+	wantIDs := []string{"n", "same-b", "same-a", "m", "o"}
+	for i, want := range wantIDs {
+		if msgs[i].ID != want {
+			t.Errorf("position %d = %q, want %q (full: %v)", i, msgs[i].ID, want, idsOf(msgs))
+		}
+	}
+}
+
+func idsOf(msgs []Message) []string {
+	ids := make([]string, 0, len(msgs))
+	for _, m := range msgs {
+		ids = append(ids, m.ID)
+	}
+	return ids
+}

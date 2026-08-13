@@ -304,12 +304,24 @@ func (c *Client) GetMessagesWithLink(teamID, channelID string, pageSize int) ([]
 		allMsgs = allMsgs[:pageSize]
 	}
 
+	sortMessagesNewestFirst(allMsgs)
+
 	return allMsgs, lastBackwardLink, nil
 }
 
 type MessagePage struct {
 	Messages     []Message
 	BackwardLink string
+}
+
+// sortMessagesNewestFirst orders messages newest-first so the UI's assumption
+// that messages[0] is the latest holds regardless of the order the chatsvc
+// returns (it can be non-chronological for some channels). Stable for equal
+// timestamps, so channels already delivered newest-first are unchanged.
+func sortMessagesNewestFirst(msgs []Message) {
+	sort.SliceStable(msgs, func(i, j int) bool {
+		return msgs[i].CreatedAt.After(msgs[j].CreatedAt)
+	})
 }
 
 // GetMessagesFromLink fetches a page of messages using a backwardLink URL directly.
@@ -419,6 +431,7 @@ func (c *Client) GetMessagesFromLink(link string) (MessagePage, error) {
 			Reactions:     reactions,
 		})
 	}
+	sortMessagesNewestFirst(msgs)
 	return MessagePage{Messages: msgs, BackwardLink: res.Metadata.BackwardLink}, nil
 }
 
