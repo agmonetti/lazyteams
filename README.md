@@ -18,22 +18,9 @@
 
 TUI client for Microsoft Teams. Runs entirely in the terminal — no Electron, no browser. Built with **Clean Architecture + Elm Architecture (Bubble Tea)**. Single static binary.
 
-```
-╔════════════════════════════╦════════════════════════════════════════════════════╗
-║ Chats                      ║                    LAZYTEAMS                       ║
-║                            ║                                                    ║
-║ ▼ Direct Messages          ║            Microsoft Teams Terminal UI             ║
-║   Personal notes           ║                   v1.0.0-beta                      ║
-║   PRIVATE CHAT 1           ║                                                    ║
-║   PRIVATE CHAT 2           ║          [↑/↓] Navigate chats · [Enter]            ║
-║                            ║                                                    ║
-║ ▼ Group Chats              ║                                                    ║
-║   GROUP CHAT 1             ║                                                    ║
-║                            ║                                                    ║
-╠════════════════════════════╩════════════════════════════════════════════════════╣
-║ [1-4] Workspace  [↑/↓] Navigate  [Enter] Open  [n] New DM  [p] Status  [q] Quit ║
-╚═════════════════════════════════════════════════════════════════════════════════╝
-```
+<p align="center">
+  <img src="assets/gif.gif" alt="lazyteams demo" width="900">
+</p>
 
 ## Highlights
 
