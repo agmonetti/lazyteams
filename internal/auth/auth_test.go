@@ -105,6 +105,16 @@ LAST=value
 			t.Errorf("loadTokensFile() has %d keys, want %d: %v", len(got), len(want), got)
 		}
 	})
+
+	t.Run("unquotes escaped values written by auth helper", func(t *testing.T) {
+		configDir := isolateConfigDir(t)
+		writeTokensFile(t, configDir, "TEAMS_COOKIE=\"line1\\nline2\\\"quoted\\\"\\\\slash\"\n")
+		got := loadTokensFile()
+		want := "line1\nline2\"quoted\"\\slash"
+		if got["TEAMS_COOKIE"] != want {
+			t.Errorf("loadTokensFile()[%q] = %q, want %q", "TEAMS_COOKIE", got["TEAMS_COOKIE"], want)
+		}
+	})
 }
 
 func TestGetTokens(t *testing.T) {

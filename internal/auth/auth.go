@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"lazyteams/internal/helpers"
@@ -40,7 +41,13 @@ func loadTokensFile() map[string]string {
 			continue
 		}
 		key := strings.TrimSpace(parts[0])
-		val := strings.Trim(strings.TrimSpace(parts[1]), `"`)
+		rawVal := strings.TrimSpace(parts[1])
+		val := rawVal
+		if unquoted, unquoteErr := strconv.Unquote(rawVal); unquoteErr == nil {
+			val = unquoted
+		} else {
+			val = strings.Trim(rawVal, `"`)
+		}
 		result[key] = val
 	}
 	return result

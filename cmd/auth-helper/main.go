@@ -686,13 +686,13 @@ func saveTokens(t *tokens, configDir string) error {
 	content := fmt.Sprintf(`# lazyteams tokens — auto-generated on %s
 # Do not edit manually. Run ./lazyteams-auth to renew.
 
-export MS_GRAPH_TOKEN="%s"
-export TEAMS_WEB_TOKEN="%s"
-export TEAMS_NOTIF_TOKEN="%s"
-export EDU_TOKEN="%s"
-export TEAMS_COOKIE="%s"
-export TEAMS_SPACES_TOKEN="%s"
-export TEAMS_FABRIC_TOKEN="%s"
+export MS_GRAPH_TOKEN=%q
+export TEAMS_WEB_TOKEN=%q
+export TEAMS_NOTIF_TOKEN=%q
+export EDU_TOKEN=%q
+export TEAMS_COOKIE=%q
+export TEAMS_SPACES_TOKEN=%q
+export TEAMS_FABRIC_TOKEN=%q
 `,
 		time.Now().Format(time.RFC3339),
 		existing["MS_GRAPH_TOKEN"],

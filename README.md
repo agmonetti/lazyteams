@@ -85,6 +85,13 @@ Security-sensitive data handling is described in [`SECURITY.md`](SECURITY.md).
 
 Educational tool. Operates on already-authenticated Microsoft Teams sessions. Does not distribute proprietary Microsoft binaries. *Not affiliated with Microsoft Corporation.*
 
+## Legal and Responsible Use
+
+- Use lazyteams only with accounts and tenants you are authorized to access.
+- Follow Microsoft's Terms of Service and your organization's policies.
+- `Microsoft` and `Microsoft Teams` are trademarks of Microsoft Corporation; this project is independent and unofficial.
+- If Microsoft changes APIs, auth flows, or platform restrictions, some features may stop working until updated.
+
 ## License
 
 This project is licensed under the **GNU General Public License v3.0 (GPLv3)**. See the [LICENSE](LICENSE) file for more details.
