@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  A fast, keyboard-driven Microsoft Teams client for the terminal.
+  A keyboard-driven Microsoft Teams client for the terminal.
 </p>
 
 <p align="center">
@@ -48,7 +48,7 @@ TUI client for Microsoft Teams. Runs entirely in the terminal — no Electron, n
 
 ## Requirements
 
-- Go 1.24+
+- Go 1.25+
 - Microsoft Teams account (university or enterprise)
 - Linux, macOS, or Windows. Playwright requires Firefox for the `auth-helper`.
 
@@ -70,6 +70,8 @@ go build -o lazyteams-auth ./cmd/auth-helper/
 ```
 
 First-time setup requires granting a set of Microsoft Graph permissions once (see [the docs](https://lazyteams.agmonetti.workers.dev/#first-time-setup)). The TUI renews expired tokens automatically in the background.
+
+Note: binaries built directly with `go build` report `dev` as their version. Build through `make build VERSION=v1.2.3` or the release workflow to embed a version (shown by `./lazyteams --version`).
 
 ## Documentation
 
