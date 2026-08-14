@@ -44,9 +44,9 @@ jobs:
         run: go vet ./...
 
       - name: Run govulncheck
-        uses: golang/govulncheck-action@032d45514ae346b1db93c04b0c90b841c370344f # v1
-        with:
-          go-version-file: go.mod
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@v1.4.0
+          govulncheck ./...
 
       - name: Build all packages
         run: go build ./...
