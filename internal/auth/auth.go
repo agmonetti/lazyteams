@@ -13,6 +13,25 @@ import (
 	"lazyteams/internal/helpers"
 )
 
+// QuoteValue escapes a token value so it can be written to tokens.env without
+// producing a malformed file (quotes, backslashes and control characters are
+// encoded using Go %q quoting).
+func QuoteValue(v string) string {
+	return strconv.Quote(v)
+}
+
+// UnquoteValue parses a value read from tokens.env. Files written by
+// lazyteams-auth use Go %q quoting; older files use bare double quotes.
+// Values that are neither a valid quoted string nor wrapped in quotes are
+// returned unchanged.
+func UnquoteValue(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if unquoted, err := strconv.Unquote(raw); err == nil {
+		return unquoted
+	}
+	return strings.Trim(raw, `"`)
+}
+
 // loadTokensFile reads the tokens file into a map.
 // Environment variables still take precedence when set explicitly.
 func loadTokensFile() map[string]string {
@@ -41,14 +60,7 @@ func loadTokensFile() map[string]string {
 			continue
 		}
 		key := strings.TrimSpace(parts[0])
-		rawVal := strings.TrimSpace(parts[1])
-		val := rawVal
-		if unquoted, unquoteErr := strconv.Unquote(rawVal); unquoteErr == nil {
-			val = unquoted
-		} else {
-			val = strings.Trim(rawVal, `"`)
-		}
-		result[key] = val
+		result[key] = UnquoteValue(parts[1])
 	}
 	return result
 }

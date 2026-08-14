@@ -115,6 +115,32 @@ LAST=value
 			t.Errorf("loadTokensFile()[%q] = %q, want %q", "TEAMS_COOKIE", got["TEAMS_COOKIE"], want)
 		}
 	})
+
+	t.Run("quote and unquote are inverse operations", func(t *testing.T) {
+		values := []string{
+			"",
+			"abc123",
+			"line1\nline2\"quoted\"\\slash",
+			"Bearer eyJhbGciOiJSUzI1NiJ9.payload-with-special-\"chars\"",
+		}
+		for _, v := range values {
+			if got := UnquoteValue(QuoteValue(v)); got != v {
+				t.Errorf("UnquoteValue(QuoteValue(%q)) = %q, want %q", v, got, v)
+			}
+		}
+	})
+
+	t.Run("old plain and double-quoted formats still parse", func(t *testing.T) {
+		configDir := isolateConfigDir(t)
+		writeTokensFile(t, configDir, "export MS_GRAPH_TOKEN=abc123\nexport TEAMS_WEB_TOKEN=\"def 456\"\n")
+		got := loadTokensFile()
+		if got["MS_GRAPH_TOKEN"] != "abc123" {
+			t.Errorf("MS_GRAPH_TOKEN = %q, want %q", got["MS_GRAPH_TOKEN"], "abc123")
+		}
+		if got["TEAMS_WEB_TOKEN"] != "def 456" {
+			t.Errorf("TEAMS_WEB_TOKEN = %q, want %q", got["TEAMS_WEB_TOKEN"], "def 456")
+		}
+	})
 }
 
 func TestGetTokens(t *testing.T) {

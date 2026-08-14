@@ -17,6 +17,7 @@ import (
 
 	"github.com/mxschmitt/playwright-go"
 
+	"lazyteams/internal/auth"
 	"lazyteams/internal/helpers"
 	"lazyteams/internal/version"
 )
@@ -654,8 +655,7 @@ func saveTokens(t *tokens, configDir string) error {
 			parts := strings.SplitN(line, "=", 2)
 			if len(parts) == 2 {
 				key := strings.TrimSpace(parts[0])
-				val := strings.Trim(strings.TrimSpace(parts[1]), `"`)
-				existing[key] = val
+				existing[key] = auth.UnquoteValue(parts[1])
 			}
 		}
 	}
@@ -686,22 +686,22 @@ func saveTokens(t *tokens, configDir string) error {
 	content := fmt.Sprintf(`# lazyteams tokens — auto-generated on %s
 # Do not edit manually. Run ./lazyteams-auth to renew.
 
-export MS_GRAPH_TOKEN=%q
-export TEAMS_WEB_TOKEN=%q
-export TEAMS_NOTIF_TOKEN=%q
-export EDU_TOKEN=%q
-export TEAMS_COOKIE=%q
-export TEAMS_SPACES_TOKEN=%q
-export TEAMS_FABRIC_TOKEN=%q
+export MS_GRAPH_TOKEN=%s
+export TEAMS_WEB_TOKEN=%s
+export TEAMS_NOTIF_TOKEN=%s
+export EDU_TOKEN=%s
+export TEAMS_COOKIE=%s
+export TEAMS_SPACES_TOKEN=%s
+export TEAMS_FABRIC_TOKEN=%s
 `,
 		time.Now().Format(time.RFC3339),
-		existing["MS_GRAPH_TOKEN"],
-		existing["TEAMS_WEB_TOKEN"],
-		existing["TEAMS_NOTIF_TOKEN"],
-		existing["EDU_TOKEN"],
-		existing["TEAMS_COOKIE"],
-		existing["TEAMS_SPACES_TOKEN"],
-		existing["TEAMS_FABRIC_TOKEN"],
+		auth.QuoteValue(existing["MS_GRAPH_TOKEN"]),
+		auth.QuoteValue(existing["TEAMS_WEB_TOKEN"]),
+		auth.QuoteValue(existing["TEAMS_NOTIF_TOKEN"]),
+		auth.QuoteValue(existing["EDU_TOKEN"]),
+		auth.QuoteValue(existing["TEAMS_COOKIE"]),
+		auth.QuoteValue(existing["TEAMS_SPACES_TOKEN"]),
+		auth.QuoteValue(existing["TEAMS_FABRIC_TOKEN"]),
 	)
 
 	if err := os.WriteFile(tokensPath, []byte(content), 0600); err != nil {
