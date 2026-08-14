@@ -1,26 +1,33 @@
-# Binaries
-msTTui
-msTTui-auth
-/auth-helper
-teamsTUI
-main
-*.exe
-
-# Debug files
-debug_mensajes.json
-debug_api.go
-debug*.log
-debug*.json
-.plan/
-
-# Credentials
-tokens.env
-tokens.json
-browser-session/
-prefs.json
-*.env
-.config/lazyteams/
-coverage.out
+# Compiled binaries
 lazyteams
 lazyteams-auth
+*.exe
+
+# Go build / test artifacts
+coverage.out
+*.test
+*.prof
+
+# Debug dumps
+debug_api.go
+debug_mensajes.json
+debug*.log
+debug*.json
+
+# Local credentials — never commit
+tokens.env
+tokens.json
+*.env
+prefs.json
+browser-session/
+.config/lazyteams/
+
+# Release artifacts
 dist/
+
+# Local planning notes
+.plan/
+
+# OS / editor files
+.DS_Store
+Thumbs.db
