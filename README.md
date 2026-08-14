@@ -77,7 +77,9 @@ Note: binaries built directly with `go build` report `dev` as their version. Bui
 
 Full documentation — first-time setup, token system, configuration files, keybindings, platform support, and architecture — lives on the docs site:
 
-[Documentation](https://lazyteams.agmonetti.workers.dev)
+- [Documentation](https://lazyteams.agmonetti.workers.dev)
+- [Troubleshooting](https://lazyteams.agmonetti.workers.dev/troubleshooting.html)
+- [FAQ](https://lazyteams.agmonetti.workers.dev/faq.html)
 
 Security-sensitive data handling is described in [`SECURITY.md`](SECURITY.md).
 
