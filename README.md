@@ -56,7 +56,7 @@ go build -o lazyteams-auth ./cmd/auth-helper/
 ./lazyteams --help
 ```
 
-First-time setup requires granting a set of Microsoft Graph permissions once (see [the docs](https://lazyteams.agmonetti.workers.dev/#first-time-setup)). The TUI renews expired tokens automatically in the background.
+First-time setup requires granting a set of Microsoft Graph permissions once (see [the docs](https://lazyteams.agmonetti.workers.dev/#first-time-setup)). The TUI renews expired tokens automatically in the background. Watch a [demo of the full auth process](https://lazyteams.agmonetti.workers.dev/#auth-process-demo) (browser login → automatic token capture → saved session).
 
 Note: binaries built directly with `go build` report `dev` as their version. Build through `make build VERSION=v1.2.3` or the release workflow to embed a version (shown by `./lazyteams --version`).
 
@@ -65,6 +65,7 @@ Note: binaries built directly with `go build` report `dev` as their version. Bui
 Full documentation — first-time setup, token system, configuration files, keybindings, platform support, and architecture — lives on the docs site:
 
 - [Documentation](https://lazyteams.agmonetti.workers.dev)
+- [Auth process demo](https://lazyteams.agmonetti.workers.dev/#auth-process-demo)
 - [Troubleshooting](https://lazyteams.agmonetti.workers.dev/troubleshooting.html)
 - [FAQ](https://lazyteams.agmonetti.workers.dev/faq.html)
 
