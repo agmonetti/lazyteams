@@ -62,3 +62,18 @@ func TestTokenDisplayName(t *testing.T) {
 		}
 	}
 }
+
+func TestAllActiveTokensFresh(t *testing.T) {
+	if m := (Model{tokenRenewing: false, tokenRenewalQueue: nil, tokenRenewFailures: nil}); !m.allActiveTokensFresh() {
+		t.Error("idle model with empty queue and no failures should be fresh")
+	}
+	if m := (Model{tokenRenewing: true, tokenRenewalQueue: nil, tokenRenewFailures: nil}); m.allActiveTokensFresh() {
+		t.Error("a renewal in progress is not fresh")
+	}
+	if m := (Model{tokenRenewing: false, tokenRenewalQueue: []string{"graph"}, tokenRenewFailures: nil}); m.allActiveTokensFresh() {
+		t.Error("a non-empty queue is not fresh")
+	}
+	if m := (Model{tokenRenewing: false, tokenRenewalQueue: nil, tokenRenewFailures: []string{"graph"}}); m.allActiveTokensFresh() {
+		t.Error("prior renewal failures are not fresh")
+	}
+}

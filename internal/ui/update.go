@@ -199,17 +199,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmds...)
 
 	case tokensReloadedMsg:
+		var cmds []tea.Cmd
 		if msg.err != nil {
 			m.tokenRenewErr = msg.err.Error()
 			if !containsString(m.tokenRenewFailures, msg.tokenType) {
 				m.tokenRenewFailures = append(m.tokenRenewFailures, msg.tokenType)
 			}
-		} else {
-			if msg.tokenType == "edu" {
-				return m, loadAssignmentsCmd(m.client)
-			}
+		} else if msg.tokenType == "edu" {
+			cmds = append(cmds, loadAssignmentsCmd(m.client))
 		}
-		return m, nil
+		// The renewal queue is drained, nothing is renewing, and every
+		// renewal succeeded: the fresh tokens are already applied to the
+		// client (ReloadTokens finished), so reload all data now. This
+		// recovers startup loads that failed with expired tokens (teams,
+		// chats, notifications, self ID) without racing the reload.
+		if m.allActiveTokensFresh() {
+			cmds = append(cmds, loadTeamsCmd(m.client))
+			cmds = append(cmds, loadChatsCmd(m.client))
+			cmds = append(cmds, loadMeCmd(m.client))
+			cmds = append(cmds, loadNotificationsCmd(m.client))
+			cmds = append(cmds, loadAssignmentsCmd(m.client))
+		}
+		return m, tea.Batch(cmds...)
 
 	case channelsErrMsg:
 		if msg.teamID == m.teams[m.selectedTeam].ID {
@@ -1222,6 +1233,14 @@ func containsString(values []string, target string) bool {
 		}
 	}
 	return false
+}
+
+// allActiveTokensFresh reports whether the token renewal queue is fully
+// drained, no renewal is running, and every renewal succeeded. Data reloads
+// are triggered from this state so loads always run with freshly applied
+// tokens (ReloadTokens has already finished).
+func (m Model) allActiveTokensFresh() bool {
+	return !m.tokenRenewing && len(m.tokenRenewalQueue) == 0 && len(m.tokenRenewFailures) == 0
 }
 
 func formatDownloadResults(results []string) string {
