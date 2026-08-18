@@ -16,7 +16,7 @@
   <a href="LICENSE">License</a>
 </p>
 
-TUI client for Microsoft Teams. Runs entirely in the terminal — no Electron, no browser. Built with **Clean Architecture + Elm Architecture (Bubble Tea)**. Single static binary.
+TUI client for Microsoft Teams. Runs entirely in the terminal — no Electron, no browser. Built with **Clean Architecture + Elm Architecture (Bubble Tea)**. Two static binaries: the TUI (`lazyteams`) and the optional auth helper (`lazyteams-auth`).
 
 <p align="center">
   <img src="assets/gif.gif" alt="lazyteams demo" width="900">
