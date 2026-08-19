@@ -69,6 +69,18 @@ Environment variables (`MS_GRAPH_TOKEN`, `TEAMS_WEB_TOKEN`, etc.) override value
 - Revoke or rotate Microsoft sessions if you suspect your token files were copied.
 - Build lazyteams from source when possible; do not run untrusted pre-built binaries.
 
+## Update Integrity
+
+`lazyteams --update` downloads the self-hosted release binaries over HTTPS from
+`github.com` and verifies each against the `SHA256SUMS` file shipped with the
+same GitHub release before replacing the running binaries. The updater refuses
+to proceed if a release does not publish `SHA256SUMS`, and aborts on any
+checksum mismatch. This protects against corrupted or tampered binaries during
+transport, but it is not a full code-signing scheme: the checksum is published
+alongside the binaries it protects, so a GitHub compromise (or a compromised
+maintainer account) could alter both together. Treat `--update` output as
+trusted only if you already trust the release author.
+
 ## Security Recommendations for Contributors
 
 - Do not add hardcoded tokens, cookies, or API keys to the codebase.

@@ -60,6 +60,11 @@ First-time setup requires granting a set of Microsoft Graph permissions once (se
 
 Note: binaries built directly with `go build` report `dev` as their version. Build through `make build VERSION=v1.2.3` or the release workflow to embed a version (shown by `./lazyteams --version`).
 
+## Updating
+
+`lazyteams --update` downloads and installs the latest release (TUI and auth
+helper), verifying each binary against the release's `SHA256SUMS`. See [Updating](https://lazyteams.agmonetti.workers.dev/updating.html).
+
 ## Documentation
 
 Full documentation — first-time setup, token system, configuration files, keybindings, platform support, and architecture — lives on the docs site:

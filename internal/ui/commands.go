@@ -38,8 +38,6 @@ const tokenRenewalSpinnerInterval = 80 * time.Millisecond
 const selfRetryInterval = 15 * time.Second
 const maxSelfRetries = 30
 
-const githubReleasesURL = "https://api.github.com/repos/agmonetti/lazyteams/releases/latest"
-
 // updateBannerDuration is how long the update notice occupies the footer
 // exclusively at startup before the normal contextual footer returns.
 const updateBannerDuration = 60 * time.Second
@@ -49,7 +47,7 @@ const updateBannerDuration = 60 * time.Second
 // network or rate limit never disturbs the UI.
 func checkUpdateCmd() tea.Cmd {
 	return func() tea.Msg {
-		tag, err := version.LatestRelease(githubReleasesURL)
+		tag, err := version.LatestRelease(version.GithubReleasesURL)
 		if err != nil {
 			return updateCheckMsg{}
 		}
