@@ -16,7 +16,7 @@
   <a href="LICENSE">License</a>
 </p>
 
-TUI client for Microsoft Teams. Runs entirely in the terminal — no Electron, no browser. Built with **Clean Architecture + Elm Architecture (Bubble Tea)**. Two static binaries: the TUI (`lazyteams`) and the optional auth helper (`lazyteams-auth`).
+TUI client for Microsoft Teams. Runs entirely in the terminal — no Electron, no browser. Built with **Clean Architecture + Elm Architecture (Bubble Tea)**. Two static binaries: the TUI (`lazyteams`) and the auth helper (`lazyteams-auth`).
 
 <p align="center">
   <img src="assets/gif.gif" alt="lazyteams demo" width="900">
@@ -36,7 +36,7 @@ TUI client for Microsoft Teams. Runs entirely in the terminal — no Electron, n
 ## Requirements
 
 - Go 1.26.6+
-- Microsoft Teams account (university or enterprise)
+- Microsoft Teams account (university or enterprise) - does not work on personal accounts
 - Linux, macOS, or Windows. Playwright requires Firefox for the `auth-helper`.
 
 ## Quick Start
