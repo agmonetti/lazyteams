@@ -232,9 +232,43 @@ func (m Model) handleTickMsg(msg tickMsg) (tea.Model, tea.Cmd) {
 		m.loadingMore = false
 		cmds = append(cmds, loadMessagesCmd(m.client, "", m.loadedConvID, 200))
 	}
+
+	// Self-healing: retry loads that failed silently at startup. selfID is
+	// the linchpin for DM names and unread state; teams have no polling of
+	// their own. The retries are rate-limited and bounded so a genuinely
+	// empty account or a permanent failure does not hammer the API.
+	now := time.Now()
+	if m.retrySelfIDDue(now) {
+		m.selfIDRetryCount++
+		m.selfIDRetryUntil = now.Add(selfRetryInterval)
+		cmds = append(cmds, loadMeCmd(m.client))
+	} else if m.selfID != "" && m.selfIDRetryCount > 0 {
+		m.selfIDRetryCount = 0
+	}
+	if m.retryTeamsDue(now) {
+		m.teamsRetryCount++
+		m.teamsRetryUntil = now.Add(selfRetryInterval)
+		cmds = append(cmds, loadTeamsCmd(m.client))
+	} else if m.teamsLoaded && m.teamsRetryCount > 0 {
+		m.teamsRetryCount = 0
+	}
+
 	// Re-schedule the next tick
 	cmds = append(cmds, refreshTickCmd())
 	return m, tea.Batch(cmds...)
+}
+
+// retrySelfIDDue reports whether the tick should re-issue loadMeCmd because
+// the self ID is still missing and the retry budget/rate limit allows it.
+func (m Model) retrySelfIDDue(now time.Time) bool {
+	return m.selfID == "" && m.selfIDRetryCount < maxSelfRetries && !now.Before(m.selfIDRetryUntil) && !m.tokenRenewing
+}
+
+// retryTeamsDue reports whether the tick should re-issue loadTeamsCmd because
+// the teams list has not been loaded successfully yet and the retry
+// budget/rate limit allows it.
+func (m Model) retryTeamsDue(now time.Time) bool {
+	return !m.teamsLoaded && m.teamsRetryCount < maxSelfRetries && !now.Before(m.teamsRetryUntil) && !m.tokenRenewing && !m.loading
 }
 
 func (m Model) handlePresenceMsg(msg presenceTickMsg) (tea.Model, tea.Cmd) {

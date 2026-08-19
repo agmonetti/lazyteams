@@ -32,6 +32,12 @@ const unreadSweepDelay = 500 * time.Millisecond
 const filesRefreshInterval = 30
 const tokenRenewalSpinnerInterval = 80 * time.Millisecond
 
+// Self-healing retries. The poll tick re-issues selfID and teams loads that
+// failed silently at startup (transient network error, race with token
+// renewal) until they converge. Each attempt is rate-limited and bounded.
+const selfRetryInterval = 15 * time.Second
+const maxSelfRetries = 30
+
 const githubReleasesURL = "https://api.github.com/repos/agmonetti/lazyteams/releases/latest"
 
 // updateBannerDuration is how long the update notice occupies the footer

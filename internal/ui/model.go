@@ -268,6 +268,14 @@ type Model struct {
 	// User
 	userName string
 
+	// Self-healing retries: if startup loads failed silently (transient
+	// network error, race with token renewal), the poll tick retries them
+	// until they converge. Each attempt is rate-limited and bounded.
+	selfIDRetryUntil time.Time
+	selfIDRetryCount int
+	teamsRetryUntil  time.Time
+	teamsRetryCount  int
+
 	// Help Menu
 	showHelp bool
 

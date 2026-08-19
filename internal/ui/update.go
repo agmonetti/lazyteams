@@ -202,6 +202,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if next := startNextTokenRenewal(&m); next != nil {
 			cmds = append(cmds, next)
+		} else if msg.err != nil {
+			// If the last token in the queue failed, reloadTokensCmd is not
+			// queued, so tokensReloadedMsg will never fire to trigger the
+			// data reload. Trigger it here so modules whose tokens succeeded
+			// (e.g. graph) can still recover their data.
+			cmds = append(cmds, loadTeamsCmd(m.client))
+			cmds = append(cmds, loadChatsCmd(m.client))
+			cmds = append(cmds, loadMeCmd(m.client))
+			cmds = append(cmds, loadNotificationsCmd(m.client))
+			cmds = append(cmds, loadAssignmentsCmd(m.client))
 		}
 		return m, tea.Batch(cmds...)
 
@@ -215,12 +225,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else if msg.tokenType == "edu" {
 			cmds = append(cmds, loadAssignmentsCmd(m.client))
 		}
-		// The renewal queue is drained, nothing is renewing, and every
-		// renewal succeeded: the fresh tokens are already applied to the
-		// client (ReloadTokens finished), so reload all data now. This
-		// recovers startup loads that failed with expired tokens (teams,
-		// chats, notifications, self ID) without racing the reload.
-		if m.allActiveTokensFresh() {
+		// The renewal queue is drained and nothing is renewing: the fresh
+		// tokens are already applied to the client, so reload all data now.
+		// This recovers startup loads that failed with expired tokens. It
+		// runs even if some tokens failed, so the ones that succeeded can
+		// still recover their data.
+		if !m.tokenRenewing && len(m.tokenRenewalQueue) == 0 {
 			cmds = append(cmds, loadTeamsCmd(m.client))
 			cmds = append(cmds, loadChatsCmd(m.client))
 			cmds = append(cmds, loadMeCmd(m.client))
@@ -1240,14 +1250,6 @@ func containsString(values []string, target string) bool {
 		}
 	}
 	return false
-}
-
-// allActiveTokensFresh reports whether the token renewal queue is fully
-// drained, no renewal is running, and every renewal succeeded. Data reloads
-// are triggered from this state so loads always run with freshly applied
-// tokens (ReloadTokens has already finished).
-func (m Model) allActiveTokensFresh() bool {
-	return !m.tokenRenewing && len(m.tokenRenewalQueue) == 0 && len(m.tokenRenewFailures) == 0
 }
 
 func formatDownloadResults(results []string) string {
