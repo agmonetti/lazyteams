@@ -37,6 +37,12 @@ jobs:
               -o dist/lazyteams-auth-$os-$arch$ext ./cmd/auth-helper
           done
 
+      - name: Generate SHA256 checksums
+        run: |
+          cd dist
+          sha256sum lazyteams-* lazyteams-auth-* > SHA256SUMS
+          cat SHA256SUMS
+
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}

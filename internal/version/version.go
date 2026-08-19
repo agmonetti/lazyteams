@@ -21,6 +21,11 @@ var Version = "dev"
 // prevents a stalled network connection from hanging the check goroutine.
 var httpClient = &http.Client{Timeout: 10 * time.Second}
 
+// GithubReleasesURL is the GitHub Releases API endpoint for the latest
+// release. It is shared by the in-TUI update check and the `--update`
+// self-update command. Exported so callers can point tests at a stub URL.
+const GithubReleasesURL = "https://api.github.com/repos/agmonetti/lazyteams/releases/latest"
+
 // Compare compares two semantic version strings (e.g. "v1.2.3") and returns
 // -1, 0 or 1. Segments are compared numerically, so "v1.10.0" is newer than
 // "v1.9.0". A "dev" build sorts before every release, so users compiling from

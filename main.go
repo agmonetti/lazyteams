@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"os"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"lazyteams/internal/auth"
@@ -16,12 +18,16 @@ func main() {
 	// Kill any stale browser holding our profile from a previous crashed run.
 	helpers.KillZombieBrowser()
 
-	// Handle --help and --version flags
+	// Handle --help, --version, --update and --debug flags
 	debugMode := false
+	doUpdate := false
 	for _, arg := range os.Args[1:] {
 		if arg == "--version" || arg == "-v" {
 			fmt.Println(version.Version)
 			os.Exit(0)
+		}
+		if arg == "--update" {
+			doUpdate = true
 		}
 		if arg == "--help" || arg == "-h" {
 			fmt.Print(`lazyteams — Microsoft Teams Terminal UI
@@ -31,6 +37,7 @@ USAGE:
   ./lazyteams --help                  Show this help
   ./lazyteams --version               Show the build version
   ./lazyteams --debug                 Enable detailed auth-helper logging
+  ./lazyteams --update                Check for and install the latest release
 
 AUTH (run ./lazyteams-auth):
   ./lazyteams-auth                    Full token capture (first run)
@@ -51,6 +58,13 @@ CONFIG FILES:
   Prefs:    ~/.config/lazyteams/prefs.json
   Session:  ~/.config/lazyteams/browser-session/
 
+UPDATE:
+  ./lazyteams --update              Download the latest release (TUI and
+                                    auth-helper) from GitHub, verify its
+                                    SHA-256 checksums and replace the running
+                                    binaries. It will ask for confirmation
+                                    before replacing anything.
+
 NOTES:
   - On first run, a browser window opens for Microsoft login.
   - Tokens expire periodically and are renewed automatically.
@@ -65,6 +79,10 @@ NOTES:
 		if arg == "--debug" {
 			debugMode = true
 		}
+	}
+
+	if doUpdate {
+		os.Exit(runUpdate())
 	}
 
 	graphToken, webToken, notifToken, eduToken, cookie, eduCookie, spacesToken, fabricToken, err := auth.GetTokens()
@@ -86,4 +104,62 @@ NOTES:
 		fmt.Printf("Fatal TUI error: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+// runUpdate performs the self-update flow and returns a process exit code.
+func runUpdate() int {
+	info, err := version.LatestReleaseInfo(version.GithubReleasesURL)
+	if err != nil {
+		fmt.Printf("Update check failed: %v\n", err)
+		return 1
+	}
+	if version.Compare(version.Version, info.TagName) >= 0 {
+		fmt.Printf("Already up to date (v%s).\n", strings.TrimPrefix(version.Version, "v"))
+		return 0
+	}
+
+	fmt.Printf("A new release (%s) is available; you are running %s.\n", info.TagName, version.Version)
+
+	selfExe, err := version.ExecutablePath()
+	if err != nil {
+		fmt.Printf("Cannot determine current binary path: %v\n", err)
+		return 1
+	}
+	authExe := version.AuthHelperSiblingPath(selfExe)
+
+	confirm := func(prompt string) bool {
+		fmt.Printf("%s [y/N] ", prompt)
+		reader := bufio.NewReader(os.Stdin)
+		line, _ := reader.ReadString('\n')
+		line = strings.TrimSpace(strings.ToLower(line))
+		return line == "y" || line == "yes"
+	}
+	progress := func(msg string) {
+		fmt.Print(msg)
+	}
+
+	updated, err := info.UpdateCmd(version.Version, selfExe, authExe, confirm, progress)
+	if err != nil {
+		fmt.Printf("Update failed: %v\n", err)
+		return 1
+	}
+	if !updated {
+		return 0
+	}
+
+	// Restart with the new binary, preserving original arguments minus any
+	// --update/--help flags and this process's argv[0].
+	args := make([]string, 0, len(os.Args))
+	args = append(args, selfExe)
+	for _, a := range os.Args[1:] {
+		if a == "--update" {
+			continue
+		}
+		args = append(args, a)
+	}
+	if err := version.Restart(selfExe, args); err != nil {
+		fmt.Printf("Updated but could not restart: %v\n", err)
+		return 1
+	}
+	return 0
 }
