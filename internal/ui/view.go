@@ -1384,12 +1384,15 @@ func renderThreeTabs(current ViewMode, nameA, nameB, nameC string) (string, stri
 	return tabA, tabB, tabC
 }
 
+func (m Model) updateBannerActive() bool {
+	return m.latestVersion != "" && time.Now().Before(m.updateBannerUntil)
+}
+
 func (m Model) footerText() string {
-	text := m.footerTextInner()
-	if m.latestVersion != "" {
-		text += "  " + lipgloss.NewStyle().Foreground(colorYellow).Render("New version "+m.latestVersion+" available")
+	if m.updateBannerActive() {
+		return lipgloss.NewStyle().Foreground(colorYellow).Render("New version " + m.latestVersion + " available")
 	}
-	return text
+	return m.footerTextInner()
 }
 
 func (m Model) footerTextInner() string {

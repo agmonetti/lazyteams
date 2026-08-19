@@ -34,6 +34,9 @@ type markNotifReadMsg struct{ err error }
 // empty when no update is available or the check failed silently.
 type updateCheckMsg struct{ latest string }
 
+// updateBannerExpiredMsg hides the update notice after its display window.
+type updateBannerExpiredMsg struct{}
+
 type tokenRenewedMsg struct {
 	tokenType string
 	err       error

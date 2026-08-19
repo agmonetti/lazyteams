@@ -293,6 +293,9 @@ type Model struct {
 
 	// Latest release tag when an update is available (from the GitHub check).
 	latestVersion string
+	// updateBannerUntil bounds how long the update notice is shown as the
+	// exclusive footer content. Zero means no banner is displayed.
+	updateBannerUntil time.Time
 
 	// Assignments / Tasks
 	assignments      []graph.Assignment

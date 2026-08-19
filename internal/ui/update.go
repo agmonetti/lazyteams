@@ -9,6 +9,7 @@ import (
 	"lazyteams/internal/version"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -170,7 +171,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case updateCheckMsg:
 		if msg.latest != "" && version.Compare(version.Version, msg.latest) < 0 {
 			m.latestVersion = msg.latest
+			m.updateBannerUntil = time.Now().Add(updateBannerDuration)
+			return m, updateBannerExpireCmd()
 		}
+		return m, nil
+
+	case updateBannerExpiredMsg:
+		m.updateBannerUntil = time.Time{}
 		return m, nil
 
 	case tokenRenewalTickMsg:
