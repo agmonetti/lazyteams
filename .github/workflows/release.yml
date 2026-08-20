@@ -22,28 +22,8 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Build binaries
-        run: |
-          VERSION=${GITHUB_REF_NAME}
-          mkdir -p dist
-          for t in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64; do
-            os=${t%/*}; arch=${t#*/}
-            ext=""; [ "$os" = "windows" ] && ext=".exe"
-            GOOS=$os GOARCH=$arch go build \
-              -ldflags "-X lazyteams/internal/version.Version=$VERSION" \
-              -o dist/lazyteams-$os-$arch$ext .
-            GOOS=$os GOARCH=$arch go build \
-              -ldflags "-X lazyteams/internal/version.Version=$VERSION" \
-              -o dist/lazyteams-auth-$os-$arch$ext ./cmd/auth-helper
-          done
-
-      - name: Generate SHA256 checksums
-        run: |
-          cd dist
-          # lazyteams-* also matches lazyteams-auth-*, so a single glob covers
-          # every binary without duplicates.
-          sha256sum lazyteams-* > SHA256SUMS
-          cat SHA256SUMS
+      - name: Build binaries and checksums
+        run: make dist VERSION=${{ github.ref_name }}
 
       - name: Create GitHub Release
         env:

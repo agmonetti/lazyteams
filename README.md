@@ -58,7 +58,16 @@ go build -o lazyteams-auth ./cmd/auth-helper/
 
 First-time setup requires granting a set of Microsoft Graph permissions once (see [the docs](https://lazyteams.agmonetti.workers.dev/#first-time-setup)). The TUI renews expired tokens automatically in the background. Watch a [demo of the full auth process](https://lazyteams.agmonetti.workers.dev/#auth-process-demo) (browser login → automatic token capture → saved session).
 
-Note: binaries built directly with `go build` report `dev` as their version. Build through `make build VERSION=v1.2.3` or the release workflow to embed a version (shown by `./lazyteams --version`).
+Note: binaries built directly with `go build` report `dev` as their version. Build through `make build VERSION=v1.2.3` or `make dist VERSION=v1.2.3` to embed a version (shown by `./lazyteams --version`).
+
+## Releasing
+
+Releases are tag-driven: CI builds, checksums and publishes.
+
+1. `make release VERSION=v1.2.3` — validates the version, checks for uncommitted changes, and pushes the tag (and branch) to GitHub.
+2. The Release workflow cross-compiles all platforms via `make dist`, writes `SHA256SUMS`, and creates the GitHub Release with auto-generated notes.
+
+To produce the release artifacts locally without publishing, run `make dist VERSION=v1.2.3` and inspect `dist/SHA256SUMS`.
 
 ## Updating
 
