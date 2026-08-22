@@ -578,7 +578,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			len(m.teams) > 0 && m.selectedChan < len(m.channels) {
 			m.filesRefreshing = true
 			teamID := m.teams[m.selectedTeam].ID
-			if len(m.folderStack) > 1 {
+			if len(m.folderStack) > 0 {
 				node := m.folderStack[len(m.folderStack)-1]
 				cmds = append(cmds, refreshFolderCmd(m.client, teamID, node))
 			} else {

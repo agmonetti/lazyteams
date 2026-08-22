@@ -177,7 +177,10 @@ func (m Model) handleFilesMsg(msg filesMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	// Discard stale responses from a previous folder level
+	// Discard stale responses from a previous folder level. A root response is
+	// only valid when the user is actually at the channel root; otherwise it
+	// would overwrite the nested folder's listing while leaving the breadcrumb
+	// intact, desynchronizing the title from the content.
 	if msg.folderID != "" {
 		expectedKey := ""
 		rootKey := ""
@@ -187,7 +190,8 @@ func (m Model) handleFilesMsg(msg filesMsg) (tea.Model, tea.Cmd) {
 		if m.selectedChan < len(m.channels) {
 			rootKey = "root:" + m.channels[m.selectedChan].ID
 		}
-		if msg.folderID != expectedKey && msg.folderID != rootKey {
+		atRoot := len(m.folderStack) == 0
+		if msg.folderID != expectedKey && !(atRoot && msg.folderID == rootKey) {
 			return m, nil
 		}
 		m.folderCache[msg.folderID] = msg.files
