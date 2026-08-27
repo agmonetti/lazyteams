@@ -911,4 +911,3 @@ func TestRenderFilesContentToggleFileInfo(t *testing.T) {
 		t.Errorf("toggling 't' did not update m.prefs.ShowFileInfo to true")
 	}
 }
-
