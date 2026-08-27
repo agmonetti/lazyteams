@@ -152,13 +152,12 @@ func (m Model) View() string {
 	// INNER dimensions
 	rightInnerWidth := rightOuterWidth - 2
 	rightInnerHeight := panelOuterHeight - 2
+	leftInnerHeight := panelOuterHeight - 2
 
 	// === Left Panel ===
 	leftContent := ""
 
 	if m.workspace == WorkspaceDMs {
-		leftContent += titleStyle.Render("Chats") + "\n\n"
-
 		if len(m.chats) == 0 {
 			leftContent += "  (no chats)\n"
 		} else {
@@ -249,7 +248,7 @@ func (m Model) View() string {
 			}
 		}
 	} else if m.workspace == WorkspaceTeams {
-		leftContent += titleStyle.Render("Teams") + "\n"
+		leftContent += titleStyle.Copy().MarginBottom(0).Render("Teams") + "\n"
 		visibleTeams := make([]int, 0, len(m.teams))
 		for i, t := range m.teams {
 			isHidden := contains(m.prefs.HiddenTeams, t.ID)
@@ -297,14 +296,17 @@ func (m Model) View() string {
 		leftContent += "\n"
 
 		// Channels title
-		leftContent += titleStyle.Render("Channels") + "\n"
+		leftContent += titleStyle.Copy().MarginBottom(0).Render("Channels") + "\n"
 
 		if m.channelErr != nil {
 			leftContent += lipgloss.NewStyle().Foreground(lipgloss.Color("203")).Render(fmt.Sprintf("  [Blocked: %v]\n", m.channelErr))
 		} else if len(m.channels) == 0 {
 			leftContent += "  (no channels)\n"
 		} else {
-			teamID := m.teams[m.selectedTeam].ID
+			teamID := ""
+			if m.selectedTeam >= 0 && m.selectedTeam < len(m.teams) {
+				teamID = m.teams[m.selectedTeam].ID
+			}
 			hidden := m.prefs.HiddenChannels[teamID]
 			visibleChannels := make([]int, 0, len(m.channels))
 			for i, c := range m.channels {
@@ -320,7 +322,44 @@ func (m Model) View() string {
 				}
 				visibleChannels = append(visibleChannels, i)
 			}
-			for vi, ri := range visibleChannels {
+
+			hiddenChanCount := 0
+			for _, c := range m.channels {
+				if contains(hidden, c.ID) {
+					hiddenChanCount++
+				}
+			}
+
+			// Teams block height calculation
+			teamsBlockHeight := 1 // "Teams" title
+			teamsBlockHeight += len(visibleTeams)
+			if (!m.showHidden && hiddenCount > 0) || m.showHidden {
+				teamsBlockHeight++ // (A) manage hidden hint
+			}
+			teamsBlockHeight++ // Blank line before Channels
+
+			channelsHeaderHeight := 1 // "Channels" title
+			if (!m.showHiddenChannels && hiddenChanCount > 0) || m.showHiddenChannels {
+				channelsHeaderHeight++ // (A) manage hidden channels hint
+			}
+
+			availableChanHeight := leftInnerHeight - teamsBlockHeight - channelsHeaderHeight
+			if availableChanHeight < 3 {
+				availableChanHeight = 3
+			}
+
+			totalChans := len(visibleChannels)
+			selPos := 0
+			for idx, ri := range visibleChannels {
+				if ri == m.selectedChan {
+					selPos = idx
+					break
+				}
+			}
+
+			moreStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("245"))
+
+			renderChannelItem := func(ri int) {
 				c := m.channels[ri]
 				cursor := "  "
 				style := normalItemStyle
@@ -339,17 +378,66 @@ func (m Model) View() string {
 				if strings.ToLower(c.MembershipType) == "private" {
 					lock = lipgloss.NewStyle().Foreground(colorMuted).Render(symLock)
 				}
-				_ = vi
 				leftContent += fmt.Sprintf("%s%s\n", cursor, style.Render(truncateText(c.DisplayName, leftTruncWidth-2))+lock)
 			}
-			hiddenCount := 0
-			for _, c := range m.channels {
-				if contains(hidden, c.ID) {
-					hiddenCount++
+
+			if totalChans <= availableChanHeight {
+				// All channels fit on screen
+				for _, ri := range visibleChannels {
+					renderChannelItem(ri)
+				}
+			} else {
+				// Windowing needed
+				var startIdx, endIdx int
+				showTopIndicator := false
+				showBottomIndicator := false
+
+				// If selected channel is near the top
+				if selPos < availableChanHeight-1 {
+					startIdx = 0
+					endIdx = startIdx + (availableChanHeight - 1)
+					showBottomIndicator = true
+				} else if selPos >= totalChans-(availableChanHeight-1) { // Near the bottom
+					endIdx = totalChans
+					startIdx = totalChans - (availableChanHeight - 1)
+					showTopIndicator = true
+				} else { // In the middle (both top and bottom hidden)
+					showTopIndicator = true
+					showBottomIndicator = true
+					capacity := availableChanHeight - 2
+					if capacity < 1 {
+						capacity = 1
+					}
+					startIdx = selPos - (capacity / 2)
+					endIdx = startIdx + capacity
+				}
+
+				// Bounds safety clamps
+				if startIdx < 0 {
+					startIdx = 0
+				}
+				if endIdx > totalChans {
+					endIdx = totalChans
+				}
+				if startIdx > endIdx {
+					startIdx = endIdx
+				}
+
+				if showTopIndicator && startIdx > 0 {
+					leftContent += fmt.Sprintf("  %s\n", moreStyle.Render(fmt.Sprintf("▲ %d more...", startIdx)))
+				}
+
+				for _, ri := range visibleChannels[startIdx:endIdx] {
+					renderChannelItem(ri)
+				}
+
+				if showBottomIndicator && (totalChans-endIdx) > 0 {
+					leftContent += fmt.Sprintf("  %s\n", moreStyle.Render(fmt.Sprintf("▼ %d more...", totalChans-endIdx)))
 				}
 			}
-			if !m.showHiddenChannels && hiddenCount > 0 {
-				leftContent += fmt.Sprintf("  %s\n", helpStyle.Render(fmt.Sprintf("(A) manage hidden channels (%d)", hiddenCount)))
+
+			if !m.showHiddenChannels && hiddenChanCount > 0 {
+				leftContent += fmt.Sprintf("  %s\n", helpStyle.Render(fmt.Sprintf("(A) manage hidden channels (%d)", hiddenChanCount)))
 			} else if m.showHiddenChannels {
 				leftContent += fmt.Sprintf("  %s\n", helpStyle.Render("(A) back to all channels"))
 			}
@@ -365,16 +453,12 @@ func (m Model) View() string {
 		m.leftVp.SetContent(leftContent)
 
 		// --- LEFT PANEL CAMERA ENGINE ---
-		if m.focusLeft {
+		if m.workspace == WorkspaceTeams {
+			m.leftVp.SetYOffset(0)
+		} else if m.focusLeft {
 			var cursorLine int
 			if m.workspace == WorkspaceDMs {
-				cursorLine = 1 + m.selectedChat // 1 for the "Chats" title
-			} else if m.workspace == WorkspaceTeams {
-				if m.focusList == 1 {
-					cursorLine = len(m.teams) + 3 + m.selectedChan // Add teams and spacing
-				} else {
-					cursorLine = 1 + m.selectedTeam // 1 for the "Teams" title
-				}
+				cursorLine = 1 + m.selectedChat // 1 for the "Direct Messages" section header
 			} else if m.workspace == WorkspaceActivity {
 				cursorLine = 1 + m.selectedNotif
 			} else if m.workspace == WorkspaceAssignments {

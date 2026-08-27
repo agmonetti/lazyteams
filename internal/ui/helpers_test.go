@@ -911,3 +911,166 @@ func TestRenderFilesContentToggleFileInfo(t *testing.T) {
 		t.Errorf("toggling 't' did not update m.prefs.ShowFileInfo to true")
 	}
 }
+
+func TestWorkspaceTeamsChannelsWindowing(t *testing.T) {
+	channels := make([]graph.Channel, 20)
+	for i := 0; i < 20; i++ {
+		channels[i] = graph.Channel{
+			ID:          fmt.Sprintf("chan-%02d", i),
+			DisplayName: fmt.Sprintf("Channel-%02d", i),
+		}
+	}
+	teams := []graph.Team{
+		{ID: "team-1", DisplayName: "Engineering"},
+		{ID: "team-2", DisplayName: "Marketing"},
+	}
+
+	// panelOuterHeight = height - 6 = 14, leftInnerHeight = 14 - 2 = 12
+	baseModel := Model{
+		workspace:    WorkspaceTeams,
+		teams:        teams,
+		channels:     channels,
+		selectedTeam: 0,
+		focusLeft:    true,
+		focusList:    1,
+		width:        120,
+		height:       20,
+		ready:        true,
+		leftVp:       viewport.New(38, 12),
+		viewport:     viewport.New(80, 12),
+		input:        textarea.New(),
+		prefs: Preferences{
+			HiddenTeams:    []string{},
+			HiddenChannels: map[string][]string{},
+		},
+	}
+
+	tests := []struct {
+		name          string
+		selectedChan  int
+		wantActive    string
+		wantTopInd    string
+		wantBottomInd string
+		notWantTop    bool
+		notWantBottom bool
+	}{
+		{
+			name:          "cursor at top (selectedChan = 0)",
+			selectedChan:  0,
+			wantActive:    "Channel-00",
+			wantBottomInd: "▼ 14 more...",
+			notWantTop:    true,
+		},
+		{
+			name:          "cursor in middle (selectedChan = 10)",
+			selectedChan:  10,
+			wantActive:    "Channel-10",
+			wantTopInd:    "▲ 8 more...",
+			wantBottomInd: "▼ 7 more...",
+		},
+		{
+			name:          "cursor at bottom (selectedChan = 19)",
+			selectedChan:  19,
+			wantActive:    "Channel-19",
+			wantTopInd:    "▲ 14 more...",
+			notWantBottom: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := baseModel
+			m.selectedChan = tt.selectedChan
+			out := m.View()
+
+			// 1. "Teams" title and active team name remain present in the output
+			if !strings.Contains(out, "Teams") {
+				t.Errorf("expected output to contain 'Teams' title")
+			}
+			if !strings.Contains(out, "Engineering") {
+				t.Errorf("expected output to contain active team 'Engineering'")
+			}
+
+			// 2. The selected channel line is present in the output
+			if !strings.Contains(out, tt.wantActive) {
+				t.Errorf("expected output to contain selected channel %q", tt.wantActive)
+			}
+
+			// 3. Overflow indicators
+			if tt.wantTopInd != "" && !strings.Contains(out, tt.wantTopInd) {
+				t.Errorf("expected output to contain top indicator %q", tt.wantTopInd)
+			}
+			if tt.wantBottomInd != "" && !strings.Contains(out, tt.wantBottomInd) {
+				t.Errorf("expected output to contain bottom indicator %q", tt.wantBottomInd)
+			}
+			if tt.notWantTop && strings.Contains(out, "▲") {
+				t.Errorf("expected output NOT to contain top indicator '▲'")
+			}
+			if tt.notWantBottom && strings.Contains(out, "▼") {
+				t.Errorf("expected output NOT to contain bottom indicator '▼'")
+			}
+
+			// Verify left viewport camera offset is locked to 0
+			if m.leftVp.YOffset != 0 {
+				t.Errorf("expected leftVp.YOffset to be 0 for WorkspaceTeams, got %d", m.leftVp.YOffset)
+			}
+		})
+	}
+}
+
+func TestWorkspaceLeftPanelConsistentTopAlignment(t *testing.T) {
+	teams := []graph.Team{{ID: "t1", DisplayName: "Team Alpha"}}
+	channels := []graph.Channel{{ID: "c1", DisplayName: "General"}}
+	chats := []graph.Chat{{ID: "chat1", ChatType: "oneOnOne", Members: []graph.ChatMember{{UserID: "u2", DisplayName: "Alice"}}}}
+	notifs := []graph.NotificationItem{{ID: "n1", SenderName: "Bob", Subtype: "message"}}
+	assigns := []graph.Assignment{{ID: "a1", DisplayName: "Homework 1", SubmissionStatus: "working"}}
+
+	baseModel := Model{
+		teams:         teams,
+		channels:      channels,
+		chats:         chats,
+		notifications: notifs,
+		notifLoaded:   true,
+		assignments:   assigns,
+		assignLoaded:  true,
+		assignFilter:  FilterUpcoming,
+		width:         120,
+		height:        20,
+		ready:         true,
+		leftVp:        viewport.New(38, 12),
+		viewport:      viewport.New(80, 12),
+		input:         textarea.New(),
+		focusLeft:     true,
+		prefs: Preferences{
+			HiddenTeams:    []string{},
+			HiddenChannels: map[string][]string{},
+		},
+	}
+
+	workspaces := []struct {
+		ws          Workspace
+		name        string
+		firstHeader string
+		firstItem   string
+	}{
+		{WorkspaceTeams, "Teams", "Teams", "Team Alpha"},
+		{WorkspaceDMs, "DMs", "Direct Messages", "Alice"},
+		{WorkspaceActivity, "Activity", "[ All ]", "Bob"},
+		{WorkspaceAssignments, "Assignments", "[ Upcoming ]", "Homework 1"},
+	}
+
+	for _, tc := range workspaces {
+		t.Run(tc.name, func(t *testing.T) {
+			m := baseModel
+			m.workspace = tc.ws
+			out := m.View()
+
+			if !strings.Contains(out, tc.firstHeader) {
+				t.Errorf("%s: expected output to contain header %q", tc.name, tc.firstHeader)
+			}
+			if !strings.Contains(out, tc.firstItem) {
+				t.Errorf("%s: expected output to contain item %q", tc.name, tc.firstItem)
+			}
+		})
+	}
+}
