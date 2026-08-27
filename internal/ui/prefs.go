@@ -16,6 +16,7 @@ type Preferences struct {
 	HiddenChannels        map[string][]string `json:"hidden_channels"` // teamID → channelID
 	DMSectionCollapsed    bool                `json:"dmSectionCollapsed"`
 	GroupSectionCollapsed bool                `json:"groupSectionCollapsed"`
+	ShowFileInfo          bool                `json:"showFileInfo"`
 }
 
 func prefsPath() string {
@@ -48,6 +49,7 @@ func loadPrefs() Preferences {
 func loadPrefsIntoModel(m *Model, prefs Preferences) {
 	m.dmSectionCollapsed = prefs.DMSectionCollapsed
 	m.groupSectionCollapsed = prefs.GroupSectionCollapsed
+	m.showFileInfo = prefs.ShowFileInfo
 }
 
 func savePrefs(p Preferences) error {

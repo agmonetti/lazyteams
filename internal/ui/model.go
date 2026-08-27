@@ -360,6 +360,7 @@ type Model struct {
 	showHiddenChannels bool
 
 	// File management
+	showFileInfo          bool
 	showDeleteFilePopup   bool
 	showCreateFolderPopup bool
 	createFolderInput     textinput.Model

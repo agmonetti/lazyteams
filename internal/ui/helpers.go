@@ -267,17 +267,17 @@ func renderFilesContent(m *Model) string {
 		}
 
 		meta := ""
-		if f.LastModifiedDateTime != "" {
+		if m.showFileInfo && f.LastModifiedDateTime != "" {
 			if t, err := time.Parse(time.RFC3339, f.LastModifiedDateTime); err == nil {
-				age := t.Local().Format("02 Jan 2006")
+				dateTime := t.Local().Format("02 Jan 2006 15:04")
 				who := sanitizeName(f.LastModifiedBy.User.DisplayName)
 				if who != "" {
 					if len(who) > 25 {
 						who = who[:25]
 					}
-					meta = metaStyle.Render(age + " · " + who)
+					meta = metaStyle.Render(dateTime + " · " + who)
 				} else {
-					meta = metaStyle.Render(age)
+					meta = metaStyle.Render(dateTime)
 				}
 			}
 		}

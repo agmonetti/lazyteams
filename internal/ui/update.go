@@ -39,6 +39,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// After setting m.width and m.height:
 		if m.width < 120 {
 			m.mobileMode = true
+			m.showFileInfo = false
 		} else {
 			m.mobileMode = false
 		}

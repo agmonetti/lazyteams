@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/bubbles/textarea"
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"lazyteams/internal/graph"
 )
@@ -750,3 +752,163 @@ func TestMakeClickableLinkStripsURLControlBytes(t *testing.T) {
 		}
 	}
 }
+
+func TestRenderFilesContentToggleFileInfo(t *testing.T) {
+	testTime := "2026-08-20T15:04:00Z"
+	parsedTime, err := time.Parse(time.RFC3339, testTime)
+	if err != nil {
+		t.Fatalf("failed to parse test time: %v", err)
+	}
+	expectedFormatted := parsedTime.Local().Format("02 Jan 2006 15:04")
+
+	m := Model{
+		workspace: WorkspaceTeams,
+		viewMode:  ModeFiles,
+		focusLeft: false,
+		width:     140,
+		height:    40,
+		input:     textarea.New(),
+		viewport:  viewport.New(80, 24),
+		files: []graph.DriveItem{
+			{
+				Name:                 "document.pdf",
+				LastModifiedDateTime: testTime,
+				LastModifiedBy: struct {
+					User struct {
+						DisplayName string `json:"displayName"`
+					} `json:"user"`
+				}{
+					User: struct {
+						DisplayName string `json:"displayName"`
+					}{
+						DisplayName: "Alice Smith",
+					},
+				},
+			},
+		},
+		selectedFiles: make(map[int]bool),
+	}
+
+	// 1. When showFileInfo == false (default): metadata (date, time, author) must be omitted
+	m.showFileInfo = false
+	rendered := renderFilesContent(&m)
+	if strings.Contains(rendered, "Alice Smith") {
+		t.Errorf("renderFilesContent() with showFileInfo=false contains author 'Alice Smith'")
+	}
+	if strings.Contains(rendered, expectedFormatted) {
+		t.Errorf("renderFilesContent() with showFileInfo=false contains formatted timestamp %q", expectedFormatted)
+	}
+
+	// 2. When showFileInfo == true: metadata must contain formatted date + time and author
+	m.showFileInfo = true
+	renderedWithInfo := renderFilesContent(&m)
+	if !strings.Contains(renderedWithInfo, "Alice Smith") {
+		t.Errorf("renderFilesContent() with showFileInfo=true missing author 'Alice Smith'")
+	}
+	if !strings.Contains(renderedWithInfo, expectedFormatted) {
+		t.Errorf("renderFilesContent() with showFileInfo=true missing formatted timestamp %q", expectedFormatted)
+	}
+
+	// 3. 't' toggles showFileInfo when workspace == WorkspaceTeams, viewMode == ModeFiles, and !focusLeft
+	m.showFileInfo = false
+	updated, _ := m.handleKeyMsg(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
+	got := updated.(Model)
+	if !got.showFileInfo {
+		t.Errorf("pressing 't' in Teams ModeFiles right panel should toggle showFileInfo to true")
+	}
+
+	updated, _ = got.handleKeyMsg(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
+	got = updated.(Model)
+	if got.showFileInfo {
+		t.Errorf("pressing 't' again should toggle showFileInfo back to false")
+	}
+
+	// 4. 'T' should NOT toggle showFileInfo
+	m.showFileInfo = false
+	updated, _ = m.handleKeyMsg(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'T'}})
+	got = updated.(Model)
+	if got.showFileInfo {
+		t.Errorf("pressing 'T' should not toggle showFileInfo")
+	}
+
+	// 5. 't' must NOT toggle in other contexts
+	// Focus on left panel
+	mLeft := m
+	mLeft.focusLeft = true
+	updated, _ = mLeft.handleKeyMsg(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
+	if updated.(Model).showFileInfo {
+		t.Errorf("'t' toggled showFileInfo while focusLeft=true")
+	}
+
+	// ModeChat
+	mChat := m
+	mChat.viewMode = ModeChat
+	updated, _ = mChat.handleKeyMsg(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
+	if updated.(Model).showFileInfo {
+		t.Errorf("'t' toggled showFileInfo while viewMode=ModeChat")
+	}
+
+	// WorkspaceDMs
+	mDMs := m
+	mDMs.workspace = WorkspaceDMs
+	updated, _ = mDMs.handleKeyMsg(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
+	if updated.(Model).showFileInfo {
+		t.Errorf("'t' toggled showFileInfo in WorkspaceDMs")
+	}
+
+	// WorkspaceActivity
+	mAct := m
+	mAct.workspace = WorkspaceActivity
+	updated, _ = mAct.handleKeyMsg(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
+	if updated.(Model).showFileInfo {
+		t.Errorf("'t' toggled showFileInfo in WorkspaceActivity")
+	}
+
+	// WorkspaceAssignments
+	mAssign := m
+	mAssign.workspace = WorkspaceAssignments
+	updated, _ = mAssign.handleKeyMsg(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
+	if updated.(Model).showFileInfo {
+		t.Errorf("'t' toggled showFileInfo in WorkspaceAssignments")
+	}
+
+	// 6. Entering mobile mode via ctrl+b resets showFileInfo to false
+	mMobile := m
+	mMobile.showFileInfo = true
+	mMobile.mobileMode = false
+	updated, _ = mMobile.handleKeyMsg(tea.KeyMsg{Type: tea.KeyCtrlB})
+	got = updated.(Model)
+	if !got.mobileMode || got.showFileInfo {
+		t.Errorf("ctrl+b entering mobile mode did not reset showFileInfo to false (mobileMode=%v, showFileInfo=%v)", got.mobileMode, got.showFileInfo)
+	}
+
+	// 7. Window resize activating mobile mode (< 120 width) resets showFileInfo to false
+	mResize := m
+	mResize.showFileInfo = true
+	updated, _ = mResize.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
+	got = updated.(Model)
+	if !got.mobileMode || got.showFileInfo {
+		t.Errorf("WindowSizeMsg (width < 120) did not reset showFileInfo to false (mobileMode=%v, showFileInfo=%v)", got.mobileMode, got.showFileInfo)
+	}
+
+	// 8. Preferences persistence
+	var loadedModel Model
+	loadPrefsIntoModel(&loadedModel, Preferences{ShowFileInfo: true})
+	if !loadedModel.showFileInfo {
+		t.Errorf("loadPrefsIntoModel did not load ShowFileInfo=true into model")
+	}
+	loadPrefsIntoModel(&loadedModel, Preferences{ShowFileInfo: false})
+	if loadedModel.showFileInfo {
+		t.Errorf("loadPrefsIntoModel did not load ShowFileInfo=false into model")
+	}
+
+	// Toggling 't' updates m.prefs.ShowFileInfo
+	mPrefsTest := m
+	mPrefsTest.showFileInfo = false
+	updated, _ = mPrefsTest.handleKeyMsg(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
+	got = updated.(Model)
+	if !got.prefs.ShowFileInfo {
+		t.Errorf("toggling 't' did not update m.prefs.ShowFileInfo to true")
+	}
+}
+

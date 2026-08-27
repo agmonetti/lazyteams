@@ -88,6 +88,7 @@ var HelpData = []HelpCategory{
 			{Key: "F", Description: "New folder"},
 			{Key: "Del", Description: "Delete file/folder"},
 			{Key: "h/Esc", Description: "Back to parent"},
+			{Key: "t", Description: "Toggle file info (date, time, author)"},
 		},
 	},
 	{

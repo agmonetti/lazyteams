@@ -219,6 +219,15 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 
+	case "t":
+		if m.workspace == WorkspaceTeams && !m.focusLeft && m.viewMode == ModeFiles {
+			m.showFileInfo = !m.showFileInfo
+			m.prefs.ShowFileInfo = m.showFileInfo
+			savePrefs(m.prefs)
+			m.viewport.SetContent(renderFilesContent(&m))
+			return m, nil
+		}
+
 	case "F":
 		if !m.focusLeft && m.viewMode == ModeFiles {
 			m.showCreateFolderPopup = true
@@ -272,6 +281,9 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "ctrl+b":
 		m.mobileMode = !m.mobileMode
+		if m.mobileMode {
+			m.showFileInfo = false
+		}
 
 		panelOuterHeight := m.height - 6
 		if m.mobileMode {
