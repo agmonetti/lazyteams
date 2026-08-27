@@ -125,8 +125,20 @@ func (m Model) handleTeamsMsg(msg teamsMsg) (tea.Model, tea.Cmd) {
 	m.teamsLoaded = true
 	m.loading = false
 	if len(m.teams) > 0 {
-		if m.selectedTeam >= len(m.teams) {
-			m.selectedTeam = len(m.teams) - 1
+		if m.selectedTeam < 0 || m.selectedTeam >= len(m.teams) {
+			m.selectedTeam = 0
+		}
+		// Ensure selectedTeam respects visibility preference
+		teamIsVisible := (m.showHidden && contains(m.prefs.HiddenTeams, m.teams[m.selectedTeam].ID)) ||
+			(!m.showHidden && !contains(m.prefs.HiddenTeams, m.teams[m.selectedTeam].ID))
+		if !teamIsVisible {
+			for i, t := range m.teams {
+				isHidden := contains(m.prefs.HiddenTeams, t.ID)
+				if (m.showHidden && isHidden) || (!m.showHidden && !isHidden) {
+					m.selectedTeam = i
+					break
+				}
+			}
 		}
 		m.loading = true
 		m.teamMembers = nil
@@ -144,11 +156,11 @@ func (m Model) handleChannelsMsg(msg channelsMsg) (tea.Model, tea.Cmd) {
 	}
 	m.channels = msg.channels
 	m.selectedChan = 0
-	// Skip to first visible channel if first is hidden
 	teamID := m.teams[m.selectedTeam].ID
 	hidden := m.prefs.HiddenChannels[teamID]
 	for i, c := range m.channels {
-		if !contains(hidden, c.ID) {
+		isHidden := contains(hidden, c.ID)
+		if (m.showHiddenChannels && isHidden) || (!m.showHiddenChannels && !isHidden) {
 			m.selectedChan = i
 			break
 		}

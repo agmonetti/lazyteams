@@ -419,32 +419,70 @@ func isSharePointURL(rawURL string) bool {
 
 func nextVisibleTeam(teams []graph.Team, hiddenIDs []string, current int, showHidden bool, dir int) int {
 	total := len(teams)
+	if total == 0 {
+		return 0
+	}
 	next := current + dir
 	for next >= 0 && next < total {
 		isHidden := contains(hiddenIDs, teams[next].ID)
-		if showHidden && isHidden {
-			return next
-		}
-		if !showHidden && !isHidden {
+		if (showHidden && isHidden) || (!showHidden && !isHidden) {
 			return next
 		}
 		next += dir
+	}
+	// If current itself is not visible, fallback to searching in the opposite direction and from beginning
+	currentIsVisible := current >= 0 && current < total &&
+		((showHidden && contains(hiddenIDs, teams[current].ID)) || (!showHidden && !contains(hiddenIDs, teams[current].ID)))
+	if !currentIsVisible {
+		next = current - dir
+		for next >= 0 && next < total {
+			isHidden := contains(hiddenIDs, teams[next].ID)
+			if (showHidden && isHidden) || (!showHidden && !isHidden) {
+				return next
+			}
+			next -= dir
+		}
+		for i, t := range teams {
+			isHidden := contains(hiddenIDs, t.ID)
+			if (showHidden && isHidden) || (!showHidden && !isHidden) {
+				return i
+			}
+		}
 	}
 	return current
 }
 
 func nextVisibleChannel(channels []graph.Channel, hiddenIDs []string, current int, showHidden bool, dir int) int {
 	total := len(channels)
+	if total == 0 {
+		return 0
+	}
 	next := current + dir
 	for next >= 0 && next < total {
 		isHidden := contains(hiddenIDs, channels[next].ID)
-		if showHidden && isHidden {
-			return next
-		}
-		if !showHidden && !isHidden {
+		if (showHidden && isHidden) || (!showHidden && !isHidden) {
 			return next
 		}
 		next += dir
+	}
+	// If current itself is not visible, fallback to searching in the opposite direction and from beginning
+	currentIsVisible := current >= 0 && current < total &&
+		((showHidden && contains(hiddenIDs, channels[current].ID)) || (!showHidden && !contains(hiddenIDs, channels[current].ID)))
+	if !currentIsVisible {
+		next = current - dir
+		for next >= 0 && next < total {
+			isHidden := contains(hiddenIDs, channels[next].ID)
+			if (showHidden && isHidden) || (!showHidden && !isHidden) {
+				return next
+			}
+			next -= dir
+		}
+		for i, c := range channels {
+			isHidden := contains(hiddenIDs, c.ID)
+			if (showHidden && isHidden) || (!showHidden && !isHidden) {
+				return i
+			}
+		}
 	}
 	return current
 }

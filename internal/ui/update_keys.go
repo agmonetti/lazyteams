@@ -104,18 +104,22 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "A":
 		if m.workspace == WorkspaceTeams && m.focusLeft && m.focusList == 0 {
 			m.showHidden = !m.showHidden
+			found := false
 			for i, t := range m.teams {
 				isHidden := contains(m.prefs.HiddenTeams, t.ID)
-				if m.showHidden && isHidden {
+				if (m.showHidden && isHidden) || (!m.showHidden && !isHidden) {
 					m.selectedTeam = i
-					break
-				}
-				if !m.showHidden && !isHidden {
-					m.selectedTeam = i
+					found = true
 					break
 				}
 			}
-			return m, loadChannelsCmd(m.client, m.teams[m.selectedTeam].ID)
+			if found && len(m.teams) > 0 {
+				m.loading = true
+				m.teamMembers = nil
+				m.channels = nil
+				return m, loadChannelsCmd(m.client, m.teams[m.selectedTeam].ID)
+			}
+			return m, nil
 		}
 		if m.workspace == WorkspaceTeams && m.focusLeft && m.focusList == 1 && len(m.channels) > 0 {
 			m.showHiddenChannels = !m.showHiddenChannels
@@ -123,11 +127,7 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			hidden := m.prefs.HiddenChannels[teamID]
 			for i, c := range m.channels {
 				isHidden := contains(hidden, c.ID)
-				if m.showHiddenChannels && isHidden {
-					m.selectedChan = i
-					break
-				}
-				if !m.showHiddenChannels && !isHidden {
+				if (m.showHiddenChannels && isHidden) || (!m.showHiddenChannels && !isHidden) {
 					m.selectedChan = i
 					break
 				}
@@ -145,9 +145,18 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			savePrefs(m.prefs)
 			m.selectedTeam = nextVisibleTeam(m.teams, m.prefs.HiddenTeams, m.selectedTeam, m.showHidden, +1)
+			if len(m.teams) > 0 {
+				m.loading = true
+				m.teamMembers = nil
+				m.channels = nil
+				return m, loadChannelsCmd(m.client, m.teams[m.selectedTeam].ID)
+			}
 			return m, nil
 		}
 		if m.workspace == WorkspaceTeams && m.focusLeft && m.focusList == 1 && len(m.channels) > 0 {
+			if m.prefs.HiddenChannels == nil {
+				m.prefs.HiddenChannels = make(map[string][]string)
+			}
 			teamID := m.teams[m.selectedTeam].ID
 			ch := m.channels[m.selectedChan]
 			hidden := m.prefs.HiddenChannels[teamID]
@@ -336,6 +345,20 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.focusList = 0
 		m.cursorOnDMHeader = false
 		m.cursorOnGroupHeader = false
+		if len(m.teams) > 0 {
+			if m.selectedTeam < 0 || m.selectedTeam >= len(m.teams) {
+				m.selectedTeam = 0
+			}
+			teamIsVisible := (m.showHidden && contains(m.prefs.HiddenTeams, m.teams[m.selectedTeam].ID)) ||
+				(!m.showHidden && !contains(m.prefs.HiddenTeams, m.teams[m.selectedTeam].ID))
+			if !teamIsVisible {
+				m.selectedTeam = nextVisibleTeam(m.teams, m.prefs.HiddenTeams, m.selectedTeam, m.showHidden, +1)
+				m.loading = true
+				m.teamMembers = nil
+				m.channels = nil
+				cmds = append(cmds, loadChannelsCmd(m.client, m.teams[m.selectedTeam].ID))
+			}
+		}
 
 	case "2":
 		if m.cursorMode {

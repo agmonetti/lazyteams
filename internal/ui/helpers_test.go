@@ -1074,3 +1074,177 @@ func TestWorkspaceLeftPanelConsistentTopAlignment(t *testing.T) {
 		})
 	}
 }
+
+func TestHandleTeamsMsgSelectsFirstVisibleTeam(t *testing.T) {
+	teams := []graph.Team{
+		{ID: "team-hidden", DisplayName: "Hidden Team"},
+		{ID: "team-visible", DisplayName: "Visible Team"},
+	}
+	m := Model{
+		selectedTeam: 0,
+		prefs: Preferences{
+			HiddenTeams: []string{"team-hidden"},
+		},
+	}
+	newModel, cmd := m.handleTeamsMsg(teamsMsg{teams: teams})
+	res := newModel.(Model)
+	if res.selectedTeam != 1 {
+		t.Errorf("expected selectedTeam to be 1 (visible), got %d", res.selectedTeam)
+	}
+	if cmd == nil {
+		t.Errorf("expected loadChannelsCmd to be returned")
+	}
+}
+
+func TestHandleChannelsMsgSelectsFirstVisibleChannel(t *testing.T) {
+	channels := []graph.Channel{
+		{ID: "chan-hidden", DisplayName: "Hidden Chan"},
+		{ID: "chan-visible", DisplayName: "Visible Chan"},
+	}
+	teams := []graph.Team{{ID: "team-1", DisplayName: "Team 1"}}
+	m := Model{
+		teams:         teams,
+		selectedTeam:  0,
+		selectedChan:  0,
+		channelToTeam: make(map[string]string),
+		prefs: Preferences{
+			HiddenChannels: map[string][]string{
+				"team-1": {"chan-hidden"},
+			},
+		},
+	}
+	newModel, _ := m.handleChannelsMsg(channelsMsg{teamID: "team-1", channels: channels})
+	res := newModel.(Model)
+	if res.selectedChan != 1 {
+		t.Errorf("expected selectedChan to be 1 (visible), got %d", res.selectedChan)
+	}
+}
+
+func TestHideTeamAndChannelKeyAction(t *testing.T) {
+	teams := []graph.Team{
+		{ID: "t1", DisplayName: "Team 1"},
+		{ID: "t2", DisplayName: "Team 2"},
+	}
+	channels := []graph.Channel{
+		{ID: "c1", DisplayName: "Chan 1"},
+		{ID: "c2", DisplayName: "Chan 2"},
+	}
+	m := Model{
+		workspace:     WorkspaceTeams,
+		teams:         teams,
+		channels:      channels,
+		selectedTeam:  0,
+		selectedChan:  0,
+		focusLeft:     true,
+		focusList:     0, // Teams list
+		channelToTeam: map[string]string{"c1": "t1", "c2": "t1"},
+		prefs: Preferences{
+			HiddenTeams:    []string{},
+			HiddenChannels: map[string][]string{},
+		},
+	}
+
+	// 1. Press 'H' on Team 0 (t1)
+	newModel, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'H'}})
+	m1 := newModel.(Model)
+	if !contains(m1.prefs.HiddenTeams, "t1") {
+		t.Errorf("expected t1 to be in HiddenTeams, got %v", m1.prefs.HiddenTeams)
+	}
+	if m1.selectedTeam != 1 {
+		t.Errorf("expected selectedTeam to move to 1, got %d", m1.selectedTeam)
+	}
+	if cmd == nil {
+		t.Errorf("expected loadChannelsCmd to be returned when hiding active team")
+	}
+
+	// 2. Hide the last remaining visible team (t2)
+	newModel, _ = m1.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'H'}})
+	m2 := newModel.(Model)
+	if !contains(m2.prefs.HiddenTeams, "t2") {
+		t.Errorf("expected t2 to be in HiddenTeams, got %v", m2.prefs.HiddenTeams)
+	}
+
+	// 3. Channel hiding: focusList = 1
+	mChan := Model{
+		workspace:    WorkspaceTeams,
+		teams:        teams,
+		channels:     channels,
+		selectedTeam: 0,
+		selectedChan: 0,
+		focusLeft:    true,
+		focusList:    1, // Channels list
+		prefs: Preferences{
+			HiddenTeams:    []string{},
+			HiddenChannels: map[string][]string{},
+		},
+	}
+	newModel, _ = mChan.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'H'}})
+	mc1 := newModel.(Model)
+	if !contains(mc1.prefs.HiddenChannels["t1"], "c1") {
+		t.Errorf("expected c1 to be in HiddenChannels['t1'], got %v", mc1.prefs.HiddenChannels["t1"])
+	}
+	if mc1.selectedChan != 1 {
+		t.Errorf("expected selectedChan to advance to 1, got %d", mc1.selectedChan)
+	}
+}
+
+func TestToggleShowHiddenTeamsAndChannels(t *testing.T) {
+	teams := []graph.Team{
+		{ID: "t1", DisplayName: "Team 1"},
+		{ID: "t2", DisplayName: "Team 2"},
+	}
+	channels := []graph.Channel{
+		{ID: "c1", DisplayName: "Chan 1"},
+		{ID: "c2", DisplayName: "Chan 2"},
+	}
+	m := Model{
+		workspace:     WorkspaceTeams,
+		teams:         teams,
+		channels:      channels,
+		selectedTeam:  0,
+		selectedChan:  0,
+		focusLeft:     true,
+		focusList:     0, // Teams list
+		channelToTeam: map[string]string{"c1": "t1", "c2": "t1"},
+		prefs: Preferences{
+			HiddenTeams:    []string{"t2"},
+			HiddenChannels: map[string][]string{"t1": {"c2"}, "t2": {"c2"}},
+		},
+	}
+
+	// Press 'A' on Teams
+	newModel, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'A'}})
+	m1 := newModel.(Model)
+	if !m1.showHidden {
+		t.Errorf("expected showHidden to be true after pressing 'A'")
+	}
+	if m1.selectedTeam != 1 { // t2 is hidden, so index 1 must be selected
+		t.Errorf("expected selectedTeam to be 1 (the hidden team), got %d", m1.selectedTeam)
+	}
+	if cmd == nil {
+		t.Errorf("expected loadChannelsCmd to be returned when toggling showHidden")
+	}
+
+	// Press 'A' on Channels
+	mChan := Model{
+		workspace:    WorkspaceTeams,
+		teams:        teams,
+		channels:     channels,
+		selectedTeam: 0,
+		selectedChan: 0,
+		focusLeft:    true,
+		focusList:    1, // Channels list
+		prefs: Preferences{
+			HiddenTeams:    []string{},
+			HiddenChannels: map[string][]string{"t1": {"c2"}},
+		},
+	}
+	newModel, _ = mChan.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'A'}})
+	m2 := newModel.(Model)
+	if !m2.showHiddenChannels {
+		t.Errorf("expected showHiddenChannels to be true after pressing 'A'")
+	}
+	if m2.selectedChan != 1 { // c2 is hidden, so index 1 must be selected
+		t.Errorf("expected selectedChan to be 1 (the hidden channel), got %d", m2.selectedChan)
+	}
+}
