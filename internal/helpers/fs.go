@@ -30,6 +30,34 @@ func ConfigDir() string {
 	return filepath.Join(HomeDir(), ".config", "lazyteams")
 }
 
+func removeFirefoxLocks(dir string) {
+	if dir == "" {
+		return
+	}
+	os.Remove(filepath.Join(dir, "parent.lock"))
+	os.Remove(filepath.Join(dir, ".parentlock"))
+	os.Remove(filepath.Join(dir, "lock"))
+}
+
+func cleanPlaywrightFirefoxLocks() {
+	dirs := []string{
+		filepath.Join(HomeDir(), ".cache", "ms-playwright"),
+		filepath.Join(HomeDir(), "AppData", "Local", "ms-playwright"),
+	}
+	for _, base := range dirs {
+		entries, err := os.ReadDir(base)
+		if err != nil {
+			continue
+		}
+		for _, entry := range entries {
+			if entry.IsDir() && strings.HasPrefix(entry.Name(), "firefox") {
+				removeFirefoxLocks(filepath.Join(base, entry.Name()))
+				removeFirefoxLocks(filepath.Join(base, entry.Name(), "firefox"))
+			}
+		}
+	}
+}
+
 // KillZombieBrowser terminates any stale Firefox left over from a crashed run
 // that is still holding the persistent browser profile. It matches only the
 // profile path in the command line, so the user's personal Firefox is never
@@ -56,9 +84,10 @@ func KillZombieBrowser() {
 		}
 	}
 	// Firefox leaves lock files behind; remove them so a fresh launch can
-	// never fail with "Firefox is already running, but is not responding".
-	os.Remove(filepath.Join(profile, "parent.lock"))
-	os.Remove(filepath.Join(profile, ".parentlock"))
+	// never fail with "Firefox is already running, but is not responding" or
+	// Playwright host validation errors with broken lock symlinks.
+	removeFirefoxLocks(profile)
+	cleanPlaywrightFirefoxLocks()
 }
 
 // SignalAuthProcess asks a background lazyteams-auth helper to stop gracefully so

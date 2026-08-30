@@ -62,3 +62,26 @@ func TestTokenDisplayName(t *testing.T) {
 		}
 	}
 }
+
+func TestQueueTokenRenewalSkipsFailedTokens(t *testing.T) {
+	m := Model{
+		tokenRenewFailures: []string{"edu", "notif"},
+	}
+	cmd := queueTokenRenewal(&m, "edu")
+	if cmd != nil {
+		t.Errorf("expected queueTokenRenewal to return nil for failed token, got non-nil cmd")
+	}
+	if len(m.tokenRenewalQueue) != 0 {
+		t.Errorf("expected queue to remain empty, got %v", m.tokenRenewalQueue)
+	}
+}
+
+func TestRemoveString(t *testing.T) {
+	vals := []string{"edu", "notif", "web"}
+	got := removeString(vals, "notif")
+	want := []string{"edu", "web"}
+	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Errorf("removeString(%v, 'notif') = %v, want %v", vals, got, want)
+	}
+}
+

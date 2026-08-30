@@ -197,8 +197,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmds []tea.Cmd
 		if msg.err != nil {
 			m.tokenRenewErr = msg.err.Error()
-			m.tokenRenewFailures = append(m.tokenRenewFailures, msg.tokenType)
+			if !containsString(m.tokenRenewFailures, msg.tokenType) {
+				m.tokenRenewFailures = append(m.tokenRenewFailures, msg.tokenType)
+			}
 		} else {
+			m.tokenRenewFailures = removeString(m.tokenRenewFailures, msg.tokenType)
 			cmds = append(cmds, reloadTokensCmd(m.client, msg.tokenType))
 		}
 		if next := startNextTokenRenewal(&m); next != nil {
@@ -206,13 +209,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else if msg.err != nil {
 			// If the last token in the queue failed, reloadTokensCmd is not
 			// queued, so tokensReloadedMsg will never fire to trigger the
-			// data reload. Trigger it here so modules whose tokens succeeded
-			// (e.g. graph) can still recover their data.
-			cmds = append(cmds, loadTeamsCmd(m.client))
-			cmds = append(cmds, loadChatsCmd(m.client))
-			cmds = append(cmds, loadMeCmd(m.client))
-			cmds = append(cmds, loadNotificationsCmd(m.client))
-			cmds = append(cmds, loadAssignmentsCmd(m.client))
+			// data reload. Trigger it here for modules whose tokens succeeded.
+			cmds = append(cmds, reloadSuccessfulDataCmds(&m)...)
 		}
 		return m, tea.Batch(cmds...)
 
@@ -223,20 +221,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if !containsString(m.tokenRenewFailures, msg.tokenType) {
 				m.tokenRenewFailures = append(m.tokenRenewFailures, msg.tokenType)
 			}
-		} else if msg.tokenType == "edu" {
-			cmds = append(cmds, loadAssignmentsCmd(m.client))
+		} else {
+			m.tokenRenewFailures = removeString(m.tokenRenewFailures, msg.tokenType)
+			if msg.tokenType == "edu" {
+				cmds = append(cmds, loadAssignmentsCmd(m.client))
+			}
 		}
 		// The renewal queue is drained and nothing is renewing: the fresh
-		// tokens are already applied to the client, so reload all data now.
-		// This recovers startup loads that failed with expired tokens. It
-		// runs even if some tokens failed, so the ones that succeeded can
-		// still recover their data.
+		// tokens are already applied to the client, so reload successful data now.
+		// This recovers startup loads that failed with expired tokens.
 		if !m.tokenRenewing && len(m.tokenRenewalQueue) == 0 {
-			cmds = append(cmds, loadTeamsCmd(m.client))
-			cmds = append(cmds, loadChatsCmd(m.client))
-			cmds = append(cmds, loadMeCmd(m.client))
-			cmds = append(cmds, loadNotificationsCmd(m.client))
-			cmds = append(cmds, loadAssignmentsCmd(m.client))
+			cmds = append(cmds, reloadSuccessfulDataCmds(&m)...)
 		}
 		return m, tea.Batch(cmds...)
 
@@ -1253,13 +1248,43 @@ func containsString(values []string, target string) bool {
 	return false
 }
 
+func removeString(values []string, target string) []string {
+	var result []string
+	for _, v := range values {
+		if v != target {
+			result = append(result, v)
+		}
+	}
+	return result
+}
+
+func reloadSuccessfulDataCmds(m *Model) []tea.Cmd {
+	var cmds []tea.Cmd
+	if !containsString(m.tokenRenewFailures, "graph") {
+		cmds = append(cmds, loadTeamsCmd(m.client))
+		cmds = append(cmds, loadMeCmd(m.client))
+	}
+	if !containsString(m.tokenRenewFailures, "web") {
+		cmds = append(cmds, loadChatsCmd(m.client))
+	}
+	if !containsString(m.tokenRenewFailures, "notif") {
+		cmds = append(cmds, loadNotificationsCmd(m.client))
+	}
+	if !containsString(m.tokenRenewFailures, "edu") {
+		cmds = append(cmds, loadAssignmentsCmd(m.client))
+	}
+	return cmds
+}
+
 func formatDownloadResults(results []string) string {
 	return strings.Join(results, "\n")
 }
 
 func queueTokenRenewal(m *Model, tokenType string) tea.Cmd {
+	if tokenType == "" || containsString(m.tokenRenewFailures, tokenType) {
+		return nil
+	}
 	if !m.tokenRenewing && len(m.tokenRenewalQueue) == 0 {
-		m.tokenRenewFailures = nil
 		m.tokenRenewErr = ""
 	}
 	enqueueTokenRenewal(m, tokenType)

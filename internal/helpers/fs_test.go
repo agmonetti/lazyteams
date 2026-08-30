@@ -1,6 +1,7 @@
 package helpers
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -51,3 +52,28 @@ func TestConfigDir(t *testing.T) {
 		t.Errorf("ConfigDir() = %q, want %q", got, want)
 	}
 }
+
+func TestRemoveFirefoxLocks(t *testing.T) {
+	dir := t.TempDir()
+	lockPath := filepath.Join(dir, "lock")
+	parentLockPath := filepath.Join(dir, ".parentlock")
+	parentDotLockPath := filepath.Join(dir, "parent.lock")
+
+	// Create test lock files
+	_ = os.WriteFile(parentLockPath, []byte(""), 0600)
+	_ = os.WriteFile(parentDotLockPath, []byte(""), 0600)
+	_ = os.Symlink("nonexistent-target", lockPath)
+
+	removeFirefoxLocks(dir)
+
+	if _, err := os.Lstat(lockPath); !os.IsNotExist(err) {
+		t.Errorf("lock file still exists after removeFirefoxLocks")
+	}
+	if _, err := os.Lstat(parentLockPath); !os.IsNotExist(err) {
+		t.Errorf(".parentlock file still exists after removeFirefoxLocks")
+	}
+	if _, err := os.Lstat(parentDotLockPath); !os.IsNotExist(err) {
+		t.Errorf("parent.lock file still exists after removeFirefoxLocks")
+	}
+}
+
