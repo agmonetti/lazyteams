@@ -76,4 +76,3 @@ func TestRemoveFirefoxLocks(t *testing.T) {
 		t.Errorf("parent.lock file still exists after removeFirefoxLocks")
 	}
 }
-

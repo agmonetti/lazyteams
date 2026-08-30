@@ -84,4 +84,3 @@ func TestRemoveString(t *testing.T) {
 		t.Errorf("removeString(%v, 'notif') = %v, want %v", vals, got, want)
 	}
 }
-
