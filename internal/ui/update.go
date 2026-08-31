@@ -1176,6 +1176,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmds...)
 
 	case unreadStatusMsg:
+		if m.loadedConvID == msg.chatID && m.viewMode == ModeChat {
+			if m.chatUnread[msg.chatID] {
+				delete(m.chatUnread, msg.chatID)
+				m.ReSortChats()
+			}
+			return m, nil
+		}
 		changed := false
 		if msg.hasUnread {
 			if !m.chatUnread[msg.chatID] {

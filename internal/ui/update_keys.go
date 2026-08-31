@@ -1174,6 +1174,7 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				delete(m.chatUnread, chatID) // Clear badge on open
 				m.ReSortChats()
 			}
+			cmds = append(cmds, markAsReadCmd(m.client, chatID, graph.Message{}))
 			m.messagesBackwardLink = ""
 			m.loadingMore = false
 			m.forceScrollBottom = true

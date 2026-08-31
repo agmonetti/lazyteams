@@ -1038,13 +1038,47 @@ type unreadStatusMsg struct {
 
 func checkUnreadCmd(client *graph.Client, chat graph.Chat) tea.Cmd {
 	return func() tea.Msg {
-		result, err := client.GetConsumptionHorizon(chat.ID)
-		if err != nil || result.ChatVersion == 0 {
+		expectedSelfChatID := ""
+		if client.SelfID != "" {
+			expectedSelfChatID = fmt.Sprintf("19:%s_%s@unq.gbl.spaces", client.SelfID, client.SelfID)
+		}
+		if (expectedSelfChatID != "" && chat.ID == expectedSelfChatID) ||
+			chat.Topic == "Personal notes (You)" ||
+			(client.SelfID != "" && chat.DisplayName(client.SelfID) == "Personal notes (You)") {
+			return unreadStatusMsg{
+				chatID:    chat.ID,
+				hasUnread: false,
+			}
+		}
+
+		var updateTs int64
+		if chat.LastUpdatedDateTime != "" {
+			if t, err := time.Parse(time.RFC3339Nano, chat.LastUpdatedDateTime); err == nil {
+				updateTs = t.UnixMilli()
+			} else if t, err := time.Parse(time.RFC3339, chat.LastUpdatedDateTime); err == nil {
+				updateTs = t.UnixMilli()
+			}
+		}
+
+		if updateTs == 0 {
 			return nil
 		}
+
+		result, err := client.GetConsumptionHorizon(chat.ID)
+		if err != nil {
+			return nil
+		}
+
+		if result.LastReadTs == 0 {
+			return unreadStatusMsg{
+				chatID:    chat.ID,
+				hasUnread: false,
+			}
+		}
+
 		return unreadStatusMsg{
 			chatID:    chat.ID,
-			hasUnread: result.ChatVersion > result.LastReadTs,
+			hasUnread: updateTs > result.LastReadTs,
 		}
 	}
 }

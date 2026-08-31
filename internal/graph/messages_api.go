@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -58,6 +59,26 @@ type chatSvcResponse struct {
 	Metadata struct {
 		BackwardLink string `json:"backwardLink"`
 	} `json:"_metadata"`
+}
+
+func parseArrivalTime(raw string, id string) time.Time {
+	if raw != "" {
+		if t, err := time.Parse(time.RFC3339Nano, raw); err == nil {
+			return t
+		}
+		if t, err := time.Parse(time.RFC3339, raw); err == nil {
+			return t
+		}
+		if t, err := time.Parse("2006-01-02T15:04:05.0000000Z", raw); err == nil {
+			return t
+		}
+	}
+	if id != "" {
+		if idTs, err := strconv.ParseInt(id, 10, 64); err == nil && idTs > 0 {
+			return time.UnixMilli(idTs)
+		}
+	}
+	return time.Now()
 }
 
 // parseReactions extracts reactions from the "emotions" key in properties.
@@ -161,7 +182,7 @@ func (c *Client) GetMessagesWithLink(teamID, channelID string, pageSize int) ([]
 		}
 
 		for _, m := range res.Messages {
-			t, _ := time.Parse(time.RFC3339, m.OriginalArrivalTime)
+			t := parseArrivalTime(m.OriginalArrivalTime, m.ID)
 			name := m.ImDisplayName
 			if name == "" {
 				name = "User"
@@ -364,7 +385,7 @@ func (c *Client) GetMessagesFromLink(link string) (MessagePage, error) {
 
 	var msgs []Message
 	for _, m := range res.Messages {
-		t, _ := time.Parse(time.RFC3339, m.OriginalArrivalTime)
+		t := parseArrivalTime(m.OriginalArrivalTime, m.ID)
 		name := m.ImDisplayName
 		if name == "" {
 			name = "User"
@@ -520,6 +541,7 @@ func (c *Client) SendMessage(channelID, content string, mentions []MentionedUser
 		b, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("chatsvc send error %d: %s", resp.StatusCode, string(b))
 	}
+	_ = c.MarkConversationAsRead(channelID, Message{CreatedAt: time.Now()})
 	return nil
 }
 
@@ -610,6 +632,7 @@ func (c *Client) SendMessageWithInlineImage(
 		b, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("chatsvc send error %d: %s", resp.StatusCode, string(b))
 	}
+	_ = c.MarkConversationAsRead(channelID, Message{CreatedAt: time.Now()})
 	return nil
 }
 
@@ -667,6 +690,7 @@ func (c *Client) SendReply(channelID, parentMessageID, content string, mentions 
 		b, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("chatsvc reply error %d: %s", resp.StatusCode, string(b))
 	}
+	_ = c.MarkConversationAsRead(channelID, Message{CreatedAt: time.Now()})
 	return nil
 }
 func (c *Client) AddReaction(channelID, messageID, key string) error {
@@ -784,9 +808,12 @@ func (c *Client) GetMessageReactions(channelID, messageID, selfID string) (map[s
 }
 
 func (c *Client) MarkConversationAsRead(conversationID string, lastMsg Message) error {
-	ts := lastMsg.CreatedAt.UnixMilli()
 	nowTs := time.Now().UnixMilli()
-	horizon := fmt.Sprintf("%d;%d;%d", ts, nowTs, ts)
+	msgID := lastMsg.ID
+	if msgID == "" {
+		msgID = fmt.Sprintf("%d", nowTs)
+	}
+	horizon := fmt.Sprintf("%d;%d;%s", nowTs, nowTs, msgID)
 
 	payload := struct {
 		ConsumptionHorizon string `json:"consumptionhorizon"`
@@ -806,6 +833,9 @@ func (c *Client) MarkConversationAsRead(conversationID string, lastMsg Message) 
 	}
 	req.Header.Set("Authorization", "Bearer "+c.WebToken)
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("behavioroverride", "redirectAs404")
+	req.Header.Set("x-ms-migration", "True")
+	req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64; rv:151.0) Gecko/20100101 Firefox/151.0")
 
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {

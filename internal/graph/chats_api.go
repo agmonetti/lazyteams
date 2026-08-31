@@ -21,8 +21,10 @@ type Chat struct {
 }
 
 type ChatMessagePreview struct {
-	ID   string `json:"id"`
-	From *struct {
+	ID              string `json:"id"`
+	CreatedDateTime string `json:"createdDateTime"`
+	IsDeleted       bool   `json:"isDeleted"`
+	From            *struct {
 		User *struct {
 			ID          string `json:"id"`
 			DisplayName string `json:"displayName"`
@@ -155,8 +157,10 @@ func (c *Client) GetConsumptionHorizon(convID string) (ConsumptionHorizonResult,
 		if err != nil {
 			continue
 		}
-		if h.ID == selfMRI {
-			myLastRead = ts
+		if c.SelfID != "" && (h.ID == selfMRI || h.ID == "8:"+c.SelfID || h.ID == c.SelfID || strings.HasSuffix(h.ID, c.SelfID)) {
+			if ts > myLastRead {
+				myLastRead = ts
+			}
 		} else {
 			if ts > otherLastRead {
 				otherLastRead = ts
