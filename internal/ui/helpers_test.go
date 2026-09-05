@@ -6,10 +6,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agmonetti/lazyteams/internal/graph"
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/agmonetti/lazyteams/internal/graph"
 )
 
 func TestMessageLink(t *testing.T) {

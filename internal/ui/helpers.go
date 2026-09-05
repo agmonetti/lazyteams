@@ -2,9 +2,9 @@ package ui
 
 import (
 	"fmt"
-	"io"
 	"github.com/agmonetti/lazyteams/internal/graph"
 	"github.com/agmonetti/lazyteams/internal/teams"
+	"io"
 	"net/url"
 	"os/exec"
 	"regexp"

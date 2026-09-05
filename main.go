@@ -6,12 +6,12 @@ import (
 	"os"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/agmonetti/lazyteams/internal/auth"
 	"github.com/agmonetti/lazyteams/internal/graph"
 	"github.com/agmonetti/lazyteams/internal/helpers"
 	"github.com/agmonetti/lazyteams/internal/ui"
 	"github.com/agmonetti/lazyteams/internal/version"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 func main() {
