@@ -3,7 +3,8 @@
 </p>
 
 <p align="center">
-  A keyboard-driven Microsoft Teams client for the terminal.
+  <strong>A keyboard-driven Microsoft Teams client for the terminal.</strong><br>
+  <em>Built for Universities and Enterprises. Zero Electron, real SSO/MFA support without IT Admin approval, and full Education Assignments integration.</em>
 </p>
 
 <p align="center">
@@ -16,86 +17,144 @@
   <a href="LICENSE">License</a>
 </p>
 
-TUI client for Microsoft Teams. Runs entirely in the terminal — no Electron, no browser. Built with **Clean Architecture + Elm Architecture (Bubble Tea)**. Two static binaries: the TUI (`lazyteams`) and the auth helper (`lazyteams-auth`).
+---
+
+TUI client for Microsoft Teams running 100% in the terminal — **no Electron, no web browser overhead (~30MB RAM vs 1.5GB)**. Built with **Clean Architecture + Elm Architecture (Bubble Tea)**.
 
 <p align="center">
   <img src="assets/gif.gif" alt="lazyteams demo" width="900">
 </p>
 
+## Why lazyteams?
+
+Most command-line Teams projects rely on simple public OAuth device flows that **fail immediately in corporate and university tenants** with `AADSTS65002` because non-admin users cannot register third-party Azure AD apps.
+
+`lazyteams` was designed from the ground up to solve this: it uses a hybrid architecture that logs in via your institution's genuine web session once, bypassing administrative blocks and granting access to internal endpoints like **Teams Assignments** and **ChatSvc**.
+
+| Feature | Official Teams (Electron) | Other Terminal TUIs | **lazyteams** |
+| :--- | :---: | :---: | :---: |
+| **Memory Footprint** | ~1.5 GB | ~25 MB | **~30 MB** |
+| **University / Enterprise SSO** | Yes | Fails (`AADSTS65002`) | **100% Compatible (SAML / Duo / MFA)** |
+| **Requires Azure Admin Approval** | No (Pre-approved) | Yes (Blocks non-admins) | **No IT Admin approval needed** |
+| **Teams Assignments (Homework)** | Yes | Not supported | **Full View / Upload / Submit / Undo** |
+| **Paste Images from Clipboard** | Yes | Limited or Broken | **Native (`Ctrl+P` via AMS upload)** |
+| **Thread Replies & Reactions** | Yes | Partial | **Full thread trees & emoji counts** |
+| **Zero Webview in TUI Runtime** | Electron bloat | Native TUI | **Pure terminal (Bubble Tea + Lipgloss)** |
+
+---
+
 ## Highlights
 
-- **4 workspaces**: Teams & Channels, DMs & Group Chats, Activity, Education Assignments.
-- **Chat**: send/edit/delete messages, threads with inline replies, @mentions autocomplete, reactions, read receipts, clipboard image paste (`Ctrl+P`), native Markdown rendering, live search (`/`), infinite scroll.
-- **Files**: recursive Drive browser, chunked uploads, multi-file downloads, inline text preview, Office Online fallback, create/delete folders.
-- **Team management**: create/delete teams and channels, member management (including private channels via internal APIs), hide/unhide items.
-- **Direct messages**: user search (external users by exact email), personal notes auto-discovery, dynamic sorting by unread + activity, presence indicators.
-- **Assignments**: view instructions, download reference materials, upload/submit/undo-submit your work.
-- **Presence**: read contacts and set your own status.
-- **Mobile Mode**: single-panel responsive layout for narrow terminals (`Ctrl+B`, auto below 120 cols).
+- **Education & Assignments (Exclusive):** The only TUI with first-class support for Microsoft Teams Assignments. View deadlines, upcoming/overdue filters, download reference materials, upload deliverables, and submit or undo submission directly from the terminal.
+- **Full Chat & Threads:** Send, edit, and delete messages. Full thread replies, @mentions autocomplete, live search (`/`), emoji reactions, and instant image pasting from clipboard (`Ctrl+P`).
+- **Cloud Files & SharePoint:** Deep recursive Drive browser for channels and classes, chunked large file uploads, multi-file downloads, inline text preview, and folder creation/deletion.
+- **Enterprise & Channel Management:** Create and delete teams/channels, manage members and roles (including private channels via internal APIs), and toggle hidden items.
+- **Direct Messages & User Search:** Search external users by exact email, auto-discover personal notes, dynamic sorting by unread status and activity, and real-time presence indicators (`Available`, `Busy`, `DND`, `Away`).
+- **Responsive & Mobile Mode:** Adaptive layout for narrow terminals, tmux panes, or mobile SSH clients (`Ctrl+B`, automatically adapts below 120 columns).
 
-## Requirements
+---
 
-- Go 1.26.6+
-- Microsoft Teams account (university or enterprise) - does not work on personal accounts
-- Linux, macOS, or Windows. Playwright requires Firefox for the `auth-helper`.
+## The Enterprise & University SSO Solution (lazyteams-auth)
+
+Why are there two binaries (`lazyteams` and `lazyteams-auth`)?
+
+1. **The Problem:** In corporate and educational tenants (universities, hospitals, enterprises), IT administrators restrict third-party OAuth app registrations. Standard CLI clients fail with errors like `AADSTS65002` or require unattainable Global Admin consent.
+2. **The Solution:** `lazyteams-auth` launches an authentic, isolated browser session once. You sign in through your organization's official SSO portal (supporting 2FA, Duo, Authenticator, or hardware keys).
+3. **Headless TUI:** Once the session tokens are safely saved to `~/.config/lazyteams/tokens.env` (with restricted permissions `0600`), the main TUI (`lazyteams`) runs completely standalone in your terminal. Tokens are automatically refreshed in the background without interrupting your workflow.
+
+> [!NOTE]
+> Token renewals for Teams Web, Notifications, and EDU run quietly in headless mode. Renewals for Microsoft Graph and Fabric channels briefly open a visible browser window when required by Microsoft. Full token lifecycle details are covered in the [documentation](https://lazyteams.agmonetti.workers.dev).
+
+---
 
 ## Quick Start
 
+### Option 1: Pre-built Binaries (Recommended)
+
+Download the latest release for Linux, macOS, or Windows from [GitHub Releases](https://github.com/agmonetti/lazyteams/releases):
+
 ```bash
-# Build the TUI and the Auth Helper
+# Extract the archive
+tar -xzf lazyteams-linux-amd64.tar.gz
+
+# 1. Authenticate once with your work/university account
+./lazyteams-auth
+
+# 2. Start the TUI
+./lazyteams
+```
+
+### Option 2: Build from Source
+
+**Prerequisites:** Go 1.22+ and a Microsoft Teams account (Enterprise or Education).
+
+```bash
+# Clone the repository
+git clone https://github.com/agmonetti/lazyteams.git
+cd lazyteams
+
+# Build both binaries
 go build -o lazyteams .
 go build -o lazyteams-auth ./cmd/auth-helper/
 
-# Capture tokens (first time, interactive)
+# Capture tokens (first run, interactive login)
 ./lazyteams-auth
 
-# Run
+# Launch lazyteams
 ./lazyteams
-
-# Show CLI help (usage, auth commands, config paths)
-./lazyteams --help
 ```
 
-First-time setup requires granting a set of Microsoft Graph permissions once (see [the docs](https://lazyteams.agmonetti.workers.dev/#first-time-setup)). The TUI renews expired tokens automatically in the background. Watch a [demo of the full auth process](https://lazyteams.agmonetti.workers.dev/#auth-process-demo) (browser login → automatic token capture → saved session).
+> [!TIP]
+> First-time setup requires granting Microsoft Graph consent once (see [the setup guide](https://lazyteams.agmonetti.workers.dev/#first-time-setup)). After initial capture, expired tokens are renewed automatically in the background.
 
-Note: binaries built directly with `go build` report `dev` as their version. Build through `make build VERSION=v1.2.3` or `make dist VERSION=v1.2.3` to embed a version (shown by `./lazyteams --version`).
+---
 
-## Releasing
+## Workspaces & Keybindings
 
-Releases are tag-driven: CI builds, checksums and publishes.
+`lazyteams` organizes your workflow into four dedicated workspaces:
 
-1. `make release VERSION=v1.2.3` — validates the version, checks for uncommitted changes, and pushes the tag (and branch) to GitHub.
-2. The Release workflow cross-compiles all platforms via `make dist`, writes `SHA256SUMS`, and creates the GitHub Release with auto-generated notes.
+- <kbd>F1</kbd> **Teams & Channels:** Browse joined teams, channel discussions, and cloud files.
+- <kbd>F2</kbd> **Direct Messages:** 1:1 and group chats, unread badges, and contact presence.
+- <kbd>F3</kbd> **Activity:** Centralized notification feed (mentions, replies, reactions) with instant thread jump.
+- <kbd>F4</kbd> **Assignments:** Classes, coursework, upcoming/overdue tasks, file uploads, and submissions.
 
-To produce the release artifacts locally without publishing, run `make dist VERSION=v1.2.3` and inspect `dist/SHA256SUMS`.
+Press <kbd>?</kbd> anywhere inside the application to open the interactive keyboard shortcuts cheat sheet.
 
-## Updating
+---
 
-`lazyteams --update` downloads and installs the latest release (TUI and auth
-helper), verifying each binary against the release's `SHA256SUMS`. See [Updating](https://lazyteams.agmonetti.workers.dev/updating.html).
+## Self-Updating
+
+Keep `lazyteams` up to date with a single command:
+
+```bash
+./lazyteams --update
+```
+
+This checks GitHub Releases for new versions, verifies the SHA-256 checksums, and safely replaces both the TUI and the auth helper binaries.
+
+---
 
 ## Documentation
 
-Full documentation — first-time setup, token system, configuration files, keybindings, platform support, and architecture — lives on the docs site:
+Comprehensive guides, architecture overviews, and troubleshooting:
 
-- [Documentation](https://lazyteams.agmonetti.workers.dev)
-- [Auth process demo](https://lazyteams.agmonetti.workers.dev/#auth-process-demo)
-- [Troubleshooting](https://lazyteams.agmonetti.workers.dev/troubleshooting.html)
+- [Official Documentation](https://lazyteams.agmonetti.workers.dev)
+- [First-Time Setup Walkthrough](https://lazyteams.agmonetti.workers.dev/#first-time-setup)
+- [Auth Process Demo](https://lazyteams.agmonetti.workers.dev/#auth-process-demo)
+- [Troubleshooting Guide](https://lazyteams.agmonetti.workers.dev/troubleshooting.html)
 - [FAQ](https://lazyteams.agmonetti.workers.dev/faq.html)
+- [Security Model (SECURITY.md)](SECURITY.md)
 
-Security-sensitive data handling is described in [`SECURITY.md`](SECURITY.md).
+---
 
-## Disclaimer
+## Disclaimer & Responsible Use
 
-Educational tool. Operates on already-authenticated Microsoft Teams sessions. Does not distribute proprietary Microsoft binaries. *Not affiliated with Microsoft Corporation.*
+- **Educational and Productivity Tool:** Operates on already-authenticated Microsoft Teams user sessions. Does not distribute proprietary Microsoft binaries or bypass user access controls.
+- *Not affiliated with, endorsed by, or sponsored by Microsoft Corporation.* Microsoft and Microsoft Teams are trademarks of Microsoft Corporation.
+- Use `lazyteams` only with accounts and organizations you are authorized to access, in compliance with applicable organizational policies.
 
-## Legal and Responsible Use
-
-- Use lazyteams only with accounts and tenants you are authorized to access.
-- Follow Microsoft's Terms of Service and your organization's policies.
-- `Microsoft` and `Microsoft Teams` are trademarks of Microsoft Corporation; this project is independent and unofficial.
-- If Microsoft changes APIs, auth flows, or platform restrictions, some features may stop working until updated.
+---
 
 ## License
 
-This project is licensed under the **GNU General Public License v3.0 (GPLv3)**. See the [LICENSE](LICENSE) file for more details.
+This project is licensed under the **GNU General Public License v3.0 (GPLv3)**. See the [LICENSE](LICENSE) file for details.
