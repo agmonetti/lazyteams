@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	"lazyteams/internal/helpers"
+	"github.com/agmonetti/lazyteams/internal/helpers"
 )
 
 // QuoteValue escapes a token value so it can be written to tokens.env without

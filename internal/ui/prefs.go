@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"lazyteams/internal/helpers"
+	"github.com/agmonetti/lazyteams/internal/helpers"
 )
 
 type Preferences struct {

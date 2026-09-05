@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"lazyteams/internal/graph"
-	"lazyteams/internal/version"
+	"github.com/agmonetti/lazyteams/internal/graph"
+	"github.com/agmonetti/lazyteams/internal/version"
 
 	"github.com/charmbracelet/lipgloss"
 )

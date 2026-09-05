@@ -2,8 +2,8 @@ package ui
 
 import (
 	"fmt"
-	"lazyteams/internal/graph"
-	"lazyteams/internal/teams"
+	"github.com/agmonetti/lazyteams/internal/graph"
+	"github.com/agmonetti/lazyteams/internal/teams"
 	"strings"
 	"time"
 

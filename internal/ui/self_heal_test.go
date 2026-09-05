@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"lazyteams/internal/graph"
+	"github.com/agmonetti/lazyteams/internal/graph"
 )
 
 func TestRetrySelfIDDue(t *testing.T) {

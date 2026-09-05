@@ -2,10 +2,10 @@ package ui
 
 import (
 	"fmt"
-	"lazyteams/internal/graph"
-	"lazyteams/internal/helpers"
-	"lazyteams/internal/teams"
-	"lazyteams/internal/ui/components/directorypicker"
+	"github.com/agmonetti/lazyteams/internal/graph"
+	"github.com/agmonetti/lazyteams/internal/helpers"
+	"github.com/agmonetti/lazyteams/internal/teams"
+	"github.com/agmonetti/lazyteams/internal/ui/components/directorypicker"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"

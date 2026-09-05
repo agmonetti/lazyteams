@@ -1,4 +1,4 @@
-module lazyteams
+module github.com/agmonetti/lazyteams
 
 go 1.26.6
 

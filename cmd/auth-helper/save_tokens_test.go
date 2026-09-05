@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"lazyteams/internal/auth"
+	"github.com/agmonetti/lazyteams/internal/auth"
 )
 
 func TestSaveTokensPartialMergeKeepsEscapedValues(t *testing.T) {

@@ -3,8 +3,8 @@ package ui
 import (
 	"fmt"
 	"io"
-	"lazyteams/internal/graph"
-	"lazyteams/internal/teams"
+	"github.com/agmonetti/lazyteams/internal/graph"
+	"github.com/agmonetti/lazyteams/internal/teams"
 	"net/url"
 	"os/exec"
 	"regexp"

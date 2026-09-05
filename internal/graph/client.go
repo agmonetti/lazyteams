@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"lazyteams/internal/helpers"
+	"github.com/agmonetti/lazyteams/internal/helpers"
 )
 
 var (

@@ -7,11 +7,11 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"lazyteams/internal/auth"
-	"lazyteams/internal/graph"
-	"lazyteams/internal/helpers"
-	"lazyteams/internal/ui"
-	"lazyteams/internal/version"
+	"github.com/agmonetti/lazyteams/internal/auth"
+	"github.com/agmonetti/lazyteams/internal/graph"
+	"github.com/agmonetti/lazyteams/internal/helpers"
+	"github.com/agmonetti/lazyteams/internal/ui"
+	"github.com/agmonetti/lazyteams/internal/version"
 )
 
 func main() {

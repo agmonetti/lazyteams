@@ -4,8 +4,8 @@ import (
 	"os"
 	"time"
 
-	"lazyteams/internal/graph"
-	"lazyteams/internal/ui/components/directorypicker"
+	"github.com/agmonetti/lazyteams/internal/graph"
+	"github.com/agmonetti/lazyteams/internal/ui/components/directorypicker"
 
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"

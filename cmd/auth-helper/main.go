@@ -17,9 +17,9 @@ import (
 
 	"github.com/mxschmitt/playwright-go"
 
-	"lazyteams/internal/auth"
-	"lazyteams/internal/helpers"
-	"lazyteams/internal/version"
+	"github.com/agmonetti/lazyteams/internal/auth"
+	"github.com/agmonetti/lazyteams/internal/helpers"
+	"github.com/agmonetti/lazyteams/internal/version"
 )
 
 type tokens struct {

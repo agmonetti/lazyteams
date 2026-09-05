@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"lazyteams/internal/version"
+	"github.com/agmonetti/lazyteams/internal/version"
 )
 
 func TestUpdateBannerActive(t *testing.T) {

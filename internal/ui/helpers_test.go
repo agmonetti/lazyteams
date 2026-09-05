@@ -9,7 +9,7 @@ import (
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
-	"lazyteams/internal/graph"
+	"github.com/agmonetti/lazyteams/internal/graph"
 )
 
 func TestMessageLink(t *testing.T) {
