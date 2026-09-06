@@ -14,7 +14,7 @@ import (
 // Version is the current build version. It defaults to "dev" and is meant to
 // be overridden at build time via:
 //
-//	go build -ldflags "-X lazyteams/internal/version.Version=v1.2.3" ./...
+//	go build -ldflags "-X github.com/agmonetti/lazyteams/internal/version.Version=v1.2.3" ./...
 var Version = "dev"
 
 // httpClient is the HTTP client used for the GitHub update check. The timeout

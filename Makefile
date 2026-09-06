@@ -1,5 +1,5 @@
 VERSION ?= dev
-LDFLAGS := -X lazyteams/internal/version.Version=$(VERSION)
+LDFLAGS := -X github.com/agmonetti/lazyteams/internal/version.Version=$(VERSION)
 
 PLATFORMS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64
 
