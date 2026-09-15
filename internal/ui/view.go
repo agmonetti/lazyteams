@@ -159,7 +159,14 @@ func (m Model) View() string {
 
 	if m.workspace == WorkspaceDMs {
 		if len(m.chats) == 0 {
-			leftContent += "  (no chats)\n"
+			if m.chatErr != nil {
+				leftContent += errorStyle.Render("  ⚠ "+sanitizeName(m.chatErr.Error())) + "\n"
+				leftContent += helpStyle.Render("  Retrying chat load...") + "\n"
+			} else if !m.chatsLoaded {
+				leftContent += helpStyle.Render("  Loading chats...") + "\n"
+			} else {
+				leftContent += "  (no chats)\n"
+			}
 		} else {
 			var dmChats, groupChats []int
 			for i, ch := range m.chats {

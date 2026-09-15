@@ -82,6 +82,7 @@ func (m Model) handleChatsMsg(msg chatsMsg) (tea.Model, tea.Cmd) {
 	}
 	sortChats(m.chats, m.chatUnread, selfChatID)
 	m.chatsLoaded = true
+	m.chatErr = nil
 	m.loading = false
 	m.selectedChat = 0
 
@@ -376,9 +377,18 @@ func updateNotifications(m *Model, items []graph.NotificationItem) {
 }
 
 func (m Model) handlePollChatsMsg(msg pollChatsMsg) (tea.Model, tea.Cmd) {
+	if msg.err != nil {
+		m.chatErr = msg.err
+		if is401(msg.err) {
+			return m, queueTokenRenewal(&m, "web")
+		}
+		return m, nil
+	}
 	if len(msg.chats) == 0 {
 		return m, nil
 	}
+	m.chatErr = nil
+	m.chatsLoaded = true
 
 	// Preserve the currently selected chat across the refresh
 	var currID string

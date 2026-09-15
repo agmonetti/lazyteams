@@ -395,6 +395,37 @@ func TestUpdateNotificationsUsesServerReadStateAndPreservesSelection(t *testing.
 		t.Error("notification refresh should be marked complete")
 	}
 }
+func TestActivityAllFilterIncludesReadNotification(t *testing.T) {
+	m := Model{
+		activityFilter: NotifFilterAll,
+		notifications: []graph.NotificationItem{
+			{ID: "read-activity", IsRead: true},
+		},
+	}
+
+	filtered := m.filteredNotifications()
+	if len(filtered) != 1 || filtered[0].ID != "read-activity" {
+		t.Fatalf("All activity filter = %#v, want the read notification", filtered)
+	}
+}
+func TestChatsTimeoutDoesNotBecomeFatal(t *testing.T) {
+	m := Model{
+		workspace: WorkspaceDMs,
+		loading:   true,
+	}
+	updated, _ := m.Update(chatsErrMsg{err: fmt.Errorf("error reading response: context deadline exceeded")})
+	got := updated.(Model)
+
+	if got.err != nil {
+		t.Fatalf("chat timeout became a fatal UI error: %v", got.err)
+	}
+	if got.chatErr == nil {
+		t.Fatal("chat timeout was not retained as a recoverable error")
+	}
+	if got.loading {
+		t.Error("chat timeout left the global loading state stuck")
+	}
+}
 
 func TestUpdateNotificationsPreservesSelectionInFilteredList(t *testing.T) {
 	m := Model{

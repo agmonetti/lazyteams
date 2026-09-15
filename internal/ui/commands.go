@@ -491,10 +491,7 @@ func loadChatsCmd(client *graph.Client) tea.Cmd {
 func pollChatsCmd(client *graph.Client) tea.Cmd {
 	return func() tea.Msg {
 		chats, err := client.GetChats()
-		if err != nil {
-			return nil
-		}
-		return pollChatsMsg{chats}
+		return pollChatsMsg{chats: chats, err: err}
 	}
 }
 

@@ -103,6 +103,7 @@ type delayedReloadTeamsMsg struct{}
 
 type pollChatsMsg struct {
 	chats []graph.Chat
+	err   error
 }
 
 type presenceTickResultMsg struct {

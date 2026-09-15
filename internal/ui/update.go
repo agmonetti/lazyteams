@@ -483,16 +483,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case chatsErrMsg:
+		// Chat loading is a recoverable network operation. Keep the TUI alive,
+		// preserve any chats already loaded, and let the next poll retry it.
+		m.chatErr = msg.err
 		if is401(msg.err) {
-			cmd := queueTokenRenewal(&m, detectExpiredToken(msg.err))
+			cmd := queueTokenRenewal(&m, "web")
 			m.loading = false
 			return m, cmd
-		} else {
-			m.err = msg.err
 		}
 		m.loading = false
 		return m, nil
-
 	case chatsMsg:
 		return m.handleChatsMsg(msg)
 

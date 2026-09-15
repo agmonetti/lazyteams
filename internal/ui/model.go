@@ -160,6 +160,7 @@ type Model struct {
 	chats        []graph.Chat
 	selectedChat int
 	chatsLoaded  bool
+	chatErr      error
 	selfID       string
 	selectedTeam int
 	loadedConvID string
