@@ -42,7 +42,8 @@ type activityResponse struct {
 const notifConvURL = "https://teams.microsoft.com/api/chatsvc/amer/v1/users/ME/conversations/48:notifications/messages?startTime=0&pageSize=20&view=msnp24Equivalent&targetType=Passport"
 
 func (c *Client) FetchNotifications() ([]NotificationItem, error) {
-	if c.NotifToken == "" {
+	credentials := c.Credentials()
+	if credentials.Notif.Token == "" {
 		return nil, fmt.Errorf("TEAMS_NOTIF_TOKEN not configured")
 	}
 
@@ -50,7 +51,7 @@ func (c *Client) FetchNotifications() ([]NotificationItem, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error creating request: %w", err)
 	}
-	req.Header.Set("Authorization", "Bearer "+c.NotifToken)
+	req.Header.Set("Authorization", "Bearer "+credentials.Notif.Token)
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("X-Ms-Client-Type", "web")
 
@@ -126,13 +127,14 @@ func (c *Client) FetchNotifications() ([]NotificationItem, error) {
 }
 
 func (c *Client) MarkNotificationRead(msgID string) error {
+	credentials := c.Credentials()
 	url := fmt.Sprintf("https://teams.microsoft.com/api/chatsvc/amer/v1/users/ME/conversations/48:notifications/messages/%s/properties?name=isread", msgID)
 	body := strings.NewReader(`{"isread":"true"}`)
 	req, err := http.NewRequest("PUT", url, body)
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+c.NotifToken)
+	req.Header.Set("Authorization", "Bearer "+credentials.Notif.Token)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Ms-Client-Type", "web")
 	resp, err := c.HTTPClient.Do(req)

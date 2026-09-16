@@ -7,13 +7,12 @@ import (
 	"html"
 	"io"
 	"net/http"
-	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
+	"sync/atomic"
 	"time"
 
-	"github.com/agmonetti/lazyteams/internal/helpers"
+	"github.com/agmonetti/lazyteams/internal/auth"
 )
 
 var (
@@ -204,46 +203,55 @@ func cleanHTML(s string) string {
 const baseURL = "https://graph.microsoft.com/v1.0"
 
 type Client struct {
-	GraphToken  string
-	WebToken    string
-	NotifToken  string
-	EduToken    string
-	Cookie      string
-	EduCookie   string
-	SpacesToken string
-	FabricToken string
+	credentials atomic.Pointer[auth.CredentialSet]
 	SelfID      string
 	HTTPClient  *http.Client
 }
 
-func NewClient(graphToken, webToken, notifToken, eduToken, cookie, eduCookie, spacesToken, fabricToken string) *Client {
-	return &Client{
-		GraphToken:  graphToken,
-		WebToken:    webToken,
-		NotifToken:  notifToken,
-		EduToken:    eduToken,
-		Cookie:      cookie,
-		EduCookie:   eduCookie,
-		SpacesToken: spacesToken,
-		FabricToken: fabricToken,
-		HTTPClient: &http.Client{
-			Timeout: 10 * time.Second,
-			Transport: &http.Transport{
-				MaxConnsPerHost: 10,
-				MaxIdleConns:    12,
-				IdleConnTimeout: 90 * time.Second,
-			},
+func NewClient(credentials *auth.CredentialSet) *Client {
+	c := &Client{HTTPClient: &http.Client{
+		Timeout: 10 * time.Second,
+		Transport: &http.Transport{
+			MaxConnsPerHost: 10,
+			MaxIdleConns:    12,
+			IdleConnTimeout: 90 * time.Second,
 		},
+	}}
+	if credentials == nil {
+		credentials = &auth.CredentialSet{}
 	}
+	c.credentials.Store(auth.CloneCredentialSet(credentials))
+	return c
 }
 
+// Credentials returns a detached snapshot so callers cannot mutate the
+// published value (including its Permissions slice).
+func (c *Client) Credentials() *auth.CredentialSet {
+	return auth.CloneCredentialSet(c.credentials.Load())
+}
+
+func (c *Client) ReloadCredentials() error {
+	credentials, err := auth.LoadCredentialSet()
+	if err != nil {
+		return err
+	}
+	c.credentials.Store(auth.CloneCredentialSet(credentials))
+	return nil
+}
+
+// Deprecated: ReloadTokens is retained for backward compatibility during migration.
+func (c *Client) ReloadTokens() error {
+	return c.ReloadCredentials()
+}
+
+
 func (c *Client) doReq(endpoint string) ([]byte, error) {
+	credentials := c.credentials.Load()
 	req, err := http.NewRequest("GET", baseURL+endpoint, nil)
 	if err != nil {
 		return nil, fmt.Errorf("error creating request: %w", err)
 	}
-
-	req.Header.Set("Authorization", "Bearer "+c.GraphToken)
+	req.Header.Set("Authorization", "Bearer "+credentials.Graph.Token)
 	req.Header.Set("Accept", "application/json")
 
 	resp, err := c.HTTPClient.Do(req)
@@ -272,56 +280,9 @@ func (c *Client) doReq(endpoint string) ([]byte, error) {
 	return body, nil
 }
 
-func (c *Client) ReloadTokens() error {
-	path := filepath.Join(helpers.ConfigDir(), "tokens.env")
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return err
-	}
-	tokens := map[string]string{}
-	for _, line := range strings.Split(string(data), "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		line = strings.TrimPrefix(line, "export ")
-		parts := strings.SplitN(line, "=", 2)
-		if len(parts) != 2 {
-			continue
-		}
-		key := strings.TrimSpace(parts[0])
-		val := strings.Trim(strings.TrimSpace(parts[1]), `"`)
-		tokens[key] = val
-	}
-	if v := tokens["MS_GRAPH_TOKEN"]; v != "" {
-		c.GraphToken = strings.TrimPrefix(v, "Bearer ")
-	}
-	if v := tokens["TEAMS_WEB_TOKEN"]; v != "" {
-		c.WebToken = strings.TrimPrefix(v, "Bearer ")
-	}
-	if v := tokens["TEAMS_NOTIF_TOKEN"]; v != "" {
-		c.NotifToken = strings.TrimPrefix(v, "Bearer ")
-	}
-	if v := tokens["EDU_TOKEN"]; v != "" {
-		c.EduToken = strings.TrimPrefix(v, "Bearer ")
-	}
-	if v := tokens["TEAMS_COOKIE"]; v != "" {
-		c.Cookie = v
-	}
-	if v := tokens["EDU_COOKIE"]; v != "" {
-		c.EduCookie = v
-	}
-	if v := tokens["TEAMS_SPACES_TOKEN"]; v != "" {
-		c.SpacesToken = strings.TrimPrefix(v, "Bearer ")
-	}
-	if v := tokens["TEAMS_FABRIC_TOKEN"]; v != "" {
-		c.FabricToken = strings.TrimPrefix(v, "Bearer ")
-	}
-	return nil
-}
-
 func (c *Client) GetTenantID() string {
-	parts := strings.Split(c.WebToken, ".")
+	credentials := c.credentials.Load()
+	parts := strings.Split(credentials.Web.Token, ".")
 	if len(parts) < 2 {
 		return ""
 	}

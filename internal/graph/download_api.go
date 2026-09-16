@@ -10,6 +10,7 @@ import (
 )
 
 func (c *Client) DownloadAMSImage(imageURL string) (io.ReadCloser, error) {
+	credentials := c.Credentials()
 	// The URL comes from an <img> tag inside a message. Only download from
 	// Microsoft's image hosts: attaching the WebToken to an attacker-controlled
 	// URL would leak a live session token.
@@ -20,7 +21,7 @@ func (c *Client) DownloadAMSImage(imageURL string) (io.ReadCloser, error) {
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Authorization", "Bearer "+c.WebToken)
+	req.Header.Set("Authorization", "Bearer "+credentials.Web.Token)
 	req.Header.Set("Accept", "image/*, application/json, text/plain, */*")
 	req.Header.Set("x-ms-client-caller", "newChat")
 	req.Header.Set("x-ms-client-type", "web")
@@ -64,6 +65,7 @@ func encodeShareURL(rawURL string) string {
 // into the real DriveItem with ID and driveId. If the link doesn't point
 // to a SharePoint/OneDrive file, it returns an error.
 func (c *Client) ResolveSharedItem(shareURL string) (*DriveItem, error) {
+	credentials := c.Credentials()
 	shareId := encodeShareURL(shareURL)
 	endpoint := fmt.Sprintf("https://graph.microsoft.com/v1.0/shares/%s/driveItem", shareId)
 
@@ -71,7 +73,7 @@ func (c *Client) ResolveSharedItem(shareURL string) (*DriveItem, error) {
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Authorization", "Bearer "+c.GraphToken)
+	req.Header.Set("Authorization", "Bearer "+credentials.Graph.Token)
 
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
@@ -96,6 +98,7 @@ func (c *Client) ResolveSharedItem(shareURL string) (*DriveItem, error) {
 }
 
 func (c *Client) downloadContent(endpoint string) (io.ReadCloser, error) {
+	credentials := c.Credentials()
 	// Defensive: never attach the GraphToken to a non-Microsoft host.
 	if err := validateMicrosoftURL(endpoint); err != nil {
 		return nil, err
@@ -104,7 +107,7 @@ func (c *Client) downloadContent(endpoint string) (io.ReadCloser, error) {
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Authorization", "Bearer "+c.GraphToken)
+	req.Header.Set("Authorization", "Bearer "+credentials.Graph.Token)
 
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {

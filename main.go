@@ -8,15 +8,12 @@ import (
 
 	"github.com/agmonetti/lazyteams/internal/auth"
 	"github.com/agmonetti/lazyteams/internal/graph"
-	"github.com/agmonetti/lazyteams/internal/helpers"
 	"github.com/agmonetti/lazyteams/internal/ui"
 	"github.com/agmonetti/lazyteams/internal/version"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
 func main() {
-	// Kill any stale browser holding our profile from a previous crashed run.
-	helpers.KillZombieBrowser()
 
 	// Handle --help, --version, --update and --debug flags
 	debugMode := false
@@ -85,15 +82,14 @@ NOTES:
 		os.Exit(runUpdate())
 	}
 
-	graphToken, webToken, notifToken, eduToken, cookie, eduCookie, spacesToken, fabricToken, err := auth.GetTokens()
+	credentials, err := auth.LoadCredentialSet()
 	if err != nil {
 		fmt.Println("Authentication error:\n", err)
 		os.Exit(1)
 	}
+	graphClient := graph.NewClient(credentials)
 
-	graphClient := graph.NewClient(graphToken, webToken, notifToken, eduToken, cookie, eduCookie, spacesToken, fabricToken)
-
-	userName := auth.ParseUserNameFromToken(graphToken)
+	userName := auth.ParseUserNameFromToken(credentials.Graph.Token)
 
 	p := tea.NewProgram(
 		ui.New(graphClient, userName, debugMode),

@@ -125,6 +125,7 @@ func (c *Client) GetChannels(teamID string) ([]Channel, error) {
 }
 
 func (c *Client) CreateTeam(displayName string) error {
+	credentials := c.Credentials()
 	// Build the JSON payload safely using a map and json.Marshal
 	payloadMap := map[string]string{
 		"displayName":         displayName,
@@ -137,7 +138,7 @@ func (c *Client) CreateTeam(displayName string) error {
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+c.GraphToken)
+	req.Header.Set("Authorization", "Bearer "+credentials.Graph.Token)
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := c.HTTPClient.Do(req)
@@ -171,6 +172,7 @@ func sanitizeMailNickname(name string) string {
 }
 
 func (c *Client) CreateChannel(teamGUID, teamThreadID, name, channelType string) error {
+	credentials := c.Credentials()
 	payload := map[string]string{
 		"displayName": name,
 		"description": "",
@@ -186,7 +188,7 @@ func (c *Client) CreateChannel(teamGUID, teamThreadID, name, channelType string)
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+c.SpacesToken)
+	req.Header.Set("Authorization", "Bearer "+credentials.Spaces.Token)
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
@@ -201,12 +203,13 @@ func (c *Client) CreateChannel(teamGUID, teamThreadID, name, channelType string)
 }
 
 func (c *Client) DeleteChannel(teamThreadID, channelThreadID string) error {
+	credentials := c.Credentials()
 	url := fmt.Sprintf("https://teams.microsoft.com/api/mt/part/amer-02/beta/teams/%s/channels/%s", teamThreadID, channelThreadID)
 	req, err := http.NewRequest("DELETE", url, nil)
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+c.SpacesToken)
+	req.Header.Set("Authorization", "Bearer "+credentials.Spaces.Token)
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
 		return err
@@ -220,12 +223,13 @@ func (c *Client) DeleteChannel(teamThreadID, channelThreadID string) error {
 }
 
 func (c *Client) DeleteTeam(teamThreadID string) error {
+	credentials := c.Credentials()
 	url := fmt.Sprintf("https://teams.microsoft.com/api/mt/part/amer-02/beta/teams/%s/delete", teamThreadID)
 	req, err := http.NewRequest("DELETE", url, nil)
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+c.SpacesToken)
+	req.Header.Set("Authorization", "Bearer "+credentials.Spaces.Token)
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
 		return err
@@ -315,12 +319,13 @@ func (c *Client) GetTeamMembers(teamGUID string) ([]TeamMember, error) {
 }
 
 func (c *Client) GetChannelMembers(channelThreadID string) ([]TeamMember, error) {
+	credentials := c.Credentials()
 	url := fmt.Sprintf("https://teams.microsoft.com/api/chatsvc/amer/v1/threads/%s/members?view=msnp24Equivalent&pageSize=100&selectMemberRoles=Admin|User|Guest", channelThreadID)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Authorization", "Bearer "+c.WebToken)
+	req.Header.Set("Authorization", "Bearer "+credentials.Web.Token)
 	req.Header.Set("Accept", "application/json")
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
@@ -379,6 +384,7 @@ func (c *Client) GetChannelMembers(channelThreadID string) ([]TeamMember, error)
 }
 
 func (c *Client) AddTeamMember(teamThreadID, teamGUID, userMRI string) error {
+	credentials := c.Credentials()
 	payload := struct {
 		Users   []map[string]any `json:"users"`
 		GroupID string           `json:"groupId"`
@@ -395,7 +401,7 @@ func (c *Client) AddTeamMember(teamThreadID, teamGUID, userMRI string) error {
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+c.SpacesToken)
+	req.Header.Set("Authorization", "Bearer "+credentials.Spaces.Token)
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
@@ -410,12 +416,13 @@ func (c *Client) AddTeamMember(teamThreadID, teamGUID, userMRI string) error {
 }
 
 func (c *Client) GetChannelSubstrateID(channelThreadID string) (string, error) {
+	credentials := c.Credentials()
 	url := fmt.Sprintf("https://teams.microsoft.com/api/chatsvc/amer/v1/threads/%s?view=msnp24Equivalent", channelThreadID)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return "", err
 	}
-	req.Header.Set("Authorization", "Bearer "+c.WebToken)
+	req.Header.Set("Authorization", "Bearer "+credentials.Web.Token)
 	req.Header.Set("Accept", "application/json")
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
@@ -449,6 +456,7 @@ func (c *Client) channelMemberOIDs(teamGUID, channelThreadID, userID, tenantID s
 }
 
 func (c *Client) AddChannelMember(teamGUID, channelThreadID, userID, tenantID string) error {
+	credentials := c.Credentials()
 	channelOID, userOID, err := c.channelMemberOIDs(teamGUID, channelThreadID, userID, tenantID)
 	if err != nil {
 		return err
@@ -471,7 +479,7 @@ func (c *Client) AddChannelMember(teamGUID, channelThreadID, userID, tenantID st
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+c.FabricToken)
+	req.Header.Set("Authorization", "Bearer "+credentials.Fabric.Token)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("x-ms-client-type", "web")
 
@@ -491,6 +499,7 @@ func (c *Client) AddChannelMember(teamGUID, channelThreadID, userID, tenantID st
 }
 
 func (c *Client) RemoveTeamMember(teamThreadID, teamGUID, userID string) error {
+	credentials := c.Credentials()
 	payload := struct {
 		UserMRI    string `json:"userMri"`
 		UpdateType string `json:"updateType"`
@@ -509,7 +518,7 @@ func (c *Client) RemoveTeamMember(teamThreadID, teamGUID, userID string) error {
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+c.SpacesToken)
+	req.Header.Set("Authorization", "Bearer "+credentials.Spaces.Token)
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
@@ -524,6 +533,7 @@ func (c *Client) RemoveTeamMember(teamThreadID, teamGUID, userID string) error {
 }
 
 func (c *Client) RemoveChannelMember(teamGUID, channelThreadID, userID, tenantID string) error {
+	credentials := c.Credentials()
 	channelOID, userOID, err := c.channelMemberOIDs(teamGUID, channelThreadID, userID, tenantID)
 	if err != nil {
 		return err
@@ -534,7 +544,7 @@ func (c *Client) RemoveChannelMember(teamGUID, channelThreadID, userID, tenantID
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+c.FabricToken)
+	req.Header.Set("Authorization", "Bearer "+credentials.Fabric.Token)
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
 		return err
@@ -567,6 +577,7 @@ func channelRoleNumber(role string) (int, bool) {
 // rejects self-demotion when the user is the last owner; that descriptive
 // error is returned to the caller so it can be shown clearly.
 func (c *Client) UpdateChannelMemberRole(teamGUID, channelThreadID, userID, role, tenantID string) error {
+	credentials := c.Credentials()
 	roleNum, ok := channelRoleNumber(role)
 	if !ok {
 		return fmt.Errorf("unsupported channel role %q", role)
@@ -593,7 +604,7 @@ func (c *Client) UpdateChannelMemberRole(teamGUID, channelThreadID, userID, role
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+c.FabricToken)
+	req.Header.Set("Authorization", "Bearer "+credentials.Fabric.Token)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("x-ms-client-type", "web")
 

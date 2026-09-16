@@ -12,6 +12,7 @@ import (
 // Possible values for availability and activity:
 // "Available", "Busy", "DoNotDisturb", "BeRightBack", "Away", "Offline"
 func (c *Client) SetPresence(userID, availability, activity string) error {
+	credentials := c.Credentials()
 	if userID == "" {
 		return fmt.Errorf("SetPresence: empty userID")
 	}
@@ -31,7 +32,7 @@ func (c *Client) SetPresence(userID, availability, activity string) error {
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+c.GraphToken)
+	req.Header.Set("Authorization", "Bearer "+credentials.Graph.Token)
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := c.HTTPClient.Do(req)
@@ -50,6 +51,7 @@ func (c *Client) SetPresence(userID, availability, activity string) error {
 
 // ClearPresence clears the preferred presence (reverts to the presence automatically calculated by Teams).
 func (c *Client) ClearPresence(userID string) error {
+	credentials := c.Credentials()
 	if userID == "" {
 		return fmt.Errorf("ClearPresence: empty userID")
 	}
@@ -59,7 +61,7 @@ func (c *Client) ClearPresence(userID string) error {
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+c.GraphToken)
+	req.Header.Set("Authorization", "Bearer "+credentials.Graph.Token)
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := c.HTTPClient.Do(req)
@@ -120,12 +122,13 @@ func (c *Client) GetPresences(userIDs []string) (map[string]string, error) {
 }
 
 func (c *Client) getPresence(userID string) (string, error) {
+	credentials := c.Credentials()
 	url := fmt.Sprintf("https://graph.microsoft.com/v1.0/users/%s/presence", userID)
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return "", err
 	}
-	req.Header.Set("Authorization", "Bearer "+c.GraphToken)
+	req.Header.Set("Authorization", "Bearer "+credentials.Graph.Token)
 
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {

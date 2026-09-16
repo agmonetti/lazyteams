@@ -118,12 +118,13 @@ type ConsumptionHorizonResult struct {
 }
 
 func (c *Client) GetConsumptionHorizon(convID string) (ConsumptionHorizonResult, error) {
+	credentials := c.Credentials()
 	url := fmt.Sprintf("https://teams.microsoft.com/api/chatsvc/amer/v1/threads/%s/consumptionhorizons", convID)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return ConsumptionHorizonResult{}, err
 	}
-	req.Header.Set("Authorization", "Bearer "+c.WebToken)
+	req.Header.Set("Authorization", "Bearer "+credentials.Web.Token)
 	req.Header.Set("Accept", "application/json")
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
@@ -181,13 +182,14 @@ type UserSearchResult struct {
 }
 
 func (c *Client) SearchUsers(query string) ([]UserSearchResult, error) {
+	credentials := c.Credentials()
 	encoded := url.QueryEscape(fmt.Sprintf(`"displayName:%s"`, query))
 	endpoint := fmt.Sprintf("/users?$search=%s&$select=id,displayName,mail&$top=10", encoded)
 	req, err := http.NewRequest("GET", baseURL+endpoint, nil)
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Authorization", "Bearer "+c.GraphToken)
+	req.Header.Set("Authorization", "Bearer "+credentials.Graph.Token)
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("ConsistencyLevel", "eventual")
 	resp, err := c.HTTPClient.Do(req)
@@ -206,8 +208,7 @@ func (c *Client) SearchUsers(query string) ([]UserSearchResult, error) {
 	// Fallback/additive search for external users by exact email
 	if strings.Contains(query, "@") {
 		extURL := fmt.Sprintf("https://teams.microsoft.com/api/mt/part/amer-02/beta/users/%s/externalsearchv3?includeTFLUsers=true", url.PathEscape(query))
-
-		tokens := []string{c.WebToken, c.SpacesToken}
+		tokens := []string{credentials.Web.Token, credentials.Spaces.Token}
 		for _, token := range tokens {
 			if token == "" {
 				continue
@@ -265,6 +266,7 @@ func (c *Client) SearchUsers(query string) ([]UserSearchResult, error) {
 }
 
 func (c *Client) CreateOneOnOneChat(selfID, targetID string) (Chat, error) {
+	credentials := c.Credentials()
 	if strings.HasPrefix(targetID, "ext:") {
 		targetUUID := strings.TrimPrefix(targetID, "ext:")
 		u1, u2 := selfID, targetUUID
@@ -301,7 +303,7 @@ func (c *Client) CreateOneOnOneChat(selfID, targetID string) (Chat, error) {
 	if err != nil {
 		return Chat{}, err
 	}
-	req.Header.Set("Authorization", "Bearer "+c.GraphToken)
+	req.Header.Set("Authorization", "Bearer "+credentials.Graph.Token)
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
@@ -327,6 +329,7 @@ func (c *Client) CreateOneOnOneChat(selfID, targetID string) (Chat, error) {
 // CreateOneOnOneChatViaChatSvc creates a 1:1 chat using the Teams ChatSvc API
 // instead of Graph API. This bypasses tenant restrictions on POST /v1.0/chats.
 func (c *Client) CreateOneOnOneChatViaChatSvc(selfID, targetID string) (Chat, error) {
+	credentials := c.Credentials()
 	payload := struct {
 		Members    []map[string]any `json:"members"`
 		Properties map[string]any   `json:"properties"`
@@ -353,7 +356,7 @@ func (c *Client) CreateOneOnOneChatViaChatSvc(selfID, targetID string) (Chat, er
 	if err != nil {
 		return Chat{}, err
 	}
-	req.Header.Set("Authorization", "Bearer "+c.WebToken)
+	req.Header.Set("Authorization", "Bearer "+credentials.Web.Token)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("behavioroverride", "redirectAs404")
 	req.Header.Set("x-ms-migration", "True")
@@ -391,6 +394,7 @@ func (c *Client) CreateOneOnOneChatViaChatSvc(selfID, targetID string) (Chat, er
 // DiscoverSelfChatID brute-forces ChatSvc to find the real
 // identifier (MRI) of the user's "Personal notes" chat.
 func (c *Client) DiscoverSelfChatID(selfID string) string {
+	credentials := c.Credentials()
 	candidates := []string{
 		fmt.Sprintf("8:orgid:%s", selfID),
 		"48:notes",
@@ -405,7 +409,7 @@ func (c *Client) DiscoverSelfChatID(selfID string) string {
 			continue
 		}
 
-		req.Header.Set("Authorization", "Bearer "+c.WebToken)
+		req.Header.Set("Authorization", "Bearer "+credentials.Web.Token)
 		req.Header.Set("behavioroverride", "redirectAs404")
 
 		resp, err := c.HTTPClient.Do(req)

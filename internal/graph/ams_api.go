@@ -32,6 +32,7 @@ func (c *Client) UploadInlineImage(
 	data []byte,
 	contentType string,
 ) (*AMSImage, error) {
+	credentials := c.Credentials()
 
 	// Step 1: create object
 	createBody := map[string]any{
@@ -55,7 +56,7 @@ func (c *Client) UploadInlineImage(
 		return nil, err
 	}
 
-	setAMSHeaders(req, c.WebToken)
+	setAMSHeaders(req, credentials.Web.Token)
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := c.HTTPClient.Do(req)
@@ -94,7 +95,7 @@ func (c *Client) UploadInlineImage(
 		return nil, err
 	}
 
-	setAMSHeaders(req, c.WebToken)
+	setAMSHeaders(req, credentials.Web.Token)
 	req.Header.Set("Content-Type", "application/octet-stream")
 
 	resp, err = c.HTTPClient.Do(req)

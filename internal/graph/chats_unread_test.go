@@ -6,6 +6,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/agmonetti/lazyteams/internal/auth"
 )
 
 func TestGetConsumptionHorizon(t *testing.T) {
@@ -36,11 +38,9 @@ func TestGetConsumptionHorizon(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := &Client{
-		SelfID:     selfID,
-		WebToken:   "test-token",
-		HTTPClient: server.Client(),
-	}
+	client := NewClient(&auth.CredentialSet{Web: auth.Credential{Token: "test-token"}})
+	client.SelfID = selfID
+	client.HTTPClient = server.Client()
 
 	origTransport := client.HTTPClient.Transport
 	client.HTTPClient.Transport = roundTripperFunc(func(req *http.Request) (*http.Response, error) {
