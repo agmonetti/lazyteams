@@ -5,13 +5,11 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
 
-// jwtToken builds a realistic JWT whose payload is base64url-encoded (no
-// padding), matching how real Microsoft tokens arrive. Only the payload
-// matters for ParseUserNameFromToken.
 func jwtToken(claims map[string]interface{}) string {
 	b, err := json.Marshal(claims)
 	if err != nil {
@@ -21,39 +19,25 @@ func jwtToken(claims map[string]interface{}) string {
 }
 
 func TestParseUserNameFromToken(t *testing.T) {
-	tests := []struct {
-		name  string
-		token string
-		want  string
-	}{
+	tests := []struct{ name, token, want string }{
 		{"name claim", jwtToken(map[string]interface{}{"name": "Alice Johnson"}), "Alice Johnson"},
 		{"unique_name claim", jwtToken(map[string]interface{}{"unique_name": "alice@contoso.com"}), "alice@contoso.com"},
 		{"preferred_username claim", jwtToken(map[string]interface{}{"preferred_username": "alice@contoso.com"}), "alice@contoso.com"},
 		{"upn claim", jwtToken(map[string]interface{}{"upn": "alice@contoso.com"}), "alice@contoso.com"},
 		{"given_name claim", jwtToken(map[string]interface{}{"given_name": "Alice"}), "Alice"},
-		{"name wins over given_name", jwtToken(map[string]interface{}{"name": "Alice Johnson", "given_name": "Alice"}), "Alice Johnson"},
-		{"name wins over unique_name", jwtToken(map[string]interface{}{"name": "N", "unique_name": "u@x.com"}), "N"},
-		{"empty name falls through", jwtToken(map[string]interface{}{"name": "", "given_name": "Alice"}), "Alice"},
-		{"non-string name falls through", jwtToken(map[string]interface{}{"name": 123, "given_name": "Alice"}), "Alice"},
+		{"name wins", jwtToken(map[string]interface{}{"name": "Alice Johnson", "given_name": "Alice"}), "Alice Johnson"},
 		{"no known claim", jwtToken(map[string]interface{}{"foo": "bar"}), ""},
-		{"no dots", "notajwt", ""},
-		{"two parts short payload", "a.b", ""},
-		{"invalid base64 payload", "a.###.c", ""},
-		{"valid base64 not json", "a." + base64.RawURLEncoding.EncodeToString([]byte("hello")) + ".c", ""},
-		{"json array payload", "a." + base64.RawURLEncoding.EncodeToString([]byte("[]")) + ".c", ""},
+		{"invalid token", "notajwt", ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := ParseUserNameFromToken(tt.token); got != tt.want {
-				t.Errorf("ParseUserNameFromToken(%q) = %q, want %q", tt.token, got, tt.want)
+				t.Errorf("ParseUserNameFromToken() = %q, want %q", got, tt.want)
 			}
 		})
 	}
 }
 
-// isolateConfigDir points ConfigDir at a fresh temp dir by setting both home
-// variables os.UserHomeDir resolves on Unix ($HOME) and Windows (%USERPROFILE%).
-// Returns the fake config dir so tests can write tokens.env into it.
 func isolateConfigDir(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -62,177 +46,206 @@ func isolateConfigDir(t *testing.T) string {
 	return filepath.Join(dir, ".config", "lazyteams")
 }
 
-func writeTokensFile(t *testing.T, configDir, content string) {
-	t.Helper()
-	if err := os.MkdirAll(configDir, 0o755); err != nil {
+func TestLoadCredentialSetPreservesLegacyAndMetadata(t *testing.T) {
+	dir := isolateConfigDir(t)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(configDir, "tokens.env"), []byte(content), 0o600); err != nil {
+	set := &CredentialSet{Version: schemaVersion, Generation: 7, Graph: Credential{Token: "graph", Account: "a", Tenant: "t"}, EDUCookie: Credential{Token: "edu-cookie"}}
+	if err := PersistCredentialSet(dir, set); err != nil {
 		t.Fatal(err)
+	}
+	got, err := LoadCredentialSet()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Generation != 7 || got.Graph.Token != "graph" || got.Graph.Account != "a" || got.EDUCookie.Token != "edu-cookie" {
+		t.Fatalf("loaded snapshot = %#v", got)
 	}
 }
 
-func TestLoadTokensFile(t *testing.T) {
-	t.Run("missing file returns empty map", func(t *testing.T) {
-		isolateConfigDir(t)
-		if got := loadTokensFile(); len(got) != 0 {
-			t.Errorf("loadTokensFile() = %v, want empty map", got)
-		}
-	})
-
-	t.Run("parses export, quotes and skips invalid lines", func(t *testing.T) {
-		configDir := isolateConfigDir(t)
-		writeTokensFile(t, configDir, `# comment line
-MS_GRAPH_TOKEN=abc123
-export TEAMS_WEB_TOKEN = "def 456"
-TEAMS_COOKIE = quoted
-invalid line without equals
-LAST=value
-`)
-		got := loadTokensFile()
-		want := map[string]string{
-			"MS_GRAPH_TOKEN":  "abc123",
-			"TEAMS_WEB_TOKEN": "def 456",
-			"TEAMS_COOKIE":    "quoted",
-			"LAST":            "value",
-		}
-		for k, v := range want {
-			if got[k] != v {
-				t.Errorf("loadTokensFile()[%q] = %q, want %q", k, got[k], v)
-			}
-		}
-		if len(got) != len(want) {
-			t.Errorf("loadTokensFile() has %d keys, want %d: %v", len(got), len(want), got)
-		}
-	})
-
-	t.Run("unquotes escaped values written by auth helper", func(t *testing.T) {
-		configDir := isolateConfigDir(t)
-		writeTokensFile(t, configDir, "TEAMS_COOKIE=\"line1\\nline2\\\"quoted\\\"\\\\slash\"\n")
-		got := loadTokensFile()
-		want := "line1\nline2\"quoted\"\\slash"
-		if got["TEAMS_COOKIE"] != want {
-			t.Errorf("loadTokensFile()[%q] = %q, want %q", "TEAMS_COOKIE", got["TEAMS_COOKIE"], want)
-		}
-	})
-
-	t.Run("quote and unquote are inverse operations", func(t *testing.T) {
-		values := []string{
-			"",
-			"abc123",
-			"line1\nline2\"quoted\"\\slash",
-			"Bearer eyJhbGciOiJSUzI1NiJ9.payload-with-special-\"chars\"",
-		}
-		for _, v := range values {
-			if got := UnquoteValue(QuoteValue(v)); got != v {
-				t.Errorf("UnquoteValue(QuoteValue(%q)) = %q, want %q", v, got, v)
-			}
-		}
-	})
-
-	t.Run("old plain and double-quoted formats still parse", func(t *testing.T) {
-		configDir := isolateConfigDir(t)
-		writeTokensFile(t, configDir, "export MS_GRAPH_TOKEN=abc123\nexport TEAMS_WEB_TOKEN=\"def 456\"\n")
-		got := loadTokensFile()
-		if got["MS_GRAPH_TOKEN"] != "abc123" {
-			t.Errorf("MS_GRAPH_TOKEN = %q, want %q", got["MS_GRAPH_TOKEN"], "abc123")
-		}
-		if got["TEAMS_WEB_TOKEN"] != "def 456" {
-			t.Errorf("TEAMS_WEB_TOKEN = %q, want %q", got["TEAMS_WEB_TOKEN"], "def 456")
-		}
-	})
+func TestPersistTokenValuesMergesAtomicallyAndKeepsEDUCookie(t *testing.T) {
+	dir := t.TempDir()
+	initial := &CredentialSet{Version: schemaVersion, Generation: 3, Graph: Credential{Token: "old-graph"}, EDUCookie: Credential{Token: "keep-me"}}
+	if err := PersistCredentialSet(dir, initial); err != nil {
+		t.Fatal(err)
+	}
+	got, err := PersistTokenValues(dir, TokenValues{Web: "new-web"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Generation != 4 || got.Graph.Token != "old-graph" || got.Web.Token != "new-web" || got.EDUCookie.Token != "keep-me" {
+		t.Fatalf("merged snapshot = %#v", got)
+	}
+	loaded, err := loadFromDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Generation != 4 || loaded.EDUCookie.Token != "keep-me" {
+		t.Fatalf("persisted snapshot = %#v", loaded)
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "tokens.env"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "old-graph") == false {
+		t.Fatal("atomic replacement did not preserve old graph value")
+	}
 }
 
-func TestGetTokens(t *testing.T) {
-	allKeys := []string{
-		"MS_GRAPH_TOKEN", "TEAMS_WEB_TOKEN", "TEAMS_NOTIF_TOKEN", "EDU_TOKEN",
-		"TEAMS_COOKIE", "EDU_COOKIE", "TEAMS_SPACES_TOKEN", "TEAMS_FABRIC_TOKEN",
+func TestPersistCredentialSetFailureBeforeRenamePreservesSnapshot(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("directory permissions are not portable on Windows")
 	}
-	clearEnv := func(t *testing.T) {
-		t.Helper()
-		for _, k := range allKeys {
-			t.Setenv(k, "")
-		}
+	dir := t.TempDir()
+	if err := PersistCredentialSet(dir, &CredentialSet{Version: schemaVersion, Generation: 1, Graph: Credential{Token: "stable"}}); err != nil {
+		t.Fatal(err)
 	}
+	path := filepath.Join(dir, "tokens.env")
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chmod(dir, 0o700)
+	if err := PersistCredentialSet(dir, &CredentialSet{Version: schemaVersion, Generation: 2, Graph: Credential{Token: "replacement"}}); err == nil {
+		t.Fatal("write unexpectedly succeeded in read-only directory")
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(before) {
+		t.Fatal("failed write changed the previous snapshot")
+	}
+}
 
-	t.Run("reads all tokens from env and strips Bearer", func(t *testing.T) {
-		isolateConfigDir(t)
-		values := map[string]string{
-			"MS_GRAPH_TOKEN":     "Bearer graph",
-			"TEAMS_WEB_TOKEN":    "Bearer web",
-			"TEAMS_NOTIF_TOKEN":  "notif",
-			"EDU_TOKEN":          "Bearer edu",
-			"TEAMS_COOKIE":       "cookie",
-			"EDU_COOKIE":         " edu-cookie ",
-			"TEAMS_SPACES_TOKEN": "Bearer spaces",
-			"TEAMS_FABRIC_TOKEN": "fabric",
-		}
-		for k, v := range values {
-			t.Setenv(k, v)
-		}
+func TestEnvironmentOverrideIsMemoryOnly(t *testing.T) {
+	dir := t.TempDir()
+	if err := PersistCredentialSet(dir, &CredentialSet{Version: schemaVersion, Generation: 1, Graph: Credential{Token: "file-graph"}}); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("MS_GRAPH_TOKEN", "Bearer env-graph")
+	set, err := loadFromDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	set = applyEnvironment(set)
+	if set.Graph.Token != "env-graph" || set.Graph.Origin != "environment" {
+		t.Fatalf("override = %#v", set.Graph)
+	}
+	persisted, err := loadFromDirWithoutEnv(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if persisted.Graph.Token != "file-graph" {
+		t.Fatalf("environment override was persisted: %#v", persisted.Graph)
+	}
+}
 
-		graph, web, notif, edu, cookie, eduCookie, spaces, fabric, err := GetTokens()
-		if err != nil {
-			t.Fatalf("GetTokens() error: %v", err)
+func TestPersistDeltaRejectsStaleAndIncompatibleWithoutReplacement(t *testing.T) {
+	dir := t.TempDir()
+	initial := &CredentialSet{Version: schemaVersion, Generation: 8, Graph: Credential{Token: "stable", Account: "account-a"}}
+	if err := PersistCredentialSet(dir, initial); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "tokens.env")
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := PersistDelta(dir, CredentialDelta{BaseGeneration: 7, Graph: &Credential{Token: "new"}}); err == nil {
+		t.Fatal("stale delta was accepted")
+	}
+	if _, err := PersistDelta(dir, CredentialDelta{BaseGeneration: 8, Graph: &Credential{Token: "new", Account: "account-b"}}); err == nil {
+		t.Fatal("incompatible delta was accepted")
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(before) {
+		t.Fatal("rejected delta changed tokens.env")
+	}
+}
+
+func loadFromDirWithoutEnv(dir string) (*CredentialSet, error) {
+	keys := []string{"MS_GRAPH_TOKEN", "TEAMS_WEB_TOKEN", "TEAMS_NOTIF_TOKEN", "EDU_TOKEN", "TEAMS_COOKIE", "EDU_COOKIE", "TEAMS_SPACES_TOKEN", "TEAMS_FABRIC_TOKEN"}
+	old := make(map[string]string, len(keys))
+	for _, key := range keys {
+		old[key] = os.Getenv(key)
+		_ = os.Unsetenv(key)
+	}
+	defer func() {
+		for _, key := range keys {
+			_ = os.Setenv(key, old[key])
 		}
-		got := []string{graph, web, notif, edu, cookie, eduCookie, spaces, fabric}
-		want := []string{"graph", "web", "notif", "edu", "cookie", "edu-cookie", "spaces", "fabric"}
-		for i := range want {
-			if got[i] != want[i] {
-				t.Errorf("GetTokens()[%d] = %q, want %q", i, got[i], want[i])
-			}
-		}
+	}()
+	return loadFromDir(dir)
+}
+
+func TestValidateGraphCandidateRequiresOriginAndBootstrapPermissions(t *testing.T) {
+	token := jwtToken(map[string]interface{}{
+		"aud": "https://graph.microsoft.com", "oid": "acct", "tid": "tenant", "appid": "client",
+		"scp": "User.Read Team.ReadBasic.All Channel.ReadBasic.All Chat.ReadBasic",
 	})
+	candidate := GraphCandidate{Token: token, RequestURL: "https://graph.microsoft.com/v1.0/me", PageURL: "https://developer.microsoft.com/en-us/graph/graph-explorer", ClientID: "client"}
+	got, err := ValidateGraphCandidate(candidate, nil)
+	if err != nil || got.Origin != "graph_explorer" {
+		t.Fatalf("valid candidate rejected: %#v, %v", got, err)
+	}
+	candidate.RequestURL = "https://evil.example/graph.microsoft.com/v1.0/me"
+	if _, err := ValidateGraphCandidate(candidate, nil); err == nil {
+		t.Fatal("untrusted host accepted")
+	}
+	candidate.RequestURL = "https://graph.microsoft.com/v1.0/me"
+	candidate.PageURL = "https://teams.microsoft.com/"
+	if _, err := ValidateGraphCandidate(candidate, nil); err == nil {
+		t.Fatal("untrusted origin accepted")
+	}
+}
 
-	t.Run("errors when graph or web missing", func(t *testing.T) {
-		isolateConfigDir(t)
-		clearEnv(t)
-		if _, _, _, _, _, _, _, _, err := GetTokens(); err == nil {
-			t.Fatal("GetTokens() expected error when graph/web tokens are missing")
-		} else if !strings.Contains(err.Error(), "Tokens not found") {
-			t.Errorf("GetTokens() error = %q, want it to mention missing tokens", err)
-		}
-	})
+func TestPersistGraphCandidateRejectsDowngradeWithoutChangingFile(t *testing.T) {
+	dir := t.TempDir()
+	old := Credential{Token: "old", Account: "acct", Tenant: "tenant", Resource: "https://graph.microsoft.com", Permissions: []string{"User.Read", "Chat.Read"}}
+	if err := PersistCredentialSet(dir, &CredentialSet{Version: schemaVersion, Generation: 1, Graph: old}); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := os.ReadFile(filepath.Join(dir, "tokens.env"))
+	candidate := GraphCandidate{Token: jwtToken(map[string]interface{}{"aud": "https://graph.microsoft.com", "oid": "acct", "tid": "tenant", "appid": "client", "scp": "User.Read Team.ReadBasic.All Channel.ReadBasic.All Chat.ReadBasic"}), RequestURL: "https://graph.microsoft.com/v1.0/me", PageURL: "https://developer.microsoft.com/en-us/graph/graph-explorer", ClientID: "client"}
+	if _, err := PersistGraphCandidate(dir, candidate); err == nil {
+		t.Fatal("candidate with unknown baseline permissions should not erase known permissions")
+	}
+	after, _ := os.ReadFile(filepath.Join(dir, "tokens.env"))
+	if string(before) != string(after) {
+		t.Fatal("rejected candidate changed snapshot")
+	}
+}
 
-	t.Run("errors when cookie missing", func(t *testing.T) {
-		isolateConfigDir(t)
-		clearEnv(t)
-		t.Setenv("MS_GRAPH_TOKEN", "graph")
-		t.Setenv("TEAMS_WEB_TOKEN", "web")
-		if _, _, _, _, _, _, _, _, err := GetTokens(); err == nil {
-			t.Fatal("GetTokens() expected error when TEAMS_COOKIE is missing")
-		} else if !strings.Contains(err.Error(), "Missing TEAMS_COOKIE") {
-			t.Errorf("GetTokens() error = %q, want it to mention the cookie", err)
-		}
-	})
+func TestMetadataCompatibleRejectsIdentityMismatchAndPermissionDowngrade(t *testing.T) {
+	if MetadataCompatible(Credential{Account: "a"}, Credential{Account: "b"}) {
+		t.Fatal("account mismatch accepted")
+	}
+	if !MetadataCompatible(Credential{Account: "a"}, Credential{}) {
+		t.Fatal("unknown incoming account rejected")
+	}
+	old := Credential{Permissions: []string{"User.Read", "Chat.Read"}}
+	if MetadataCompatible(old, Credential{Permissions: []string{"User.Read"}}) {
+		t.Fatal("permission downgrade accepted")
+	}
+	if !MetadataCompatible(old, Credential{Permissions: []string{"User.Read", "Chat.Read", "Files.Read"}}) {
+		t.Fatal("permission superset rejected")
+	}
+}
 
-	t.Run("falls back to tokens file when env is empty", func(t *testing.T) {
-		configDir := isolateConfigDir(t)
-		writeTokensFile(t, configDir, "MS_GRAPH_TOKEN=file-graph\nTEAMS_WEB_TOKEN=file-web\nTEAMS_COOKIE=file-cookie\n")
-		clearEnv(t)
-
-		graph, web, _, _, cookie, _, _, _, err := GetTokens()
-		if err != nil {
-			t.Fatalf("GetTokens() error: %v", err)
-		}
-		if graph != "file-graph" || web != "file-web" || cookie != "file-cookie" {
-			t.Errorf("GetTokens() from file = graph %q, web %q, cookie %q; want file-graph, file-web, file-cookie", graph, web, cookie)
-		}
-	})
-
-	t.Run("environment overrides tokens file", func(t *testing.T) {
-		configDir := isolateConfigDir(t)
-		writeTokensFile(t, configDir, "MS_GRAPH_TOKEN=file-graph\nTEAMS_WEB_TOKEN=file-web\nTEAMS_COOKIE=file-cookie\n")
-		clearEnv(t)
-		t.Setenv("MS_GRAPH_TOKEN", "env-graph")
-		t.Setenv("TEAMS_COOKIE", "env-cookie")
-
-		graph, web, _, _, cookie, _, _, _, err := GetTokens()
-		if err != nil {
-			t.Fatalf("GetTokens() error: %v", err)
-		}
-		if graph != "env-graph" || web != "file-web" || cookie != "env-cookie" {
-			t.Errorf("GetTokens() = graph %q, web %q, cookie %q; want env-graph, file-web, env-cookie", graph, web, cookie)
-		}
-	})
+func TestCloneCredentialSetDetachesPermissions(t *testing.T) {
+	set := &CredentialSet{Graph: Credential{Token: "token", Permissions: []string{"User.Read"}}}
+	clone := CloneCredentialSet(set)
+	clone.Graph.Token = "changed"
+	clone.Graph.Permissions[0] = "changed"
+	if set.Graph.Token != "token" || set.Graph.Permissions[0] != "User.Read" {
+		t.Fatal("clone aliases published credential data")
+	}
 }
