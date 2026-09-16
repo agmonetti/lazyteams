@@ -1,9 +1,12 @@
 package helpers
 
 import (
+	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 // setHome points both home variables os.UserHomeDir resolves on Unix ($HOME)
@@ -53,26 +56,66 @@ func TestConfigDir(t *testing.T) {
 	}
 }
 
-func TestRemoveFirefoxLocks(t *testing.T) {
+func TestProfileLockExcludesConcurrentHelper(t *testing.T) {
 	dir := t.TempDir()
-	lockPath := filepath.Join(dir, "lock")
-	parentLockPath := filepath.Join(dir, ".parentlock")
-	parentDotLockPath := filepath.Join(dir, "parent.lock")
-
-	// Create test lock files
-	_ = os.WriteFile(parentLockPath, []byte(""), 0600)
-	_ = os.WriteFile(parentDotLockPath, []byte(""), 0600)
-	_ = os.Symlink("nonexistent-target", lockPath)
-
-	removeFirefoxLocks(dir)
-
-	if _, err := os.Lstat(lockPath); !os.IsNotExist(err) {
-		t.Errorf("lock file still exists after removeFirefoxLocks")
+	readyPath := filepath.Join(dir, "ready")
+	cmd := exec.Command(os.Args[0], "-test.run=TestProfileLockChildProcess")
+	cmd.Env = append(os.Environ(),
+		"LAZYTEAMS_PROFILE_LOCK_CHILD=1",
+		"LAZYTEAMS_PROFILE_LOCK_DIR="+dir,
+		"LAZYTEAMS_PROFILE_LOCK_READY="+readyPath,
+	)
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
 	}
-	if _, err := os.Lstat(parentLockPath); !os.IsNotExist(err) {
-		t.Errorf(".parentlock file still exists after removeFirefoxLocks")
+	defer func() {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+	}()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(readyPath); err == nil {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
-	if _, err := os.Lstat(parentDotLockPath); !os.IsNotExist(err) {
-		t.Errorf("parent.lock file still exists after removeFirefoxLocks")
+	if _, err := os.Stat(readyPath); err != nil {
+		t.Fatalf("child did not acquire profile lock: %v", err)
 	}
+
+	second, err := AcquireProfileLock(dir)
+	if !errors.Is(err, ErrProfileInUse) {
+		if err == nil {
+			_ = second.Release()
+		}
+		t.Fatalf("concurrent AcquireProfileLock = %v, want ErrProfileInUse", err)
+	}
+
+	if err := cmd.Process.Kill(); err != nil {
+		t.Fatal(err)
+	}
+	_ = cmd.Wait()
+	third, err := AcquireProfileLock(dir)
+	if err != nil {
+		t.Fatalf("AcquireProfileLock after child termination: %v", err)
+	}
+	if err := third.Release(); err != nil {
+		t.Fatalf("third Release: %v", err)
+	}
+}
+
+func TestProfileLockChildProcess(t *testing.T) {
+	if os.Getenv("LAZYTEAMS_PROFILE_LOCK_CHILD") != "1" {
+		return
+	}
+	lock, err := AcquireProfileLock(os.Getenv("LAZYTEAMS_PROFILE_LOCK_DIR"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lock.Release()
+	if err := os.WriteFile(os.Getenv("LAZYTEAMS_PROFILE_LOCK_READY"), []byte("ready"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(2 * time.Second)
 }
