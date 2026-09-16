@@ -1,9 +1,11 @@
 package ui
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/agmonetti/lazyteams/internal/auth"
 	"github.com/agmonetti/lazyteams/internal/graph"
 	"github.com/agmonetti/lazyteams/internal/helpers"
 	"github.com/agmonetti/lazyteams/internal/version"
@@ -77,6 +79,9 @@ func reloadTeamsAfterShortDelayCmd() tea.Cmd {
 
 func loadTeamInfoCmd(client *graph.Client, teamID string) tea.Cmd {
 	return func() tea.Msg {
+		if err := requireCapability(client, CapabilityGraph); err != nil {
+			return teamInfoErrMsg{err}
+		}
 		team, err := client.GetTeamInfo(teamID)
 		if err != nil {
 			return teamInfoErrMsg{err}
@@ -87,6 +92,9 @@ func loadTeamInfoCmd(client *graph.Client, teamID string) tea.Cmd {
 
 func loadChannelInfoCmd(client *graph.Client, teamID, channelID string) tea.Cmd {
 	return func() tea.Msg {
+		if err := requireCapability(client, CapabilityGraph); err != nil {
+			return channelInfoErrMsg{err}
+		}
 		ch, err := client.GetChannelInfo(teamID, channelID)
 		if err != nil {
 			return channelInfoErrMsg{err}
@@ -97,6 +105,9 @@ func loadChannelInfoCmd(client *graph.Client, teamID, channelID string) tea.Cmd 
 
 func loadChannelMembersCmd(client *graph.Client, channelThreadID string) tea.Cmd {
 	return func() tea.Msg {
+		if err := requireCapabilities(client, CapabilityGraph, CapabilityWeb); err != nil {
+			return channelMembersErrMsg{err}
+		}
 		members, err := client.GetChannelMembers(channelThreadID)
 		if err != nil {
 			return channelMembersErrMsg{err}
@@ -107,6 +118,9 @@ func loadChannelMembersCmd(client *graph.Client, channelThreadID string) tea.Cmd
 
 func loadTeamMembersCmd(client *graph.Client, teamGUID string) tea.Cmd {
 	return func() tea.Msg {
+		if err := requireCapability(client, CapabilityGraph); err != nil {
+			return teamMembersErrMsg{err}
+		}
 		members, err := client.GetTeamMembers(teamGUID)
 		if err != nil {
 			return teamMembersErrMsg{err}
@@ -117,6 +131,9 @@ func loadTeamMembersCmd(client *graph.Client, teamGUID string) tea.Cmd {
 
 func addMemberCmd(client *graph.Client, teamThreadID, teamGUID, userMRI string) tea.Cmd {
 	return func() tea.Msg {
+		if err := requireCapability(client, CapabilitySpaces); err != nil {
+			return addMemberMsg{err}
+		}
 		err := client.AddTeamMember(teamThreadID, teamGUID, userMRI)
 		return addMemberMsg{err}
 	}
@@ -124,6 +141,9 @@ func addMemberCmd(client *graph.Client, teamThreadID, teamGUID, userMRI string) 
 
 func removeMemberCmd(client *graph.Client, teamThreadID, teamGUID, userID string) tea.Cmd {
 	return func() tea.Msg {
+		if err := requireCapability(client, CapabilitySpaces); err != nil {
+			return removeMemberMsg{err}
+		}
 		err := client.RemoveTeamMember(teamThreadID, teamGUID, userID)
 		return removeMemberMsg{err}
 	}
@@ -131,6 +151,9 @@ func removeMemberCmd(client *graph.Client, teamThreadID, teamGUID, userID string
 
 func addChannelMemberCmd(client *graph.Client, teamGUID, channelThreadID string, target graph.TeamMember) tea.Cmd {
 	return func() tea.Msg {
+		if err := requireCapabilities(client, CapabilityWeb, CapabilityFabric); err != nil {
+			return addChannelMemberMsg{err: err, member: target}
+		}
 		tenantID := client.GetTenantID()
 		err := client.AddChannelMember(teamGUID, channelThreadID, target.ID, tenantID)
 		return addChannelMemberMsg{err: err, member: target}
@@ -139,6 +162,9 @@ func addChannelMemberCmd(client *graph.Client, teamGUID, channelThreadID string,
 
 func removeChannelMemberCmd(client *graph.Client, teamGUID, channelThreadID, userID string) tea.Cmd {
 	return func() tea.Msg {
+		if err := requireCapabilities(client, CapabilityWeb, CapabilityFabric); err != nil {
+			return removeChannelMemberMsg{err: err, userID: userID}
+		}
 		tenantID := client.GetTenantID()
 		err := client.RemoveChannelMember(teamGUID, channelThreadID, userID, tenantID)
 		return removeChannelMemberMsg{err: err, userID: userID}
@@ -147,6 +173,9 @@ func removeChannelMemberCmd(client *graph.Client, teamGUID, channelThreadID, use
 
 func updateChannelMemberRoleCmd(client *graph.Client, teamGUID, channelThreadID string, member graph.TeamMember, role string) tea.Cmd {
 	return func() tea.Msg {
+		if err := requireCapabilities(client, CapabilityWeb, CapabilityFabric); err != nil {
+			return updateChannelMemberRoleMsg{err: err, userID: member.ID, role: role}
+		}
 		tenantID := client.GetTenantID()
 		err := client.UpdateChannelMemberRole(teamGUID, channelThreadID, member.ID, role, tenantID)
 		return updateChannelMemberRoleMsg{err: err, userID: member.ID, role: role}
@@ -155,6 +184,9 @@ func updateChannelMemberRoleCmd(client *graph.Client, teamGUID, channelThreadID 
 
 func createTeamCmd(client *graph.Client, name string) tea.Cmd {
 	return func() tea.Msg {
+		if err := requireCapability(client, CapabilityGraph); err != nil {
+			return createTeamMsg{err}
+		}
 		err := client.CreateTeam(name)
 		return createTeamMsg{err}
 	}
@@ -162,6 +194,9 @@ func createTeamCmd(client *graph.Client, name string) tea.Cmd {
 
 func createChannelCmd(client *graph.Client, teamGUID, teamThreadID, name, channelType string) tea.Cmd {
 	return func() tea.Msg {
+		if err := requireCapability(client, CapabilitySpaces); err != nil {
+			return createChannelMsg{err}
+		}
 		err := client.CreateChannel(teamGUID, teamThreadID, name, channelType)
 		return createChannelMsg{err}
 	}
@@ -169,6 +204,9 @@ func createChannelCmd(client *graph.Client, teamGUID, teamThreadID, name, channe
 
 func deleteChannelCmd(client *graph.Client, teamThreadID, channelThreadID string) tea.Cmd {
 	return func() tea.Msg {
+		if err := requireCapability(client, CapabilitySpaces); err != nil {
+			return deleteChannelMsg{err}
+		}
 		err := client.DeleteChannel(teamThreadID, channelThreadID)
 		return deleteChannelMsg{err}
 	}
@@ -176,6 +214,9 @@ func deleteChannelCmd(client *graph.Client, teamThreadID, channelThreadID string
 
 func deleteTeamCmd(client *graph.Client, teamThreadID string) tea.Cmd {
 	return func() tea.Msg {
+		if err := requireCapability(client, CapabilitySpaces); err != nil {
+			return deleteTeamMsg{err}
+		}
 		err := client.DeleteTeam(teamThreadID)
 		return deleteTeamMsg{err}
 	}
@@ -202,6 +243,178 @@ func renewalSpinnerTickCmd() tea.Cmd {
 	return tea.Tick(tokenRenewalSpinnerInterval, func(time.Time) tea.Msg {
 		return tokenRenewalTickMsg{}
 	})
+}
+
+var authHelperExecutable = func() (string, error) {
+	exe, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(filepath.Dir(exe), "lazyteams-auth"), nil
+}
+
+func authHelperBatch(m *Model, jobs []string) tea.Cmd {
+	authHelper, err := authHelperExecutable()
+	if err != nil {
+		return func() tea.Msg { return tokenRenewedMsg{tokenType: "batch", err: err} }
+	}
+	// #nosec G204 -- authHelper is derived from the current executable and jobs are normalized flags.
+	//nolint:gosec -- the executable is the sibling helper of this binary.
+	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
+	cmd := exec.Command(authHelper, "--events", "--renew-batch", strings.Join(jobs, ","))
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return func() tea.Msg { return tokenRenewedMsg{tokenType: "batch", err: err} }
+	}
+	cmd.Stderr = io.Discard
+	if err := cmd.Start(); err != nil {
+		return func() tea.Msg { return tokenRenewedMsg{tokenType: "batch", err: err} }
+	}
+	m.renewalProc = cmd.Process
+	m.renewalBatch = true
+	m.batchID = ""
+	m.batchStarted = false
+	m.batchTerminal = false
+	m.batchTerminalState = ""
+	m.batchGeneration = 0
+	m.batchReadyProvider = ""
+	m.batchPublishedProviders = make(map[string]bool)
+	m.batchRequestedProviders = make(map[string]bool)
+	for _, job := range jobs {
+		switch job {
+		case "web", "notif":
+			m.batchRequestedProviders["web"] = true
+			m.batchRequestedProviders["notif"] = true
+		default:
+			m.batchRequestedProviders[job] = true
+		}
+	}
+	m.batchDraining = false
+	m.batchStreamErr = nil
+	m.batchEventScanner = bufio.NewScanner(stdout)
+	m.batchEventScanner.Buffer(make([]byte, 4096), 64*1024)
+	m.batchEventWait = make(chan error, 1)
+	go func() { m.batchEventWait <- cmd.Wait() }()
+	return readBatchEventCmd(m)
+}
+
+func batchProviderRequested(m *Model, provider string) bool {
+	if m.batchRequestedProviders[provider] {
+		return true
+	}
+	return (provider == "cookie" || provider == "spaces") && (m.batchRequestedProviders["web"] || m.batchRequestedProviders["notif"])
+}
+
+func validateBatchEvent(m *Model, event auth.AuthEvent) error {
+	if !m.batchStarted {
+		if event.Event != "started" || event.Provider != "batch" || event.State != "running" || event.ErrorCode != "" {
+			return fmt.Errorf("auth event stream must start with started/batch")
+		}
+		m.batchStarted = true
+		m.batchID = event.BatchID
+		m.batchGeneration = event.Generation
+		return nil
+	}
+	if event.BatchID != m.batchID {
+		return fmt.Errorf("auth event batch id changed")
+	}
+	if event.Event == "started" {
+		return fmt.Errorf("duplicate auth batch start")
+	}
+	if m.batchTerminal {
+		return fmt.Errorf("auth event after terminal event")
+	}
+	if event.Generation < m.batchGeneration {
+		return fmt.Errorf("auth event generation regressed")
+	}
+	m.batchGeneration = event.Generation
+	if event.Event == "credential_ready" {
+		if event.Provider == "batch" || event.State != "ready" || event.Generation == 0 || !batchProviderRequested(m, event.Provider) || event.ErrorCode != "" {
+			return fmt.Errorf("invalid credential_ready event")
+		}
+	}
+	if event.Event == "interaction_required" {
+		if event.Provider == "batch" || event.State != "interaction_required" || event.ErrorCode != "interaction_required" || !batchProviderRequested(m, event.Provider) {
+			return fmt.Errorf("invalid interaction_required event")
+		}
+	}
+	if event.Event == "provider_failed" {
+		if event.Provider == "batch" || event.State == "ready" || event.ErrorCode == "" || !batchProviderRequested(m, event.Provider) {
+			return fmt.Errorf("invalid provider_failed event")
+		}
+	}
+	if event.Event == "completed" || event.Event == "cancelled" {
+		valid := event.Provider == "batch"
+		if event.Event == "cancelled" {
+			valid = valid && event.State == "cancelled" && event.ErrorCode == "cancelled"
+		} else {
+			valid = valid && (event.State == "completed" && event.ErrorCode == "" || event.State == "partial_failure" && event.ErrorCode != "")
+		}
+		if !valid {
+			return fmt.Errorf("invalid terminal auth event")
+		}
+		m.batchTerminal = true
+		m.batchTerminalState = event.State
+	}
+	return nil
+}
+
+func killBatchAfterGrace(proc *os.Process) tea.Cmd {
+	return func() tea.Msg {
+		time.Sleep(2 * time.Second)
+		if proc != nil {
+			_ = proc.Kill()
+		}
+		return nil
+	}
+}
+
+func abortBatchStream(m *Model, err error) tea.Cmd {
+	m.batchStreamErr = err
+	m.batchDraining = true
+	if m.renewalProc == nil {
+		return readBatchEventCmd(m)
+	}
+	helpers.SignalAuthProcess(m.renewalProc)
+	return tea.Batch(killBatchAfterGrace(m.renewalProc), readBatchEventCmd(m))
+}
+
+func readBatchEventCmd(m *Model) tea.Cmd {
+	return func() tea.Msg {
+		for m.batchEventScanner != nil && m.batchEventScanner.Scan() {
+			// Once the stream is known-bad, keep draining it so the child can
+			// observe the signal and release its browser/lock before Wait.
+			event, err := auth.DecodeAuthEvent(m.batchEventScanner.Bytes())
+			if m.batchDraining {
+				if err == nil && (event.Event == "completed" || event.Event == "cancelled") {
+					m.batchTerminal = true
+					m.batchTerminalState = event.State
+				}
+				continue
+			}
+			if err != nil {
+				return authEventMsg{err: fmt.Errorf("invalid auth event: %w", err)}
+			}
+			return authEventMsg{event: event}
+		}
+		if m.batchEventWait != nil {
+			err := <-m.batchEventWait
+			if m.batchStreamErr != nil {
+				return tokenRenewedMsg{tokenType: "batch", err: m.batchStreamErr}
+			}
+			if !m.batchTerminal {
+				return tokenRenewedMsg{tokenType: "batch", err: fmt.Errorf("auth event stream closed without terminal event")}
+			}
+			if err != nil {
+				return tokenRenewedMsg{tokenType: "batch", err: err}
+			}
+			if m.batchTerminalState != "completed" {
+				return tokenRenewedMsg{tokenType: "batch", err: fmt.Errorf("auth batch ended with %s", m.batchTerminalState)}
+			}
+			return tokenRenewedMsg{tokenType: "batch"}
+		}
+		return tokenRenewedMsg{tokenType: "batch", err: fmt.Errorf("auth event stream closed")}
+	}
 }
 
 // authHelperRenewal starts a background lazyteams-auth --renew process, records
@@ -237,6 +450,9 @@ func authHelperRenewal(m *Model, expiredToken string) tea.Cmd {
 		output = logFile
 	}
 
+	// #nosec G204 -- authHelper is derived from the current executable and args are fixed flags.
+	//nolint:gosec -- the executable is the sibling helper of this binary.
+	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
 	cmd := exec.Command(authHelper, args...)
 	cmd.Stdout = output
 	cmd.Stderr = output
@@ -279,7 +495,6 @@ func authHelperRenewal(m *Model, expiredToken string) tea.Cmd {
 				_ = cmd.Process.Kill()
 				<-waitDone
 			}
-			helpers.KillZombieBrowser()
 			if logFile != nil {
 				logFile.Close()
 			}
@@ -302,20 +517,41 @@ type tokensReloadedMsg struct {
 
 func reloadTokensCmd(client *graph.Client, tokenType string) tea.Cmd {
 	return func() tea.Msg {
-		err := client.ReloadTokens()
+		err := client.ReloadCredentials()
 		return tokensReloadedMsg{tokenType: tokenType, err: err}
 	}
 }
 
-func checkTokensCmd(client *graph.Client) tea.Cmd {
-	return func() tea.Msg {
-		expired := client.CheckAllTokens()
-		return tokenCheckDoneMsg{expired: expired}
+func requireCapabilities(client *graph.Client, capabilities ...string) error {
+	credentials := client.Credentials()
+	available := map[string]string{
+		CapabilityGraph:  credentials.Graph.Token,
+		CapabilityWeb:    credentials.Web.Token,
+		CapabilityNotif:  credentials.Notif.Token,
+		CapabilityEDU:    credentials.EDU.Token,
+		CapabilitySpaces: credentials.Spaces.Token,
+		CapabilityFabric: credentials.Fabric.Token,
 	}
+	for _, capability := range capabilities {
+		if available[capability] == "" {
+			return fmt.Errorf("capability %s unavailable: missing credential", capability)
+		}
+		if capability == CapabilityEDU && credentials.EDUCookie.Token == "" && credentials.Cookie.Token == "" {
+			return fmt.Errorf("capability %s unavailable: missing cookie", capability)
+		}
+	}
+	return nil
+}
+
+func requireCapability(client *graph.Client, capability string) error {
+	return requireCapabilities(client, capability)
 }
 
 func searchUsersCmd(client *graph.Client, query string) tea.Cmd {
 	return func() tea.Msg {
+		if err := requireCapability(client, CapabilityGraph); err != nil {
+			return searchUsersErrMsg{err}
+		}
 		results, err := client.SearchUsers(query)
 		if err != nil {
 			return searchUsersErrMsg{err}
@@ -326,6 +562,9 @@ func searchUsersCmd(client *graph.Client, query string) tea.Cmd {
 
 func createDMCmd(client *graph.Client, selfID, targetID, targetDisplayName string) tea.Cmd {
 	return func() tea.Msg {
+		if err := requireCapability(client, CapabilityGraph); err != nil {
+			return createDMErrMsg{err}
+		}
 		chat, err := client.CreateOneOnOneChat(selfID, targetID)
 		if err != nil {
 			return createDMErrMsg{err}
@@ -343,6 +582,9 @@ func createDMCmd(client *graph.Client, selfID, targetID, targetDisplayName strin
 
 func uploadFileCmd(client *graph.Client, teamID, channelName, filePath string, isDM bool) tea.Cmd {
 	return func() tea.Msg {
+		if err := requireCapability(client, CapabilityGraph); err != nil {
+			return uploadDoneMsg{err: err}
+		}
 		if strings.HasPrefix(filePath, "~/") {
 			home, _ := os.UserHomeDir()
 			filePath = filepath.Join(home, filePath[2:])
@@ -360,6 +602,9 @@ func uploadFileCmd(client *graph.Client, teamID, channelName, filePath string, i
 
 func uploadFileToFolderCmd(client *graph.Client, teamID, folderID, filePath string) tea.Cmd {
 	return func() tea.Msg {
+		if err := requireCapability(client, CapabilityGraph); err != nil {
+			return uploadDoneMsg{err: err}
+		}
 		if strings.HasPrefix(filePath, "~/") {
 			home, _ := os.UserHomeDir()
 			filePath = filepath.Join(home, filePath[2:])
@@ -373,17 +618,23 @@ func reloadCurrentFolderCmd(client *graph.Client, teamID string, node FolderNode
 	cacheKey := node.ID
 	if node.DriveID != "" {
 		return func() tea.Msg {
+			if err := requireCapability(client, CapabilityGraph); err != nil {
+				return filesErrMsg{err}
+			}
 			items, err := client.GetItemChildren(node.DriveID, node.ID)
 			if err != nil {
-				return errMsg{err}
+				return filesErrMsg{err}
 			}
 			return filesMsg{files: items, folderID: cacheKey}
 		}
 	}
 	return func() tea.Msg {
+		if err := requireCapability(client, CapabilityGraph); err != nil {
+			return filesErrMsg{err}
+		}
 		items, err := client.GetFolderChildren(teamID, node.ID)
 		if err != nil {
-			return errMsg{err}
+			return filesErrMsg{err}
 		}
 		return filesMsg{files: items, folderID: cacheKey}
 	}
@@ -470,6 +721,9 @@ func initialPresenceTickCmd() tea.Cmd {
 
 func loadMeCmd(client *graph.Client) tea.Cmd {
 	return func() tea.Msg {
+		if err := requireCapability(client, CapabilityGraph); err != nil {
+			return meErrMsg{err}
+		}
 		id, err := client.GetMe()
 		if err != nil {
 			return meErrMsg{err}
@@ -480,6 +734,9 @@ func loadMeCmd(client *graph.Client) tea.Cmd {
 
 func loadChatsCmd(client *graph.Client) tea.Cmd {
 	return func() tea.Msg {
+		if err := requireCapability(client, CapabilityGraph); err != nil {
+			return chatsErrMsg{err}
+		}
 		chats, err := client.GetChats()
 		if err != nil {
 			return chatsErrMsg{err}
@@ -490,6 +747,9 @@ func loadChatsCmd(client *graph.Client) tea.Cmd {
 
 func pollChatsCmd(client *graph.Client) tea.Cmd {
 	return func() tea.Msg {
+		if err := requireCapability(client, CapabilityGraph); err != nil {
+			return nil
+		}
 		chats, err := client.GetChats()
 		if err != nil {
 			return nil
@@ -500,6 +760,9 @@ func pollChatsCmd(client *graph.Client) tea.Cmd {
 
 func setPresenceCmd(client *graph.Client, userID, availability string) tea.Cmd {
 	return func() tea.Msg {
+		if err := requireCapability(client, CapabilityGraph); err != nil {
+			return setPresenceMsg{err}
+		}
 		var err error
 		if availability == "Reset (Automatic)" {
 			err = client.ClearPresence(userID)
@@ -512,6 +775,9 @@ func setPresenceCmd(client *graph.Client, userID, availability string) tea.Cmd {
 
 func pollPresenceCmd(client *graph.Client, userIDs []string) tea.Cmd {
 	return func() tea.Msg {
+		if err := requireCapability(client, CapabilityGraph); err != nil {
+			return nil
+		}
 		if len(userIDs) == 0 {
 			return nil
 		}
@@ -525,6 +791,9 @@ func pollPresenceCmd(client *graph.Client, userIDs []string) tea.Cmd {
 
 func loadNotificationsCmd(client *graph.Client) tea.Cmd {
 	return func() tea.Msg {
+		if err := requireCapability(client, CapabilityNotif); err != nil {
+			return notificationsErrMsg{err}
+		}
 		items, err := client.FetchNotifications()
 		if err != nil {
 			return notificationsErrMsg{err}
@@ -535,6 +804,9 @@ func loadNotificationsCmd(client *graph.Client) tea.Cmd {
 
 func pollNotificationsCmd(client *graph.Client) tea.Cmd {
 	return func() tea.Msg {
+		if err := requireCapability(client, CapabilityNotif); err != nil {
+			return nil
+		}
 		items, err := client.FetchNotifications()
 		return pollNotificationsMsg{items: items, err: err}
 	}
@@ -542,6 +814,9 @@ func pollNotificationsCmd(client *graph.Client) tea.Cmd {
 
 func loadAssignmentsCmd(client *graph.Client) tea.Cmd {
 	return func() tea.Msg {
+		if err := requireCapability(client, CapabilityEDU); err != nil {
+			return assignmentsErrMsg{err}
+		}
 		items, err := client.FetchAssignments()
 		if err != nil {
 			return assignmentsErrMsg{err}
@@ -552,6 +827,9 @@ func loadAssignmentsCmd(client *graph.Client) tea.Cmd {
 
 func loadAssignmentDetailCmd(client *graph.Client, classID, assignmentID string) tea.Cmd {
 	return func() tea.Msg {
+		if err := requireCapability(client, CapabilityEDU); err != nil {
+			return assignmentDetailMsg{assignmentID: assignmentID, err: err}
+		}
 		refFiles, myFiles, resourcesFolderUrl, err := client.FetchAssignmentFiles(classID, assignmentID)
 		return assignmentDetailMsg{
 			assignmentID:       assignmentID,
@@ -565,6 +843,9 @@ func loadAssignmentDetailCmd(client *graph.Client, classID, assignmentID string)
 
 func uploadAssignmentFileCmd(client *graph.Client, a graph.Assignment, filePath string) tea.Cmd {
 	return func() tea.Msg {
+		if err := requireCapabilities(client, CapabilityGraph, CapabilityEDU); err != nil {
+			return assignmentUploadDoneMsg{assignmentID: a.ID, err: err}
+		}
 		item, err := client.UploadFileToSubmissionFolder(a.ResourcesFolderUrl, filePath)
 		if err != nil {
 			return assignmentUploadDoneMsg{assignmentID: a.ID, err: err}
@@ -578,6 +859,9 @@ func uploadAssignmentFileCmd(client *graph.Client, a graph.Assignment, filePath 
 
 func submitAssignmentCmd(client *graph.Client, a graph.Assignment) tea.Cmd {
 	return func() tea.Msg {
+		if err := requireCapability(client, CapabilityEDU); err != nil {
+			return assignmentSubmitDoneMsg{assignmentID: a.ID, err: err}
+		}
 		err := client.SubmitAssignment(a.ClassID, a.ID, a.SubmissionID)
 		return assignmentSubmitDoneMsg{assignmentID: a.ID, err: err}
 	}
@@ -585,6 +869,9 @@ func submitAssignmentCmd(client *graph.Client, a graph.Assignment) tea.Cmd {
 
 func undoSubmitAssignmentCmd(client *graph.Client, a graph.Assignment) tea.Cmd {
 	return func() tea.Msg {
+		if err := requireCapability(client, CapabilityEDU); err != nil {
+			return assignmentUndoSubmitDoneMsg{assignmentID: a.ID, err: err}
+		}
 		err := client.UndoSubmitAssignment(a.ClassID, a.ID, a.SubmissionID)
 		return assignmentUndoSubmitDoneMsg{assignmentID: a.ID, err: err}
 	}
@@ -592,6 +879,9 @@ func undoSubmitAssignmentCmd(client *graph.Client, a graph.Assignment) tea.Cmd {
 
 func removeAssignmentResourceCmd(client *graph.Client, a graph.Assignment, resourceID string, fileName string) tea.Cmd {
 	return func() tea.Msg {
+		if err := requireCapability(client, CapabilityEDU); err != nil {
+			return assignmentRemoveResourceDoneMsg{assignmentID: a.ID, resourceID: resourceID, fileName: fileName, err: err}
+		}
 		err := client.RemoveAssignmentResource(a.ClassID, a.ID, a.SubmissionID, resourceID)
 		return assignmentRemoveResourceDoneMsg{assignmentID: a.ID, resourceID: resourceID, fileName: fileName, err: err}
 	}
@@ -599,6 +889,9 @@ func removeAssignmentResourceCmd(client *graph.Client, a graph.Assignment, resou
 
 func navigateToThreadCmd(client *graph.Client, teams []graph.Team, threadID string) tea.Cmd {
 	return func() tea.Msg {
+		if err := requireCapability(client, CapabilityGraph); err != nil {
+			return nil
+		}
 		for _, team := range teams {
 			channels, err := client.GetChannels(team.ID)
 			if err != nil {
@@ -620,13 +913,16 @@ func navigateToThreadCmd(client *graph.Client, teams []graph.Team, threadID stri
 
 func openAssignmentFileCmd(client *graph.Client, file graph.AssignmentFile) tea.Cmd {
 	return func() tea.Msg {
+		if err := requireCapability(client, CapabilityGraph); err != nil {
+			return downloadDoneMsg{results: []string{"✗ " + err.Error()}}
+		}
 		// FileUrl comes from the assignments API; only send the GraphToken to
 		// Microsoft-owned hosts to avoid leaking it to a malicious URL.
 		if err := graph.ValidateMicrosoftURL(file.FileUrl); err != nil {
 			return downloadDoneMsg{results: []string{"✗ " + file.Name + ": untrusted URL"}}
 		}
 		req, _ := http.NewRequest("GET", file.FileUrl, nil)
-		req.Header.Set("Authorization", "Bearer "+client.GraphToken)
+		req.Header.Set("Authorization", "Bearer "+client.Credentials().Graph.Token)
 		resp, err := client.HTTPClient.Do(req)
 		if err != nil {
 			return nil
@@ -666,6 +962,9 @@ func getUniquePath(baseDir, name string) string {
 func openAttachmentsCmd(client *graph.Client, attachments []graph.Attachment) tea.Cmd {
 	return func() tea.Msg {
 		var results []string
+		if err := requireCapability(client, CapabilityWeb); err != nil {
+			return downloadDoneMsg{results: []string{"✗ " + err.Error()}}
+		}
 		tmpDir := filepath.Join(os.TempDir(), "lazyteams-attachments")
 		os.MkdirAll(tmpDir, 0700)
 
@@ -728,6 +1027,9 @@ func openAttachmentsCmd(client *graph.Client, attachments []graph.Attachment) te
 
 func downloadFilesCmd(client *graph.Client, teamID, driveID string, items []graph.DriveItem, destDir string) tea.Cmd {
 	return func() tea.Msg {
+		if err := requireCapability(client, CapabilityGraph); err != nil {
+			return downloadDoneMsg{results: []string{"✗ " + err.Error()}}
+		}
 		if destDir == "" {
 			home, _ := os.UserHomeDir()
 			destDir = filepath.Join(home, "Downloads")
@@ -817,6 +1119,9 @@ func clearStatusAfter(id int) tea.Cmd {
 
 func discoverSelfChatCmd(client *graph.Client, selfID, cachedID string) tea.Cmd {
 	return func() tea.Msg {
+		if err := requireCapability(client, CapabilityGraph); err != nil {
+			return nil
+		}
 		if selfID == "" {
 			return nil
 		}
@@ -836,9 +1141,12 @@ func discoverSelfChatCmd(client *graph.Client, selfID, cachedID string) tea.Cmd 
 
 func loadTeamsCmd(client *graph.Client) tea.Cmd {
 	return func() tea.Msg {
+		if err := requireCapability(client, CapabilityGraph); err != nil {
+			return teamsErrMsg{err}
+		}
 		teams, err := client.GetJoinedTeams()
 		if err != nil {
-			return errMsg{err}
+			return teamsErrMsg{err}
 		}
 		return teamsMsg{teams}
 	}
@@ -846,6 +1154,9 @@ func loadTeamsCmd(client *graph.Client) tea.Cmd {
 
 func loadChannelsCmd(client *graph.Client, teamID string) tea.Cmd {
 	return func() tea.Msg {
+		if err := requireCapability(client, CapabilityGraph); err != nil {
+			return channelsErrMsg{teamID: teamID, err: err}
+		}
 		channels, err := client.GetChannels(teamID)
 		if err != nil {
 			return channelsErrMsg{teamID: teamID, err: err}
@@ -856,6 +1167,9 @@ func loadChannelsCmd(client *graph.Client, teamID string) tea.Cmd {
 
 func loadMessagesCmd(client *graph.Client, teamID, channelID string, pageSize int) tea.Cmd {
 	return func() tea.Msg {
+		if err := requireCapability(client, CapabilityWeb); err != nil {
+			return messagesErrMsg{err: err, conversationID: channelID}
+		}
 		msgs, link, err := client.GetMessagesWithLink(teamID, channelID, pageSize)
 		if err != nil {
 			return messagesErrMsg{err: err, conversationID: channelID, partialMsgs: msgs}
@@ -867,6 +1181,9 @@ func loadMessagesCmd(client *graph.Client, teamID, channelID string, pageSize in
 
 func loadMoreMessagesCmd(client *graph.Client, backwardLink string) tea.Cmd {
 	return func() tea.Msg {
+		if err := requireCapability(client, CapabilityWeb); err != nil {
+			return loadMoreMessagesMsg{err: err}
+		}
 		page, err := client.GetMessagesFromLink(backwardLink)
 		return loadMoreMessagesMsg{
 			messages:     page.Messages,
@@ -878,6 +1195,9 @@ func loadMoreMessagesCmd(client *graph.Client, backwardLink string) tea.Cmd {
 
 func editMessageCmd(client *graph.Client, channelID, messageID, content string) tea.Cmd {
 	return func() tea.Msg {
+		if err := requireCapability(client, CapabilityWeb); err != nil {
+			return editMessageMsg{err}
+		}
 		err := client.EditMessage(channelID, messageID, content)
 		return editMessageMsg{err}
 	}
@@ -885,6 +1205,9 @@ func editMessageCmd(client *graph.Client, channelID, messageID, content string) 
 
 func deleteMessageCmd(client *graph.Client, channelID, messageID string) tea.Cmd {
 	return func() tea.Msg {
+		if err := requireCapability(client, CapabilityWeb); err != nil {
+			return deleteMessageMsg{err}
+		}
 		err := client.DeleteMessage(channelID, messageID)
 		return deleteMessageMsg{err}
 	}
@@ -892,6 +1215,9 @@ func deleteMessageCmd(client *graph.Client, channelID, messageID string) tea.Cmd
 
 func getReactionsCmd(client *graph.Client, channelID, messageID, selfID string) tea.Cmd {
 	return func() tea.Msg {
+		if err := requireCapability(client, CapabilityWeb); err != nil {
+			return reactionsLoadedMsg{messageID: messageID, err: err}
+		}
 		reactions, err := client.GetMessageReactions(channelID, messageID, selfID)
 		return reactionsLoadedMsg{messageID: messageID, reactions: reactions, err: err}
 	}
@@ -899,6 +1225,9 @@ func getReactionsCmd(client *graph.Client, channelID, messageID, selfID string) 
 
 func addReactionCmd(client *graph.Client, channelID, messageID, key string) tea.Cmd {
 	return func() tea.Msg {
+		if err := requireCapability(client, CapabilityWeb); err != nil {
+			return addReactionMsg{err}
+		}
 		err := client.AddReaction(channelID, messageID, key)
 		return addReactionMsg{err}
 	}
@@ -906,6 +1235,9 @@ func addReactionCmd(client *graph.Client, channelID, messageID, key string) tea.
 
 func removeReactionCmd(client *graph.Client, channelID, messageID, key string) tea.Cmd {
 	return func() tea.Msg {
+		if err := requireCapability(client, CapabilityWeb); err != nil {
+			return removeReactionMsg{err}
+		}
 		err := client.RemoveReaction(channelID, messageID, key)
 		return removeReactionMsg{err}
 	}
@@ -913,6 +1245,9 @@ func removeReactionCmd(client *graph.Client, channelID, messageID, key string) t
 
 func sendReplyCmd(client *graph.Client, channelID, parentID, content string, mentions []graph.MentionedUser) tea.Cmd {
 	return func() tea.Msg {
+		if err := requireCapability(client, CapabilityWeb); err != nil {
+			return threadReplySendErrMsg{err}
+		}
 		err := client.SendReply(channelID, parentID, content, mentions)
 		if err != nil {
 			return threadReplySendErrMsg{err}
@@ -923,6 +1258,9 @@ func sendReplyCmd(client *graph.Client, channelID, parentID, content string, men
 
 func sendMessageCmd(client *graph.Client, channelID, content string, mentions []graph.MentionedUser, replyTo *graph.Message) tea.Cmd {
 	return func() tea.Msg {
+		if err := requireCapability(client, CapabilityWeb); err != nil {
+			return messageSendErrMsg{err}
+		}
 		err := client.SendMessage(channelID, content, mentions, replyTo)
 		if err != nil {
 			return messageSendErrMsg{err}
@@ -933,6 +1271,9 @@ func sendMessageCmd(client *graph.Client, channelID, content string, mentions []
 
 func loadChannelRootCmd(client *graph.Client, teamID, channelID, channelName string, isPrivate bool) tea.Cmd {
 	return func() tea.Msg {
+		if err := requireCapability(client, CapabilityGraph); err != nil {
+			return channelRootMsg{channelID: channelID, err: err}
+		}
 		folder, err := client.GetChannelFolder(teamID, channelID, channelName, isPrivate)
 		if err != nil {
 			return channelRootMsg{channelID: channelID, err: err}
@@ -950,6 +1291,9 @@ func loadChannelRootCmd(client *graph.Client, teamID, channelID, channelName str
 
 func loadFilesCmd(client *graph.Client, teamID, channelID, channelName string, isPrivate bool, rootNode FolderNode) tea.Cmd {
 	return func() tea.Msg {
+		if err := requireCapability(client, CapabilityGraph); err != nil {
+			return filesErrMsg{err}
+		}
 		var files []graph.DriveItem
 		var err error
 		if isPrivate && rootNode.DriveID != "" {
@@ -968,6 +1312,9 @@ func loadFilesCmd(client *graph.Client, teamID, channelID, channelName string, i
 // current selection instead of resetting to the top of the list.
 func refreshFilesCmd(client *graph.Client, teamID, channelID, channelName string, isPrivate bool, rootNode FolderNode) tea.Cmd {
 	return func() tea.Msg {
+		if err := requireCapability(client, CapabilityGraph); err != nil {
+			return filesRefreshErrMsg{err: err}
+		}
 		var files []graph.DriveItem
 		var err error
 		if isPrivate && rootNode.DriveID != "" {
@@ -988,6 +1335,9 @@ func refreshFolderCmd(client *graph.Client, teamID string, node FolderNode) tea.
 	cacheKey := node.ID
 	if node.DriveID != "" {
 		return func() tea.Msg {
+			if err := requireCapability(client, CapabilityGraph); err != nil {
+				return filesRefreshErrMsg{err: err}
+			}
 			items, err := client.GetItemChildren(node.DriveID, node.ID)
 			if err != nil {
 				return filesRefreshErrMsg{err: err}
@@ -996,6 +1346,9 @@ func refreshFolderCmd(client *graph.Client, teamID string, node FolderNode) tea.
 		}
 	}
 	return func() tea.Msg {
+		if err := requireCapability(client, CapabilityGraph); err != nil {
+			return filesRefreshErrMsg{err: err}
+		}
 		items, err := client.GetFolderChildren(teamID, node.ID)
 		if err != nil {
 			return filesRefreshErrMsg{err: err}
@@ -1006,6 +1359,9 @@ func refreshFolderCmd(client *graph.Client, teamID string, node FolderNode) tea.
 
 func loadFolderCmd(client *graph.Client, teamID string, node FolderNode) tea.Cmd {
 	return func() tea.Msg {
+		if err := requireCapability(client, CapabilityGraph); err != nil {
+			return filesErrMsg{err}
+		}
 		var (
 			files []graph.DriveItem
 			err   error
@@ -1026,6 +1382,9 @@ type markAsReadMsg struct{ err error }
 
 func markAsReadCmd(client *graph.Client, conversationID string, lastMsg graph.Message) tea.Cmd {
 	return func() tea.Msg {
+		if err := requireCapability(client, CapabilityWeb); err != nil {
+			return markAsReadMsg{err}
+		}
 		err := client.MarkConversationAsRead(conversationID, lastMsg)
 		return markAsReadMsg{err}
 	}
@@ -1038,6 +1397,9 @@ type unreadStatusMsg struct {
 
 func checkUnreadCmd(client *graph.Client, chat graph.Chat) tea.Cmd {
 	return func() tea.Msg {
+		if err := requireCapability(client, CapabilityWeb); err != nil {
+			return nil
+		}
 		expectedSelfChatID := ""
 		if client.SelfID != "" {
 			expectedSelfChatID = fmt.Sprintf("19:%s_%s@unq.gbl.spaces", client.SelfID, client.SelfID)
@@ -1088,21 +1450,24 @@ func sendPendingMessageCmd(
 	conversationID string,
 	text string,
 	pending []PendingImage,
-	mentions []graph.MentionedUser,
+	_ []graph.MentionedUser,
 	replyTo *graph.Message,
 ) tea.Cmd {
 	return func() tea.Msg {
+		if err := requireCapability(client, CapabilityWeb); err != nil {
+			return messageSendErrMsg{err}
+		}
 		ctx := context.Background()
 
 		// Upload first image via AMS (only single image supported for now)
 		img, err := client.UploadInlineImage(ctx, conversationID, pending[0].Data, pending[0].ContentType)
 		if err != nil {
-			return errMsg{fmt.Errorf("AMS upload error: %w", err)}
+			return messageSendErrMsg{fmt.Errorf("AMS upload error: %w", err)}
 		}
 
 		// Send message with inline image
 		if err := client.SendMessageWithInlineImage(conversationID, text, img, len(pending[0].Data), replyTo); err != nil {
-			return errMsg{err}
+			return messageSendErrMsg{err}
 		}
 
 		return messageSentMsg{}

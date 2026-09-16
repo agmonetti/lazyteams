@@ -71,7 +71,13 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "q", "ctrl+c":
 		if m.renewalProc != nil {
-			helpers.SignalAuthProcess(m.renewalProc)
+			proc := m.renewalProc
+			helpers.SignalAuthProcess(proc)
+			if m.renewalBatch {
+				m.quitAfterRenewal = true
+				m.batchDraining = true
+				return m, tea.Batch(killBatchAfterGrace(proc), readBatchEventCmd(&m))
+			}
 			m.renewalProc = nil
 		}
 		return m, tea.Quit

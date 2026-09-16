@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agmonetti/lazyteams/internal/auth"
 	"github.com/agmonetti/lazyteams/internal/graph"
 )
 
@@ -21,7 +22,7 @@ func TestRetrySelfIDDue(t *testing.T) {
 		},
 		{
 			name: "missing selfID, due",
-			m:    Model{},
+			m:    Model{client: graph.NewClient(&auth.CredentialSet{Graph: auth.Credential{Token: "graph"}})},
 			want: true,
 		},
 		{
@@ -63,7 +64,7 @@ func TestRetryTeamsDue(t *testing.T) {
 		},
 		{
 			name: "teams not loaded, due",
-			m:    Model{},
+			m:    Model{client: graph.NewClient(&auth.CredentialSet{Graph: auth.Credential{Token: "graph"}})},
 			want: true,
 		},
 		{
@@ -97,7 +98,7 @@ func TestRetryTeamsDue(t *testing.T) {
 }
 
 func TestTickSelfHealingArmsCommands(t *testing.T) {
-	m := Model{}
+	m := Model{client: graph.NewClient(&auth.CredentialSet{Graph: auth.Credential{Token: "graph"}})}
 	updated, cmd := m.handleTickMsg(tickMsg{})
 	got := updated.(Model)
 	if cmd == nil {

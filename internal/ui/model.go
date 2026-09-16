@@ -1,7 +1,9 @@
 package ui
 
 import (
+	"bufio"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/agmonetti/lazyteams/internal/graph"
@@ -15,6 +17,51 @@ import (
 )
 
 type errMsg struct{ err error }
+
+type CapabilityState string
+
+func capabilityStateForError(err error) CapabilityState {
+	message := strings.ToLower(err.Error())
+	switch {
+	case strings.Contains(message, "missing credential"), strings.Contains(message, "missing cookie"):
+		return CapabilityMissing
+	case strings.Contains(message, "401"), strings.Contains(message, "expired"):
+		return CapabilityExpiredOrRevoked
+	case strings.Contains(message, "403"), strings.Contains(message, "permission"):
+		return CapabilityPermissionDenied
+	case strings.Contains(message, "network"), strings.Contains(message, "timeout"), strings.Contains(message, "connection"):
+		return CapabilityNetworkUnavailable
+	default:
+		return CapabilityUnknown
+	}
+}
+
+func (m *Model) setCapabilityError(capability string, err error) {
+	if m.capabilities == nil {
+		m.capabilities = make(map[string]CapabilityState)
+	}
+	m.capabilities[capability] = capabilityStateForError(err)
+}
+
+const (
+	CapabilityReady              CapabilityState = "ready"
+	CapabilityMissing            CapabilityState = "missing"
+	CapabilityExpiredOrRevoked   CapabilityState = "expired_or_revoked"
+	CapabilityInteractionNeeded  CapabilityState = "interaction_required"
+	CapabilityPermissionDenied   CapabilityState = "permission_denied"
+	CapabilityNetworkUnavailable CapabilityState = "network_unavailable"
+	CapabilityNotApplicable      CapabilityState = "not_applicable"
+	CapabilityUnknown            CapabilityState = "unknown"
+)
+
+const (
+	CapabilityGraph  = "graph"
+	CapabilityWeb    = "web"
+	CapabilityNotif  = "notif"
+	CapabilityEDU    = "edu"
+	CapabilitySpaces = "spaces"
+	CapabilityFabric = "fabric"
+)
 
 type PendingImage struct {
 	Data        []byte
@@ -43,6 +90,8 @@ type messagesErrMsg struct {
 type teamsMsg struct {
 	teams []graph.Team
 }
+
+type teamsErrMsg struct{ err error }
 
 type channelsMsg struct {
 	teamID   string
@@ -170,6 +219,7 @@ type Model struct {
 	focusList    int  // 0 = teams, 1 = channels (within left panel)
 	loading      bool
 	err          error
+	capabilities map[string]CapabilityState
 	width        int
 	height       int
 
@@ -264,6 +314,20 @@ type Model struct {
 	tokenRenewalSpinnerActive bool
 	debug                     bool
 	renewalProc               *os.Process // running lazyteams-auth child, killed on quit
+	renewalBatch              bool
+	batchID                   string
+	batchStarted              bool
+	batchTerminal             bool
+	batchTerminalState        string
+	batchGeneration           uint64
+	batchReadyProvider        string
+	batchPublishedProviders   map[string]bool
+	batchRequestedProviders   map[string]bool
+	batchEventScanner         *bufio.Scanner
+	batchEventWait            chan error
+	batchDraining             bool
+	batchStreamErr            error
+	quitAfterRenewal          bool
 
 	// User
 	userName string
@@ -456,11 +520,36 @@ func New(client *graph.Client, userName string, debug bool) Model {
 
 	prefs := loadPrefs()
 
+	capabilities := map[string]CapabilityState{
+		CapabilityGraph: CapabilityMissing,
+		CapabilityWeb:   CapabilityMissing,
+		CapabilityNotif: CapabilityMissing,
+		CapabilityEDU:   CapabilityMissing,
+	}
+	credentials := client.Credentials()
+	if credentials.Graph.Token != "" {
+		capabilities[CapabilityGraph] = CapabilityReady
+	}
+	if credentials.Web.Token != "" {
+		capabilities[CapabilityWeb] = CapabilityReady
+	}
+	if credentials.Notif.Token != "" {
+		capabilities[CapabilityNotif] = CapabilityReady
+	}
+	if credentials.EDU.Token == "" {
+		capabilities[CapabilityEDU] = CapabilityMissing
+	} else if credentials.EDUCookie.Token == "" && credentials.Cookie.Token == "" {
+		capabilities[CapabilityEDU] = CapabilityMissing
+	} else {
+		capabilities[CapabilityEDU] = CapabilityReady
+	}
+
 	m := Model{
 		client:                  client,
 		focusLeft:               true,
 		focusList:               0,
-		loading:                 true,
+		loading:                 false,
+		capabilities:            capabilities,
 		input:                   ta,
 		searchInput:             searchInput,
 		editInput:               editInput,
@@ -473,7 +562,9 @@ func New(client *graph.Client, userName string, debug bool) Model {
 		addChannelMemberInput:   addChannelMemberInput,
 		assignFilter:            FilterUpcoming,
 		prefs:                   prefs,
-		notificationsRefreshing: true,
+		notificationsRefreshing: credentials.Notif.Token != "",
+		notifLoaded:             credentials.Notif.Token == "",
+		assignLoaded:            credentials.EDU.Token == "" || (credentials.EDUCookie.Token == "" && credentials.Cookie.Token == ""),
 		chatUnread:              make(map[string]bool),
 		presence:                make(map[string]string),
 		selectedFiles:           make(map[int]bool),
@@ -489,18 +580,21 @@ func New(client *graph.Client, userName string, debug bool) Model {
 }
 
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(
-		checkTokensCmd(m.client),
-		loadTeamsCmd(m.client),
-		loadChatsCmd(m.client),
-		loadMeCmd(m.client),
-		refreshTickCmd(),
-		initialPresenceTickCmd(),
-		unreadSweepCmd(),
-		filesRefreshTickCmd(),
-		loadNotificationsCmd(m.client),
-		checkUpdateCmd(),
-	)
+	cmds := []tea.Cmd{
+		refreshTickCmd(), initialPresenceTickCmd(), unreadSweepCmd(),
+		filesRefreshTickCmd(), checkUpdateCmd(),
+	}
+	credentials := m.client.Credentials()
+	if credentials.Graph.Token != "" {
+		cmds = append(cmds, loadTeamsCmd(m.client), loadChatsCmd(m.client), loadMeCmd(m.client))
+	}
+	if credentials.Notif.Token != "" {
+		cmds = append(cmds, loadNotificationsCmd(m.client))
+	}
+	if credentials.EDU.Token != "" && (credentials.EDUCookie.Token != "" || credentials.Cookie.Token != "") {
+		cmds = append(cmds, loadAssignmentsCmd(m.client))
+	}
+	return tea.Batch(cmds...)
 }
 
 func (m Model) activeConversationID() string {

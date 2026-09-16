@@ -96,6 +96,19 @@ func renderInfoContent(m *Model) string {
 	return content
 }
 
+func (m Model) capabilityStatus() string {
+	order := []string{CapabilityGraph, CapabilityWeb, CapabilityNotif, CapabilityEDU}
+	var parts []string
+	for _, capability := range order {
+		state := m.capabilities[capability]
+		if state == "" {
+			state = CapabilityUnknown
+		}
+		parts = append(parts, capability+":"+string(state))
+	}
+	return strings.Join(parts, "  ")
+}
+
 func renderPendingImages(pending []PendingImage) string {
 	if len(pending) == 0 {
 		return ""
@@ -112,7 +125,7 @@ func (m Model) View() string {
 		return fmt.Sprintf("\n[!] Error: %v\n\nPress 'q' to quit.\n", m.err)
 	}
 
-	if m.teamsLoaded && len(m.teams) == 0 {
+	if m.teamsLoaded && len(m.teams) == 0 && m.capabilities[CapabilityGraph] == CapabilityReady {
 		return "\nNo teams found. This account may not have Teams Enterprise or may not belong to any team.\n\nPress 'q' to quit.\n"
 	}
 
@@ -488,9 +501,9 @@ func (m Model) View() string {
 
 	// Loading state: only show "Loading..." on the splash
 	if m.loading && m.focusLeft && m.workspace != WorkspaceActivity && m.workspace != WorkspaceAssignments {
-		statusLine := ""
+		statusLine := lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Render(sanitizeName(m.capabilityStatus()))
 		if m.downloadStatus != "" {
-			statusLine = lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Render(sanitizeName(m.downloadStatus))
+			statusLine += "\n" + lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Render(sanitizeName(m.downloadStatus))
 		}
 		logoLine := ""
 		if rightInnerWidth >= asciiLogoWidth && rightInnerHeight >= 20 {
@@ -515,9 +528,9 @@ func (m Model) View() string {
 		}
 	} else if m.focusLeft && m.loadedConvID == "" && m.workspace != WorkspaceActivity && m.workspace != WorkspaceAssignments {
 		// === SPLASH SCREEN ===
-		statusLine := ""
+		statusLine := lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Render(sanitizeName(m.capabilityStatus()))
 		if m.downloadStatus != "" {
-			statusLine = lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Render(sanitizeName(m.downloadStatus))
+			statusLine += "\n" + lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Render(sanitizeName(m.downloadStatus))
 		}
 		logoLine := ""
 		if rightInnerWidth >= asciiLogoWidth && rightInnerHeight >= 20 {
@@ -1557,7 +1570,7 @@ func (m Model) footerTextInner() string {
 	}
 }
 
-func renderThreadView(m *Model, width, height int) string {
+func renderThreadView(m *Model, _, _ int) string {
 	var content string
 
 	// Header

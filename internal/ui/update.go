@@ -189,8 +189,59 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.tokenRenewalFrame = (m.tokenRenewalFrame + 1) % len(tokenRenewalSpinnerFrames)
 		return m, renewalSpinnerTickCmd()
 
+	case authEventMsg:
+		if msg.err != nil {
+			m.tokenRenewErr = msg.err.Error()
+			return m, abortBatchStream(&m, msg.err)
+		}
+		if err := validateBatchEvent(&m, msg.event); err != nil {
+			m.tokenRenewErr = err.Error()
+			return m, abortBatchStream(&m, err)
+		}
+		if m.capabilities == nil {
+			m.capabilities = make(map[string]CapabilityState)
+		}
+		if m.batchPublishedProviders == nil {
+			m.batchPublishedProviders = make(map[string]bool)
+		}
+		if msg.event.Event == "credential_ready" {
+			m.batchReadyProvider = msg.event.Provider
+			m.batchPublishedProviders[msg.event.Provider] = true
+			return m, reloadTokensCmd(m.client, msg.event.Provider)
+		}
+		if msg.event.Event == "provider_failed" {
+			m.capabilities[msg.event.Provider] = capabilityStateForError(fmt.Errorf("%s", msg.event.ErrorCode))
+			return m, readBatchEventCmd(&m)
+		}
+		if msg.event.Event == "interaction_required" {
+			m.capabilities[msg.event.Provider] = CapabilityInteractionNeeded
+			return m, readBatchEventCmd(&m)
+		}
+		if msg.event.Event == "completed" || msg.event.Event == "cancelled" {
+			// Keep draining stdout through EOF so a late event is rejected rather
+			// than silently discarded, and only then wait for process cleanup.
+			return m, readBatchEventCmd(&m)
+		}
+		return m, readBatchEventCmd(&m)
+
 	case tokenRenewedMsg:
 		m.renewalProc = nil
+		if msg.tokenType == "batch" {
+			m.renewalBatch = false
+			m.tokenRenewing = false
+			m.tokenRenewingType = ""
+			if msg.err != nil {
+				m.tokenRenewErr = msg.err.Error()
+			}
+			m.tokenRenewalQueue = nil
+			if m.quitAfterRenewal {
+				m.quitAfterRenewal = false
+				return m, tea.Quit
+			}
+			// Each successful provider was reloaded when its credential_ready
+			// event arrived. Never replay unrelated providers at batch end.
+			return m, nil
+		}
 		finishTokenRenewal(&m, msg.tokenType)
 		m.tokenRenewing = false
 		m.tokenRenewingType = ""
@@ -215,6 +266,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmds...)
 
 	case tokensReloadedMsg:
+		if m.renewalBatch && m.batchReadyProvider != "" {
+			provider := m.batchReadyProvider
+			m.batchReadyProvider = ""
+			if msg.err != nil {
+				m.tokenRenewErr = msg.err.Error()
+				return m, abortBatchStream(&m, msg.err)
+			}
+			if credentials := m.client.Credentials(); credentials.Generation < m.batchGeneration {
+				err := fmt.Errorf("credential generation regressed: have %d, announced %d", credentials.Generation, m.batchGeneration)
+				m.tokenRenewErr = err.Error()
+				return m, abortBatchStream(&m, err)
+			}
+			m.capabilities[provider] = CapabilityReady
+			cmds := reloadProviderDataCmds(&m, provider)
+			cmds = append(cmds, readBatchEventCmd(&m))
+			return m, tea.Batch(cmds...)
+		}
 		var cmds []tea.Cmd
 		if msg.err != nil {
 			m.tokenRenewErr = msg.err.Error()
@@ -235,8 +303,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Batch(cmds...)
 
+	case teamsErrMsg:
+		m.setCapabilityError(CapabilityGraph, msg.err)
+		m.loading = false
+		return m, nil
+
 	case channelsErrMsg:
-		if msg.teamID == m.teams[m.selectedTeam].ID {
+		m.setCapabilityError(CapabilityGraph, msg.err)
+		if len(m.teams) > 0 && m.selectedTeam < len(m.teams) && msg.teamID == m.teams[m.selectedTeam].ID {
 			m.channelErr = msg.err
 			m.channels = nil
 			m.messages = nil
@@ -245,6 +319,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case messagesErrMsg:
+		m.setCapabilityError(CapabilityWeb, msg.err)
 		var chatsvcErr *graph.ChatSvcError
 		if m.selfID != "" && msg.conversationID == m.prefs.SelfChatIDs[m.selfID] && errors.As(msg.err, &chatsvcErr) && chatsvcErr.StatusCode == 404 {
 			// Direct access to personal notes failed with 404.
@@ -463,6 +538,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleFilesMsg(msg)
 
 	case teamsMsg:
+		m.capabilities[CapabilityGraph] = CapabilityReady
 		return m.handleTeamsMsg(msg)
 
 	case channelsMsg:
@@ -478,22 +554,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmds...)
 
 	case meErrMsg:
+		m.setCapabilityError(CapabilityGraph, msg.err)
 		// Don't block the app: without selfID, 1:1 chats will simply
 		// show all participants instead of excluding me.
 		return m, nil
 
 	case chatsErrMsg:
+		m.setCapabilityError(CapabilityGraph, msg.err)
 		if is401(msg.err) {
 			cmd := queueTokenRenewal(&m, detectExpiredToken(msg.err))
 			m.loading = false
 			return m, cmd
-		} else {
-			m.err = msg.err
 		}
 		m.loading = false
 		return m, nil
 
 	case chatsMsg:
+		m.capabilities[CapabilityGraph] = CapabilityReady
 		return m.handleChatsMsg(msg)
 
 	case selfChatDiscoveredMsg:
@@ -539,6 +616,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case messagesMsg:
+		m.capabilities[CapabilityWeb] = CapabilityReady
 		return m.handleMessagesMsg(msg)
 
 	case tickMsg:
@@ -589,12 +667,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmds...)
 
 	case notificationsMsg:
+		m.capabilities[CapabilityNotif] = CapabilityReady
 		return m.handleNotificationsMsg(msg)
 
 	case pollNotificationsMsg:
+		if msg.err != nil {
+			m.setCapabilityError(CapabilityNotif, msg.err)
+		} else {
+			m.capabilities[CapabilityNotif] = CapabilityReady
+		}
 		return m.handlePollNotificationsMsg(msg)
 
 	case notificationsErrMsg:
+		m.setCapabilityError(CapabilityNotif, msg.err)
 		m.notificationsRefreshing = false
 		if is401(msg.err) {
 			cmd := queueTokenRenewal(&m, "notif")
@@ -607,12 +692,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case assignmentsMsg:
+		m.capabilities[CapabilityEDU] = CapabilityReady
 		m.assignments = msg.items
 		m.assignLoaded = true
 		m.assignErr = nil
 		return m, nil
 
 	case assignmentsErrMsg:
+		m.setCapabilityError(CapabilityEDU, msg.err)
 		if is401(msg.err) {
 			cmd := queueTokenRenewal(&m, "edu")
 			m.assignLoaded = true
@@ -1229,12 +1316,31 @@ func startNextTokenRenewal(m *Model) tea.Cmd {
 	m.tokenRenewing = true
 	m.tokenRenewingType = m.tokenRenewalQueue[0]
 	m.tokenRenewalFrame = 0
-	cmds := []tea.Cmd{authHelperRenewal(m, m.tokenRenewingType)}
+	var renewalCmd tea.Cmd
+	if batchEligible(m.tokenRenewalQueue) {
+		jobs := append([]string(nil), m.tokenRenewalQueue...)
+		renewalCmd = authHelperBatch(m, jobs)
+	} else {
+		renewalCmd = authHelperRenewal(m, m.tokenRenewingType)
+	}
+	cmds := []tea.Cmd{renewalCmd}
 	if !m.tokenRenewalSpinnerActive {
 		m.tokenRenewalSpinnerActive = true
 		cmds = append(cmds, renewalSpinnerTickCmd())
 	}
 	return tea.Batch(cmds...)
+}
+
+func batchEligible(jobs []string) bool {
+	if len(jobs) == 0 {
+		return false
+	}
+	for _, job := range jobs {
+		if job == "fabric" || (job != "graph" && job != "web" && job != "notif" && job != "edu") {
+			return false
+		}
+	}
+	return true
 }
 
 func finishTokenRenewal(m *Model, tokenType string) {
@@ -1263,6 +1369,20 @@ func removeString(values []string, target string) []string {
 		}
 	}
 	return result
+}
+
+func reloadProviderDataCmds(m *Model, provider string) []tea.Cmd {
+	switch provider {
+	case "graph":
+		return []tea.Cmd{loadTeamsCmd(m.client), loadMeCmd(m.client)}
+	case "web":
+		return []tea.Cmd{loadChatsCmd(m.client)}
+	case "notif":
+		return []tea.Cmd{loadNotificationsCmd(m.client)}
+	case "edu":
+		return []tea.Cmd{loadAssignmentsCmd(m.client)}
+	}
+	return nil
 }
 
 func reloadSuccessfulDataCmds(m *Model) []tea.Cmd {

@@ -232,7 +232,7 @@ func (m Model) handleFilesMsg(msg filesMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) handleTickMsg(msg tickMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleTickMsg(_ tickMsg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 	// Poll: refresh chats if we're in DMs and the loaded conversation is still open
 	cmds = append(cmds, pollChatsCmd(m.client))
@@ -277,17 +277,17 @@ func (m Model) handleTickMsg(msg tickMsg) (tea.Model, tea.Cmd) {
 // retrySelfIDDue reports whether the tick should re-issue loadMeCmd because
 // the self ID is still missing and the retry budget/rate limit allows it.
 func (m Model) retrySelfIDDue(now time.Time) bool {
-	return m.selfID == "" && m.selfIDRetryCount < maxSelfRetries && !now.Before(m.selfIDRetryUntil) && !m.tokenRenewing
+	return m.selfID == "" && m.client != nil && m.client.Credentials().Graph.Token != "" && m.selfIDRetryCount < maxSelfRetries && !now.Before(m.selfIDRetryUntil) && !m.tokenRenewing
 }
 
 // retryTeamsDue reports whether the tick should re-issue loadTeamsCmd because
 // the teams list has not been loaded successfully yet and the retry
 // budget/rate limit allows it.
 func (m Model) retryTeamsDue(now time.Time) bool {
-	return !m.teamsLoaded && m.teamsRetryCount < maxSelfRetries && !now.Before(m.teamsRetryUntil) && !m.tokenRenewing && !m.loading
+	return !m.teamsLoaded && m.client != nil && m.client.Credentials().Graph.Token != "" && m.teamsRetryCount < maxSelfRetries && !now.Before(m.teamsRetryUntil) && !m.tokenRenewing && !m.loading
 }
 
-func (m Model) handlePresenceMsg(msg presenceTickMsg) (tea.Model, tea.Cmd) {
+func (m Model) handlePresenceMsg(_ presenceTickMsg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 	// Presence poll: always include selfID, others only in DMs
 	seen := make(map[string]struct{})

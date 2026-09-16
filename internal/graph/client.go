@@ -239,10 +239,6 @@ func (c *Client) ReloadCredentials() error {
 	return nil
 }
 
-// Deprecated: ReloadTokens is retained for backward compatibility during migration.
-func (c *Client) ReloadTokens() error {
-	return c.ReloadCredentials()
-}
 
 
 func (c *Client) doReq(endpoint string) ([]byte, error) {
