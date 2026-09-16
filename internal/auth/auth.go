@@ -553,12 +553,4 @@ func SortedPermissions(c Credential) []string {
 	return out
 }
 
-// Deprecated: GetTokens is retained for backward compatibility during migration.
-func GetTokens() (string, string, string, string, string, string, string, string, error) {
-	s, err := LoadCredentialSet()
-	if err != nil {
-		return "", "", "", "", "", "", "", "", err
-	}
-	return s.Graph.Token, s.Web.Token, s.Notif.Token, s.EDU.Token, s.Cookie.Token, s.EDUCookie.Token, s.Spaces.Token, s.Fabric.Token, nil
-}
 
