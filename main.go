@@ -38,7 +38,7 @@ USAGE:
 
 AUTH (run ./lazyteams-auth):
   ./lazyteams-auth                    Full token capture (first run)
-  ./lazyteams-auth --renew graph      Renew MS Graph token (opens browser)
+  ./lazyteams-auth --renew graph      Renew MS Graph token (headless first)
   ./lazyteams-auth --renew fabric     Renew Fabric token (opens browser)
   ./lazyteams-auth --renew web        Renew Teams Web token (headless)
   ./lazyteams-auth --renew edu        Renew EDU/Assignments token (headless)

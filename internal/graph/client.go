@@ -239,8 +239,6 @@ func (c *Client) ReloadCredentials() error {
 	return nil
 }
 
-
-
 func (c *Client) doReq(endpoint string) ([]byte, error) {
 	credentials := c.credentials.Load()
 	req, err := http.NewRequest("GET", baseURL+endpoint, nil)

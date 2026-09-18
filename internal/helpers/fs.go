@@ -40,5 +40,3 @@ func SignalAuthProcess(proc *os.Process) {
 	}
 	proc.Signal(syscall.SIGTERM)
 }
-
-
