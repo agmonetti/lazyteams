@@ -1,9 +1,12 @@
 package ui
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/charmbracelet/bubbles/textarea"
+	"github.com/charmbracelet/bubbles/viewport"
 )
 
 func TestRestoreFailedThreadReplyDraftKeepsReplyMode(t *testing.T) {
@@ -33,5 +36,31 @@ func TestRestoreFailedDraftRequiresExplicitRetry(t *testing.T) {
 	}
 	if m.failedDraft != nil {
 		t.Fatal("draft remained queued for automatic replay")
+	}
+}
+
+func TestMessageAndUploadFailuresWarnOnlyWhenResultIsUncertain(t *testing.T) {
+	for _, test := range []struct {
+		err         error
+		wantWarning bool
+	}{
+		{fmt.Errorf("network unavailable"), true},
+		{fmt.Errorf("upload timeout"), true},
+		{fmt.Errorf("permission denied"), false},
+	} {
+		m := Model{
+			input:       textarea.New(),
+			viewport:    viewport.New(80, 10),
+			failedDraft: &messageDraft{text: "keep me"},
+		}
+		updated, _ := m.Update(messageSendErrMsg{err: test.err})
+		m = updated.(Model)
+		content := m.viewport.View()
+		if got := strings.Contains(content, "Result may be uncertain"); got != test.wantWarning {
+			t.Errorf("error %q uncertainty warning = %v, want %v; content=%q", test.err, got, test.wantWarning, content)
+		}
+		if m.input.Value() != "keep me" {
+			t.Fatalf("error %q did not restore draft", test.err)
+		}
 	}
 }
