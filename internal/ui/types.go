@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"time"
+
 	"github.com/agmonetti/lazyteams/internal/auth"
 	"github.com/agmonetti/lazyteams/internal/graph"
 )
@@ -49,6 +51,13 @@ type tokenRenewedMsg struct {
 	tokenType string
 	err       error
 }
+
+type renewalTimerMsg struct {
+	provider   string
+	generation uint64
+	expiresAt  time.Time
+}
+
 type tokenRenewalTickMsg struct{}
 
 type tokenCheckDoneMsg struct {

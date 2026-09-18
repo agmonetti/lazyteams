@@ -18,6 +18,12 @@ import (
 
 type errMsg struct{ err error }
 
+type messageDraft struct {
+	text    string
+	images  []PendingImage
+	replyTo *graph.Message
+}
+
 type CapabilityState string
 
 func capabilityStateForError(err error) CapabilityState {
@@ -294,6 +300,10 @@ type Model struct {
 	// Pending clipboard images (not uploaded yet)
 	pendingImages []PendingImage
 
+	// failedDraft is restored after a failed send; replay remains an explicit
+	// user action rather than an automatic retry.
+	failedDraft *messageDraft
+
 	// Reply-to message in DM cursor mode; nil when not replying
 	replyToMsg *graph.Message
 
@@ -310,6 +320,7 @@ type Model struct {
 	tokenRenewErr             string
 	tokenRenewalQueue         []string
 	tokenRenewFailures        []string
+	renewalAttemptGeneration  map[string]uint64
 	tokenRenewalFrame         int
 	tokenRenewalSpinnerActive bool
 	debug                     bool
@@ -545,35 +556,36 @@ func New(client *graph.Client, userName string, debug bool) Model {
 	}
 
 	m := Model{
-		client:                  client,
-		focusLeft:               true,
-		focusList:               0,
-		loading:                 false,
-		capabilities:            capabilities,
-		input:                   ta,
-		searchInput:             searchInput,
-		editInput:               editInput,
-		createFolderInput:       createFolderInput,
-		newDMQuery:              newDMInput,
-		createTeamInput:         createTeamInput,
-		createChannelInput:      createChannelInput,
-		createChannelType:       "Standard",
-		addMemberInput:          addMemberInput,
-		addChannelMemberInput:   addChannelMemberInput,
-		assignFilter:            FilterUpcoming,
-		prefs:                   prefs,
-		notificationsRefreshing: credentials.Notif.Token != "",
-		notifLoaded:             credentials.Notif.Token == "",
-		assignLoaded:            credentials.EDU.Token == "" || (credentials.EDUCookie.Token == "" && credentials.Cookie.Token == ""),
-		chatUnread:              make(map[string]bool),
-		presence:                make(map[string]string),
-		selectedFiles:           make(map[int]bool),
-		folderCache:             make(map[string][]graph.DriveItem),
-		channelToTeam:           make(map[string]string),
-		userName:                userName,
-		debug:                   debug,
-		presenceOptions:         []string{"Available", "Busy", "DoNotDisturb", "BeRightBack", "Away", "Reset (Automatic)"},
-		reactionOptions:         []string{"like", "heart", "laugh", "surprised", "sad", "angry"},
+		client:                   client,
+		focusLeft:                true,
+		focusList:                0,
+		loading:                  false,
+		capabilities:             capabilities,
+		input:                    ta,
+		searchInput:              searchInput,
+		editInput:                editInput,
+		createFolderInput:        createFolderInput,
+		newDMQuery:               newDMInput,
+		createTeamInput:          createTeamInput,
+		createChannelInput:       createChannelInput,
+		createChannelType:        "Standard",
+		addMemberInput:           addMemberInput,
+		addChannelMemberInput:    addChannelMemberInput,
+		assignFilter:             FilterUpcoming,
+		prefs:                    prefs,
+		notificationsRefreshing:  credentials.Notif.Token != "",
+		notifLoaded:              credentials.Notif.Token == "",
+		assignLoaded:             credentials.EDU.Token == "" || (credentials.EDUCookie.Token == "" && credentials.Cookie.Token == ""),
+		chatUnread:               make(map[string]bool),
+		presence:                 make(map[string]string),
+		selectedFiles:            make(map[int]bool),
+		folderCache:              make(map[string][]graph.DriveItem),
+		channelToTeam:            make(map[string]string),
+		userName:                 userName,
+		debug:                    debug,
+		renewalAttemptGeneration: make(map[string]uint64),
+		presenceOptions:          []string{"Available", "Busy", "DoNotDisturb", "BeRightBack", "Away", "Reset (Automatic)"},
+		reactionOptions:          []string{"like", "heart", "laugh", "surprised", "sad", "angry"},
 	}
 	loadPrefsIntoModel(&m, prefs)
 	return m
@@ -594,7 +606,23 @@ func (m Model) Init() tea.Cmd {
 	if credentials.EDU.Token != "" && (credentials.EDUCookie.Token != "" || credentials.Cookie.Token != "") {
 		cmds = append(cmds, loadAssignmentsCmd(m.client))
 	}
+	if renewal := scheduleNextRenewal(&m, time.Now()); renewal != nil {
+		cmds = append(cmds, renewal)
+	}
 	return tea.Batch(cmds...)
+}
+
+func (m *Model) restoreFailedDraft() {
+	if m.failedDraft == nil {
+		return
+	}
+	draft := m.failedDraft
+	m.input.SetValue(draft.text)
+	m.pendingImages = append([]PendingImage(nil), draft.images...)
+	m.replyToMsg = draft.replyTo
+	m.isTyping = true
+	m.input.Focus()
+	m.failedDraft = nil
 }
 
 func (m Model) activeConversationID() string {

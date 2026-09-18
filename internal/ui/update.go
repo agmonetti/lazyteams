@@ -181,6 +181,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.updateBannerUntil = time.Time{}
 		return m, nil
 
+	case renewalTimerMsg:
+		if !m.timerMatches(msg) {
+			return m, scheduleNextRenewal(&m, time.Now())
+		}
+		if m.renewalAttemptGeneration == nil {
+			m.renewalAttemptGeneration = make(map[string]uint64)
+		}
+		if m.renewalAttemptGeneration[msg.provider] == msg.generation {
+			return m, scheduleNextRenewal(&m, time.Now())
+		}
+		m.renewalAttemptGeneration[msg.provider] = msg.generation
+		enqueueTokenRenewal(&m, msg.provider)
+		return m, startNextTokenRenewal(&m)
+
+	case tea.ResumeMsg:
+		m.renewalAttemptGeneration = make(map[string]uint64)
+		return m, scheduleNextRenewal(&m, time.Now())
+
 	case tokenRenewalTickMsg:
 		if !m.tokenRenewing {
 			m.tokenRenewalSpinnerActive = false
@@ -280,6 +298,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.capabilities[provider] = CapabilityReady
 			cmds := reloadProviderDataCmds(&m, provider)
+			if renewal := scheduleNextRenewal(&m, time.Now()); renewal != nil {
+				cmds = append(cmds, renewal)
+			}
 			cmds = append(cmds, readBatchEventCmd(&m))
 			return m, tea.Batch(cmds...)
 		}
@@ -300,6 +321,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// This recovers startup loads that failed with expired tokens.
 		if !m.tokenRenewing && len(m.tokenRenewalQueue) == 0 {
 			cmds = append(cmds, reloadSuccessfulDataCmds(&m)...)
+		}
+		if renewal := scheduleNextRenewal(&m, time.Now()); renewal != nil {
+			cmds = append(cmds, renewal)
 		}
 		return m, tea.Batch(cmds...)
 
@@ -368,6 +392,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case messageSentMsg:
+		m.failedDraft = nil
 		// Message sent successfully. Reload messages for the channel/chat
 		m.messagesBackwardLink = ""
 		m.loadingMore = false
@@ -375,11 +400,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, loadMessagesCmd(m.client, "", m.activeConversationID(), 200)
 
 	case messageSendErrMsg:
-		m.viewport.SetContent(fmt.Sprintf("Error sending message: %v", msg.err))
+		m.restoreFailedDraft()
+		m.viewport.SetContent(fmt.Sprintf("Error sending message: %v\nDraft restored; press Enter to retry manually.", msg.err))
 		m.loading = false
 		return m, nil
 
 	case threadReplySentMsg:
+		m.failedDraft = nil
 		m.isReplyTyping = false
 		m.input.Reset()
 		// Reload messages to get the new reply
@@ -389,8 +416,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, loadMessagesCmd(m.client, "", m.activeConversationID(), 200)
 
 	case threadReplySendErrMsg:
+		m.restoreFailedDraft()
 		m.isReplyTyping = false
-		m.threadViewport.SetContent(fmt.Sprintf("Error sending reply: %v", msg.err))
+		m.threadViewport.SetContent(fmt.Sprintf("Error sending reply: %v\nDraft restored; press Enter to retry manually.", msg.err))
 		return m, nil
 
 	case editMessageMsg:
@@ -1413,6 +1441,14 @@ func queueTokenRenewal(m *Model, tokenType string) tea.Cmd {
 	if tokenType == "" || containsString(m.tokenRenewFailures, tokenType) {
 		return nil
 	}
+	if m.renewalAttemptGeneration == nil {
+		m.renewalAttemptGeneration = make(map[string]uint64)
+	}
+	generation := m.client.Credentials().Generation
+	if m.renewalAttemptGeneration[tokenType] == generation {
+		return nil
+	}
+	m.renewalAttemptGeneration[tokenType] = generation
 	if !m.tokenRenewing && len(m.tokenRenewalQueue) == 0 {
 		m.tokenRenewErr = ""
 	}
