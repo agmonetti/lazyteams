@@ -2492,3 +2492,18 @@ Copiar esta plantilla y completar todos los campos aplicables:
 - **Acción siguiente:** con Luna, implementar en commits convencionales separados: (1) planificación/timers y límites por generación; (2) reanudación, clasificación y recuperación de capacidades; (3) preservación de drafts sin replay; (4) evidencia y documentación del gate. Repetir tests focalizados, suite, race, diff check y LSP antes de revisión Sol.
 - **Riesgo residual:** mientras ninguna adquisición informe `ExpiresAt` contractual, el camino anticipado permanecerá inactivo por diseño y la recuperación real seguirá dependiendo de rechazos del proveedor. La recuperabilidad Microsoft real continúa fuera del gate local.
 - **Gate:** contrato técnico previo aprobado por Sol; implementación de Etapa 6 pendiente de Luna. No ejecutar adquisición real ni Etapa 7.
+
+### L160 — Luna implementa renovación por vencimiento y restaura drafts
+
+- **Fecha:** 2026-09-18
+- **Etapa:** 6
+- **Tipo:** cambio + decisión + evidencia
+- **Pregunta o hipótesis:** ¿Puede implementarse la renovación durante el uso usando sólo vencimientos contractuales, límites por generación y sin replay automático de mutaciones?
+- **Entorno no sensible:** rama `auth-fast-migration-research`; modelo `gpt-5.6-luna`; Go `1.26.6`; Bubble Tea `v1.3.10`; sin credenciales, Firefox, Playwright ni tráfico Microsoft.
+- **Procedimiento:** añadir planificación pura del vencimiento más próximo con margen de cinco minutos; etiquetar timers con proveedor, generación y `ExpiresAt`; descartar timers obsoletos; limitar intentos automáticos por proveedor/generación; replanificar en `tea.ResumeMsg` y después de recargar credenciales; conservar el draft de mensajes con imágenes/reply ante fallo y restaurarlo sólo para reenvío manual. Ejecutar tests focalizados, suite, race detector, diff check y LSP.
+- **Resultado observado:** los tokens sin `ExpiresAt` no agendan renovación; un timer de generación o vencimiento distinto se ignora; una nueva generación vuelve a ser elegible; los drafts se restauran en modo edición sin replay automático. Se detectó y corrigió durante la implementación un posible timer inmediato repetitivo después de un intento ya realizado, excluyendo el proveedor intentado en esa generación del siguiente plan.
+- **Evidencia:** commits `dbdce5f` (`feat(ui): schedule credential renewal by expiry`) y `401bd84` (`test(ui): cover renewal limits and draft recovery`); `internal/ui/renewal.go`, `renewal_test.go`, `draft_test.go`; `go test ./...`; `go test -race ./...`; `git diff --check`; diagnóstico LSP sin errores.
+- **Impacto:** Etapa 6 tiene implementación local y evidencia técnica; no se agregaron schedulers paralelos, daemon, watcher de red, decodificación JWT ni adquisiciones reales. La renovación anticipada permanece inactiva para adquisiciones que no informan vencimiento contractual; la renovación reactiva sigue limitada por generación.
+- **Acción siguiente:** solicitar revisión formal Sol del gate de Etapa 6. No iniciar Etapa 7, Fabric ni adquisiciones reales.
+- **Riesgo residual:** no se demuestra recuperación real frente a Microsoft; permisos, red e interacción siguen dependiendo de respuestas reales y conservan estados distintos.
+- **Gate:** gate técnico local aprobado; revisión formal Sol pendiente.
