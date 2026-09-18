@@ -4,7 +4,7 @@
 
 - **Estado:** operativo; Etapa 0 cerrada; Etapa 1 ejecutada y su gate no aprobado; Etapas 2, 3, 4, 5 y 6 corregidas, validadas y aprobadas por revisión Sol. La decimosexta revisión formal cerró Etapa 5 en L157; Etapa 6 fue corregida en L164 y su revisión formal aprobó el gate en L165. El corte 7A fue corregido en L173 y su tercera revisión formal Sol aprobó el gate en L174; el probe 7B sigue bloqueado hasta autorización explícita.
 - **Migración:** núcleo de Etapas 2 y 3 implementado; el helper por lotes, protocolo incremental y lifecycle de Etapa 4 quedaron aprobados formalmente en L088; Graph comparte el recorrido headless-first, valida aplicación/scopes, evita el delta vacío, propaga el fallo de cierre, rechaza puertos explícitos y conserva `incompatible_credential`; L156 restaura los tres seams productivos y L157 aprueba la evidencia terminal aislada.
-- **Etapa actual:** Etapa 6 cerrada formalmente en L165 y corte 7A cerrado formalmente en L174. La persistencia Fabric permanece cerrada hasta disponer de una política contractual de escritura reproducible. El probe 7B, Fabric real y toda adquisición nueva permanecen bloqueados hasta autorización explícita independiente.
+- **Etapa actual:** Etapa 6 cerrada formalmente en L165 y corte 7A cerrado formalmente en L174. El preflight técnico de 7B quedó definido en L175 sin ejecutar el probe. La persistencia Fabric permanece cerrada hasta disponer de una política contractual de escritura reproducible. El probe 7B, Fabric real y toda adquisición nueva permanecen bloqueados hasta autorización explícita independiente.
 - **Documentos fuente:** `plan.md` y `auth-migration-research.md`.
 - **Alcance:** permitir abrir y empezar con consumo liviano, mejorar el arranque, la renovación y la coordinación de credenciales sin reemplazar la arquitectura híbrida actual.
 - **Fuera de alcance inicial:** nueva aplicación OAuth, reescritura de la TUI, WebSockets, renderizado y captura automática de Fabric sin prueba de seguridad.
@@ -906,6 +906,16 @@ La evidencia histórica disponible para este antecedente es el reporte directo d
 - Registrar sólo estado, método, host/ruta normalizados, cantidad de intentos, resultado del aborto, ausencia de respuesta, tiempos y clasificación. Nunca token, hash del token, cookies, headers, IDs, payload, URL completa, claims ni contenido de página.
 - Tomar evidencia de auditoría/estado del tenant antes y después mediante un procedimiento de sólo lectura y sanitizado. Cualquier cambio observado o imposibilidad de cerrar la auditoría rechaza el gate.
 
+##### Preflight técnico cerrado — 2026-09-18
+
+- La única operación candidata será **cambio de rol de un miembro de canal privado**, porque es el recorrido que el fallback manual actual intenta provocar. La forma esperada es `POST https://teams.microsoft.com/fabric/amer/templates/api/teams/{team}/channels/{channel}/users?forceSync=false` con JSON exactamente equivalente a `{"users":[{"id":"{user}","role":N}]}`. `{team}`, `{channel}`, `{user}` y `N` se fijan antes de abrir el contexto, se comparan sólo en memoria y nunca se registran.
+- El matcher rechaza esquema distinto de `https`, host distinto, puerto explícito, método distinto de `POST`, segmentos extra, query diferente de `forceSync=false`, origen/frame fuera de una página oficial `https://teams.microsoft.com` o JSON con campos, cantidad de usuarios, identidad o rol no esperados.
+- La route se instala sobre el contexto antes de crear/navegar páginas. Para el namespace `/fabric/`, `GET`, `HEAD` y `OPTIONS` pueden continuar; toda otra request se aborta. La request objetivo sólo produce un candidato en cuarentena después de que `Abort` haya retornado sin error, `requestfailed` corresponda a esa misma request y no exista `response`. Una respuesta, aborto fallido, request mutante Fabric desconocida, candidato distinto o evento ambiguo invalida toda la corrida.
+- El estado mínimo del probe es: `prepared` → `route_installed` → `audit_before_ok` → `target_aborted` → `request_failed_confirmed` → `context_closed` → `audit_after_ok` → `write_candidate_unverified`. Cancelación, timeout o cualquier violación terminan en `rejected`; nunca en disponibilidad Fabric.
+- Antes de implementar o ejecutar el probe debe fijarse un auditor de sólo lectura reproducible para el miembro objetivo. Como mínimo debe comparar en memoria existencia y rol antes/después y registrar únicamente `unchanged=true/false`; si no puede obtenerse esa evidencia sin una mutación ni exponer identificadores, 7B no se ejecuta.
+- El probe será un binario temporal/laboratorio separado, sin llamadas a `PersistFabricCandidate`, `PersistTokenValues` ni al helper normal. El snapshot canónico se compara byte por byte antes/después y cualquier diferencia rechaza el gate.
+- Primero se implementarán y probarán localmente, sin navegador ni red, el matcher exacto, el state machine, aborto/reintentos, correlación `requestfailed`/`response`, cancelación y sanitización. Esa implementación también requiere autorización explícita de 7B; este preflight documental no la concede.
+
 #### Corte 7C — promoción o fallback
 
 - Mantener el candidato en cuarentena y el snapshot byte por byte intacto hasta cerrar contexto, confirmar todos los abortos y completar la auditoría sin cambios.
@@ -1135,5 +1145,6 @@ Para cada etapa registrar en `auth-migration-lessons.md`:
 - [x] Segunda revisión formal Sol del corte 7A ejecutada; gate rechazado en L171.
 - [x] Correcciones L171 implementadas y gate técnico local repetido; evidencia en L172–L173.
 - [x] Tercera revisión formal Sol del corte 7A ejecutada; gate aprobado en L174.
+- [x] Preflight técnico de 7B definido por Sol sin implementar ni ejecutar el probe; evidencia en L175.
 
-**Próximo paso permitido:** esperar autorización explícita independiente para el probe aislado 7B. No ejecutar Fabric real, navegador, tráfico Microsoft ni adquisiciones nuevas sin esa autorización.
+**Próximo paso permitido:** esperar autorización explícita independiente para implementar localmente el probe 7B y sus pruebas sin red. La ejecución real, navegador, tráfico Microsoft, Fabric y adquisiciones nuevas requieren una autorización posterior que los mencione expresamente.
