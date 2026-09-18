@@ -1309,6 +1309,8 @@ func enqueueTokenRenewal(m *Model, tokenType string) {
 	m.tokenRenewalQueue = append(m.tokenRenewalQueue, tokenType)
 }
 
+var startBatchRenewal = authHelperBatch
+
 func startNextTokenRenewal(m *Model) tea.Cmd {
 	if m.tokenRenewing || len(m.tokenRenewalQueue) == 0 {
 		return nil
@@ -1319,7 +1321,7 @@ func startNextTokenRenewal(m *Model) tea.Cmd {
 	var renewalCmd tea.Cmd
 	if batchEligible(m.tokenRenewalQueue) {
 		jobs := append([]string(nil), m.tokenRenewalQueue...)
-		renewalCmd = authHelperBatch(m, jobs)
+		renewalCmd = startBatchRenewal(m, jobs)
 	} else {
 		renewalCmd = authHelperRenewal(m, m.tokenRenewingType)
 	}

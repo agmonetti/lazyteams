@@ -253,6 +253,8 @@ var authHelperExecutable = func() (string, error) {
 	return filepath.Join(filepath.Dir(exe), "lazyteams-auth"), nil
 }
 
+var startAuthHelperProcess = func(cmd *exec.Cmd) error { return cmd.Start() }
+
 func authHelperBatch(m *Model, jobs []string) tea.Cmd {
 	authHelper, err := authHelperExecutable()
 	if err != nil {
@@ -267,7 +269,7 @@ func authHelperBatch(m *Model, jobs []string) tea.Cmd {
 		return func() tea.Msg { return tokenRenewedMsg{tokenType: "batch", err: err} }
 	}
 	cmd.Stderr = io.Discard
-	if err := cmd.Start(); err != nil {
+	if err := startAuthHelperProcess(cmd); err != nil {
 		return func() tea.Msg { return tokenRenewedMsg{tokenType: "batch", err: err} }
 	}
 	m.renewalProc = cmd.Process
@@ -420,6 +422,19 @@ func readBatchEventCmd(m *Model) tea.Cmd {
 // authHelperRenewal starts a background lazyteams-auth --renew process, records
 // it on the model (so it is killed on quit), and returns a cmd that resolves
 // with the result once the process exits.
+func authHelperRenewalArgs(expiredToken string) []string {
+	if expiredToken == "graph" {
+		// Graph must use the shared headless-first JSONL lifecycle; the legacy
+		// wrapper is visible-first and duplicates acquisition behavior.
+		return []string{"--events", "--renew-batch", "graph"}
+	}
+	args := []string{"--renew", expiredToken}
+	if expiredToken != "fabric" {
+		args = append(args, "--headless")
+	}
+	return args
+}
+
 func authHelperRenewal(m *Model, expiredToken string) tea.Cmd {
 	exe, err := os.Executable()
 	if err != nil {
@@ -427,11 +442,7 @@ func authHelperRenewal(m *Model, expiredToken string) tea.Cmd {
 	}
 	authHelper := filepath.Join(filepath.Dir(exe), "lazyteams-auth")
 
-	args := []string{"--renew", expiredToken}
-	// graph and fabric require visible browser — all others run headless
-	if expiredToken != "graph" && expiredToken != "fabric" {
-		args = append(args, "--headless")
-	}
+	args := authHelperRenewalArgs(expiredToken)
 	if m.debug {
 		args = append(args, "--debug")
 	}
@@ -456,7 +467,7 @@ func authHelperRenewal(m *Model, expiredToken string) tea.Cmd {
 	cmd := exec.Command(authHelper, args...)
 	cmd.Stdout = output
 	cmd.Stderr = output
-	if err := cmd.Start(); err != nil {
+	if err := startAuthHelperProcess(cmd); err != nil {
 		if logFile != nil {
 			logFile.Close()
 		}
