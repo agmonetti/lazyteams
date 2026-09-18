@@ -868,9 +868,19 @@ La revisión Sol debe comprobar especialmente que sólo metadata contractual age
 
 ## Etapa 7 — Fabric y validación final
 
+### Estado de autorización
+
+Etapa 7, Fabric y toda adquisición real nueva permanecen bloqueados hasta autorización explícita independiente. Documentar antecedentes o cerrar el contrato técnico no autoriza ejecutar el experimento.
+
+### Antecedente obligatorio
+
+Ya se intentó capturar Fabric interceptando una request. Ese recorrido obtuvo un token de Fabric con permisos de **lectura**, no el token con permisos de **escritura** requerido por las mutaciones de administración privada. La mera presencia de un Bearer dirigido a Fabric, una respuesta de lectura exitosa o una captura sin escritura no demuestra que la adquisición necesaria esté resuelta.
+
+La evidencia histórica disponible para este antecedente es el reporte directo del usuario registrado en L166; antes de atribuirle detalles adicionales deberán incorporarse logs sanitizados o una referencia reproducible. Hasta entonces, el resultado se clasifica como hipótesis descartada para adquisición de escritura, no como captura automática correcta.
+
 ### Producto
 
-Fabric no bloquea el arranque. La administración privada muestra su dependencia y conserva el flujo manual como fallback.
+Fabric no bloquea el arranque. La administración privada muestra su dependencia y conserva el flujo manual como fallback. Un token de lectura no habilita ni reemplaza la credencial requerida por operaciones de escritura.
 
 ### Experimento de interceptación
 
@@ -881,12 +891,13 @@ Fabric no bloquea el arranque. La administración privada muestra su dependencia
 - Abort antes del servidor.
 - Repetición con reintentos, nueva navegación y múltiples páginas.
 - Verificación de auditoría del tenant.
+- Validación explícita de que el candidato corresponde al recurso, aplicación, cuenta y tenant esperados y autoriza la operación de escritura requerida; una credencial sólo de lectura se rechaza sin reemplazar el snapshot vigente.
 
-Se descarta la hipótesis si cualquier escritura llega al servidor o si el token aparece sólo después de permitirla.
+Se descarta la hipótesis si cualquier escritura llega al servidor, si el token aparece sólo después de permitirla o si el candidato sólo tiene permisos de lectura.
 
 ### Gate de salida
 
-Sólo afirmar captura automática si existe evidencia de cero cambios en tenant, cobertura de reintentos y token realmente asociado a la operación. De lo contrario, mantener adquisición explícita.
+Sólo afirmar captura automática si existe evidencia conjunta de cero cambios en tenant, cobertura de reintentos y un token realmente asociado y autorizado para la operación de escritura requerida. Capturar un token de lectura no supera el gate. De lo contrario, mantener adquisición explícita.
 
 ---
 

@@ -104,7 +104,7 @@ Copiar esta plantilla y completar todos los campos aplicables:
 | D002 | Si la sesión Graph Explorer permite renovación headless tras reinicio | Evidencia de Etapa 1 | Resuelta operativamente: visible autenticó; dos reaperturas headless y la repetición tras espera nominal clasificaron `login` sin request Graph; no se demostró la causa ni un `ExpiresAt`; fallback `interaction_required` acotado al escenario, sin conclusión universal |
 | D003 | Forma final del `CredentialSet` y metadatos persistidos | Diseño de Etapa 2 | Resuelta en diseño previo: snapshot inmutable de campos fijos, generación monotónica y metadata versionada dentro del mismo `tokens.env`; ejecución pendiente de autorización |
 | D004 | Protocolo exacto de eventos helper → TUI | Contrato de Etapa 4 | Resuelta en diseño previo por L058: JSONL versionado en stdout exclusivo, persistencia antes de `credential_ready`, consumo incremental y terminal único |
-| D005 | Si Fabric puede capturarse sin escritura | Experimento de Etapa 7 | Pendiente |
+| D005 | Si Fabric puede capturarse sin escritura | Experimento de Etapa 7 | Parcial: una interceptación previa obtuvo sólo un token de lectura; sigue pendiente demostrar cero escritura y obtener/validar la credencial con permisos de escritura requerida |
 | D006 | Mecanismo de ownership del perfil | Diseño de Etapa 2 | Resuelta en diseño previo: lock asesor del SO retenido por descriptor y metadata de propietario; sin `pkill` ni recuperación por mera existencia del archivo |
 | D007 | Semántica de reemplazo incompatible | Diseño de Etapa 2 | Resuelta en diseño previo: delta con generación base; metadata desconocida no borra conocida y cualquier contradicción rechaza el delta completo |
 
@@ -120,6 +120,7 @@ Copiar esta plantilla y completar todos los campos aplicables:
 | F006 | Esperar el final del helper es suficiente para incrementalidad | Se necesita protocolo de eventos y lectura mientras el proceso vive | L000 |
 | F007 | `saveTokens()` preserva todas las claves que carga | El escritor omite `EDU_COOKIE`; una escritura posterior puede eliminarla aunque el parser la haya leído | L031 |
 | F008 | Las señales actuales garantizan ejecutar los cierres diferidos | Dos controladores llaman `os.Exit` desde goroutines; `os.Exit` omite `defer`, por lo que el cierre y un futuro unlock no estarían garantizados | L032 |
+| F009 | Capturar cualquier Bearer dirigido a Fabric resuelve la credencial administrativa | Validar que el candidato autorice la operación de escritura requerida; la interceptación previa sólo obtuvo un token de lectura y no supera el gate | L166 |
 
 ## Registro de cambios del runbook
 
@@ -2584,3 +2585,18 @@ Copiar esta plantilla y completar todos los campos aplicables:
 - **Acción siguiente:** esperar autorización explícita independiente antes de definir o ejecutar Etapa 7/Fabric. No realizar adquisiciones reales nuevas por esta aprobación.
 - **Riesgo residual:** la renovación real frente a Microsoft sigue sin demostrarse; los vencimientos anticipados sólo operan cuando existe `ExpiresAt` contractual y un error sin evento individual de red permanece bloqueado de forma conservadora.
 - **Gate:** aprobado; Etapa 6 cerrada formalmente. Etapa 7, Fabric y toda adquisición real nueva permanecen bloqueados.
+
+### L166 — La interceptación previa de Fabric sólo obtuvo permisos de lectura
+
+- **Fecha:** 2026-09-18
+- **Etapa:** 7 / antecedente previo
+- **Tipo:** hecho reportado + hipótesis descartada parcialmente + riesgo
+- **Pregunta o hipótesis:** ¿La captura obtenida al interceptar una request de Fabric puede considerarse la credencial necesaria para operaciones administrativas de escritura?
+- **Entorno no sensible:** antecedente informado directamente por el usuario; sin nueva ejecución, navegador, credenciales, tráfico Microsoft ni acceso al tenant en esta entrada.
+- **Procedimiento:** registrar el resultado histórico comunicado por el usuario y contrastarlo con el gate de Etapa 7, que exige una credencial asociada a la operación de escritura sin permitir que la mutación llegue al servidor.
+- **Resultado observado:** el intento previo de interceptación capturó un token de Fabric con permisos de lectura, no un token con permisos de escritura. Por lo tanto, capturar un Bearer de Fabric o demostrar una lectura exitosa no resuelve la adquisición requerida para mutaciones de administración privada y no puede marcarse como éxito.
+- **Evidencia:** declaración directa del usuario en la sesión del 2026-09-18. No se aportaron en esta entrada logs sanitizados, scopes, respuesta ni artefactos reproducibles; no se registran secretos.
+- **Impacto:** el contrato de Etapa 7 debe rechazar candidatos sólo de lectura sin reemplazar el snapshot vigente. El gate exige distinguir explícitamente lectura de escritura y demostrar tanto autorización de la operación requerida como cero cambios en el tenant.
+- **Acción siguiente:** antes de ejecutar Etapa 7, definir con Sol cómo validar de forma no sensible la capacidad de escritura del candidato y cómo auditar que la request objetivo fue abortada antes del servidor. Mantener el flujo manual como fallback. Cualquier experimento o adquisición real requiere autorización explícita independiente.
+- **Riesgo residual:** todavía no existe evidencia reproducible adjunta sobre el intento histórico ni se demostró que una credencial de escritura pueda observarse antes de permitir la mutación. Una request puede además eludir routing mediante Service Workers.
+- **Gate:** bloquea considerar correcta la captura previa; no autoriza Etapa 7 ni una nueva adquisición.
