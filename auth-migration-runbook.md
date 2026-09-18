@@ -2,9 +2,9 @@
 
 ## Estado del documento
 
-- **Estado:** operativo; Etapa 0 cerrada; Etapa 1 ejecutada y su gate no aprobado; Etapas 2, 3, 4, 5 y 6 corregidas, validadas y aprobadas por revisión Sol. La decimosexta revisión formal cerró Etapa 5 en L157; Etapa 6 fue corregida en L164 y su revisión formal aprobó el gate en L165.
+- **Estado:** operativo; Etapa 0 cerrada; Etapa 1 ejecutada y su gate no aprobado; Etapas 2, 3, 4, 5 y 6 corregidas, validadas y aprobadas por revisión Sol. La decimosexta revisión formal cerró Etapa 5 en L157; Etapa 6 fue corregida en L164 y su revisión formal aprobó el gate en L165. El contrato técnico previo de Etapa 7 quedó definido por Sol en L167, sin autorizar su ejecución.
 - **Migración:** núcleo de Etapas 2 y 3 implementado; el helper por lotes, protocolo incremental y lifecycle de Etapa 4 quedaron aprobados formalmente en L088; Graph comparte el recorrido headless-first, valida aplicación/scopes, evita el delta vacío, propaga el fallo de cierre, rechaza puertos explícitos y conserva `incompatible_credential`; L156 restaura los tres seams productivos y L157 aprueba la evidencia terminal aislada.
-- **Etapa actual:** Etapa 6 cerrada formalmente en L165. No se autorizó ninguna adquisición real nueva ni trabajo de Etapa 7/Fabric; el próximo avance requiere autorización explícita independiente.
+- **Etapa actual:** Etapa 6 cerrada formalmente en L165. Etapa 7 tiene contrato técnico previo en L167, pero su implementación, el probe, Fabric y toda adquisición real nueva permanecen bloqueados hasta autorización explícita independiente.
 - **Documentos fuente:** `plan.md` y `auth-migration-research.md`.
 - **Alcance:** permitir abrir y empezar con consumo liviano, mejorar el arranque, la renovación y la coordinación de credenciales sin reemplazar la arquitectura híbrida actual.
 - **Fuera de alcance inicial:** nueva aplicación OAuth, reescritura de la TUI, WebSockets, renderizado y captura automática de Fabric sin prueba de seguridad.
@@ -870,7 +870,7 @@ La revisión Sol debe comprobar especialmente que sólo metadata contractual age
 
 ### Estado de autorización
 
-Etapa 7, Fabric y toda adquisición real nueva permanecen bloqueados hasta autorización explícita independiente. Documentar antecedentes o cerrar el contrato técnico no autoriza ejecutar el experimento.
+Sol definió el contrato técnico previo en L167. Etapa 7, su implementación, el probe, Fabric y toda adquisición real nueva permanecen bloqueados hasta autorización explícita independiente. La instrucción que reanudó el análisis con Sol autorizó cerrar este contrato, no ejecutar el experimento.
 
 ### Antecedente obligatorio
 
@@ -878,26 +878,61 @@ Ya se intentó capturar Fabric interceptando una request. Ese recorrido obtuvo u
 
 La evidencia histórica disponible para este antecedente es el reporte directo del usuario registrado en L166; antes de atribuirle detalles adicionales deberán incorporarse logs sanitizados o una referencia reproducible. Hasta entonces, el resultado se clasifica como hipótesis descartada para adquisición de escritura, no como captura automática correcta.
 
+### Hallazgos previos que condicionan el corte
+
+- El interceptor general y el flujo manual actuales aceptan el primer Bearer cuya URL contiene `fabric/`, sin distinguir lectura de escritura, método, host exacto, ruta, payload, frame, cuenta, tenant, aplicación ni permisos.
+- La captura incidental entra en `PersistTokenValues` como credencial `browser`. Si la metadata entrante es desconocida, el merge conserva metadata conocida anterior mientras reemplaza el token; por tanto, un token de lectura puede quedar etiquetado con permisos previos y degradar silenciosamente una credencial útil.
+- El flujo completo solicita Fabric al final y puede persistir esa captura genérica aunque Fabric no sea necesario para arrancar. Esto contradice el carácter bajo demanda de la capacidad.
+- `BrowserContext.Route` puede abortar antes de enviar una request y la versión instalada de Playwright permite bloquear Service Workers al crear un contexto persistente. Un listener `request` no ofrece esa garantía.
+- Una request exacta de escritura abortada demuestra que Teams eligió el candidato para ese intento, pero no demuestra por sí sola que el servidor lo habría autorizado. Los claims JWT son auxiliares y un token opaco o scopes genéricos no pueden convertirse en prueba contractual de escritura.
+
+### Contrato técnico previo aprobado
+
+#### Corte 7A — endurecimiento local antes de cualquier experimento
+
+- Eliminar la captura Fabric genérica del interceptor general y del recorrido completo. Fabric no participa en `allCaptured`, no se solicita al arrancar y nunca se persiste incidentalmente desde una request de lectura.
+- Mantener Fabric fuera del batch normal y de todo retry automático. Las mutaciones privadas conservan preflight `Web + Fabric`, no se reproducen y sólo pueden solicitar adquisición mediante una acción explícita.
+- El fallback manual permanece explícito y debe advertir que la acción puede llegar al servidor. No se lo presentará como captura segura ni se lo invocará desde el arranque.
+- Introducir una validación/persistencia Fabric específica en `internal/auth`; el camino genérico `PersistTokenValues` no aceptará nuevos valores Fabric. La validación exigirá token no vacío, procedencia específica, recurso, aplicación, cuenta y tenant compatibles cuando exista baseline, y permisos conocidos sin downgrade.
+- Una credencial de origen `fabric_write_intercept` sólo puede reemplazarse por otra de procedencia igual o más específica. Metadata desconocida no prueba capacidad de escritura ni puede heredar permisos viejos mientras cambia el token.
+
+#### Corte 7B — probe aislado, sólo después de autorización real independiente
+
+- Ejecutar únicamente en el laboratorio persistente autorizado, bajo el lock de perfil y sin coexistir con otro contexto. No usar el helper normal ni persistir `tokens.env` durante el probe.
+- Abrir un contexto dedicado con Service Workers bloqueados e instalar una única route de contexto antes de navegar. La route inspecciona todas las requests y aborta toda operación no idempotente dentro del namespace Fabric; nunca usa `Continue` para la escritura objetivo.
+- Reconocer sólo la operación elegida para el experimento: esquema `https`, host exacto `teams.microsoft.com`, puerto vacío, método, ruta normalizada y forma del payload esperados, iniciada desde una página oficial de Teams. Query strings, IDs y cuerpo se validan en memoria y nunca se registran.
+- El handler extrae el Bearer únicamente de la request objetivo y llama `Abort` antes de publicar el candidato. Debe observarse después `requestfailed` sin `response`; un error de aborto, una respuesta, una ruta desconocida o una request mutante fuera de cobertura invalidan toda la ejecución.
+- Mantener la route activa durante reintentos, navegación nueva y páginas adicionales del mismo contexto. Toda coincidencia se aborta; candidatos distintos o incompatibles invalidan la ejecución en lugar de elegir uno arbitrariamente.
+- Registrar sólo estado, método, host/ruta normalizados, cantidad de intentos, resultado del aborto, ausencia de respuesta, tiempos y clasificación. Nunca token, hash del token, cookies, headers, IDs, payload, URL completa, claims ni contenido de página.
+- Tomar evidencia de auditoría/estado del tenant antes y después mediante un procedimiento de sólo lectura y sanitizado. Cualquier cambio observado o imposibilidad de cerrar la auditoría rechaza el gate.
+
+#### Corte 7C — promoción o fallback
+
+- Mantener el candidato en cuarentena y el snapshot byte por byte intacto hasta cerrar contexto, confirmar todos los abortos y completar la auditoría sin cambios.
+- La selección por la request abortada prueba asociación con el intento de escritura, no autorización del servidor. Sólo se puede promover automáticamente si existe además evidencia contractual no mutante de permiso de escritura —claim documentado, endpoint oficial de introspección/dry-run o equivalente reproducible— y compatibilidad de identidad, tenant, aplicación y recurso.
+- Si el candidato es opaco, sólo expone permisos genéricos o no existe una prueba no mutante de autorización, el experimento se registra como `write_candidate_unverified`, no se persiste, no habilita Fabric y se conserva el fallback manual.
+- Si el gate completo se demuestra, persistir mediante la API Fabric específica contra la generación cargada y publicar disponibilidad sólo después del reemplazo atómico. `incompatible_credential`, `stale_generation` o fallo de persistencia conservan el snapshot previo y no anuncian éxito.
+
 ### Producto
 
-Fabric no bloquea el arranque. La administración privada muestra su dependencia y conserva el flujo manual como fallback. Un token de lectura no habilita ni reemplaza la credencial requerida por operaciones de escritura.
-
-### Experimento de interceptación
-
-- Contexto separado.
-- Service Workers bloqueados.
-- Route instalada antes de navegar.
-- Coincidencia sólo con la escritura objetivo.
-- Abort antes del servidor.
-- Repetición con reintentos, nueva navegación y múltiples páginas.
-- Verificación de auditoría del tenant.
-- Validación explícita de que el candidato corresponde al recurso, aplicación, cuenta y tenant esperados y autoriza la operación de escritura requerida; una credencial sólo de lectura se rechaza sin reemplazar el snapshot vigente.
-
-Se descarta la hipótesis si cualquier escritura llega al servidor, si el token aparece sólo después de permitirla o si el candidato sólo tiene permisos de lectura.
+Fabric no bloquea el arranque. La administración privada muestra su dependencia y conserva el flujo manual como fallback. Un token de lectura o un candidato de escritura no verificado no habilitan ni reemplazan la credencial requerida por operaciones mutantes.
 
 ### Gate de salida
 
-Sólo afirmar captura automática si existe evidencia conjunta de cero cambios en tenant, cobertura de reintentos y un token realmente asociado y autorizado para la operación de escritura requerida. Capturar un token de lectura no supera el gate. De lo contrario, mantener adquisición explícita.
+Antes de solicitar aprobación formal deben quedar documentadas estas evidencias:
+
+- el arranque, el batch normal y una captura completa nunca solicitan ni persisten Fabric incidentalmente;
+- una request Fabric de lectura no produce candidato ni modifica `tokens.env`;
+- recurso, aplicación, cuenta, tenant, procedencia o permisos incompatibles conservan el snapshot byte por byte;
+- el probe instala la route antes de navegar, bloquea Service Workers, aborta la operación exacta y sus reintentos y observa `requestfailed` sin ninguna `response`;
+- rutas, métodos, puertos, frames/orígenes, payloads o requests mutantes no cubiertos fallan de forma cerrada;
+- múltiples páginas, navegación nueva, cancelación y timeout cierran contexto/helper sin huérfanos y sin persistencia parcial;
+- auditoría y estado de tenant antes/después demuestran cero cambios; evidencia incompleta equivale a gate rechazado;
+- la prueba de autorización de escritura es independiente de la mera selección del token por Teams. Sin evidencia contractual no mutante, el resultado queda `write_candidate_unverified` y el fallback manual permanece;
+- tests focalizados de matcher, aborto, cuarentena, compatibilidad y persistencia; suite completa, race detector, `git diff --check` y LSP pasan;
+- revisión final Sol del código, evidencia sanitizada y matriz de aceptación completa.
+
+Se descarta la automatización si cualquier escritura obtiene respuesta, si el token aparece sólo después de permitirla, si el candidato sólo tiene permisos de lectura, si no puede demostrarse autorización de escritura sin mutar o si la auditoría no es concluyente.
 
 ---
 
@@ -1059,4 +1094,6 @@ Para cada etapa registrar en `auth-migration-lessons.md`:
 
 **Decimosexta revisión formal Sol — L157:** gate formal de Etapa 5 aprobado. La evidencia terminal queda exacta y aislada; no hubo cambios productivos en el último delta.
 
-**Próximo paso permitido:** esperar autorización explícita independiente antes de definir o ejecutar Etapa 7/Fabric. No ejecutar adquisiciones reales nuevas por la aprobación de Etapa 6.
+- [x] Contrato técnico previo de Etapa 7 definido por Sol en L167, sin autorizar implementación ni experimento.
+
+**Próximo paso permitido:** esperar autorización explícita independiente para implementar el corte local 7A con Luna. El probe real 7B requiere otra autorización explícita posterior; no ejecutar Fabric ni adquisiciones reales por la aprobación del contrato.
