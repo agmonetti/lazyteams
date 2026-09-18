@@ -2706,3 +2706,18 @@ Copiar esta plantilla y completar todos los campos aplicables:
 - **Acción siguiente:** realizar una revisión formal Sol del delta y del gate acumulado de 7A. No ejecutar 7B, adquisición Fabric real, navegador ni tráfico Microsoft aunque la revisión apruebe; requieren autorización explícita independiente.
 - **Riesgo residual:** Fabric permanece no automatizable y el fallback manual puede alcanzar el servidor. El rechazo cerrado es seguro pero no aporta adquisición automática.
 - **Gate:** gate técnico local repetido y aprobado; revisión formal Sol pendiente. 7B continúa bloqueado.
+
+### L174 — Tercera revisión formal Sol aprueba el gate del corte 7A
+
+- **Fecha:** 2026-09-18
+- **Etapa:** 7A
+- **Tipo:** revisión + decisión
+- **Pregunta o hipótesis:** ¿El rechazo cerrado y la evidencia productiva local de L172–L173 corrigen íntegramente L171 y permiten aprobar el corte 7A sin afirmar una autorización Fabric de escritura inexistente?
+- **Entorno no sensible:** rama `auth-fast-migration-research`; modelo `gpt-5.6-sol`; Go `1.26.6`; revisión estática del delta `63c1e62` y de sus callers; sin navegador, credenciales, Playwright real, tráfico Microsoft, probe, Fabric real ni acceso al tenant.
+- **Procedimiento:** revisar `run()`/`--renew fabric`, `registerFullInterceptor`, `captureLoop`, `fullRenewal`, `saveTokens`, `PersistTokenValues`, `ValidateFabricCandidate` y `PersistFabricCandidate`; comprobar las pruebas públicas, del interceptor real y de persistencia byte por byte; ejecutar `go test -count=1 ./internal/auth ./cmd/auth-helper`, `go test -count=20 -shuffle=on ./internal/auth ./cmd/auth-helper`, `go test -count=1 ./...`, `go test -race -count=1 ./...`, `git diff --check` y LSP sobre los cuatro archivos Go revisados.
+- **Resultado observado:** el interceptor general y la captura completa no producen ni solicitan Fabric; el batch normal no lo admite. El punto público `--renew fabric` conserva el fallback manual explícito, advierte que la acción puede llegar al servidor, retorna código no cero y no llama al guardado ni anuncia éxito. La persistencia genérica rechaza Fabric y la API específica falla cerrada hasta disponer de una política contractual reproducible; todos los rechazos conservan `tokens.env` byte por byte. Los tests focalizados, veinte órdenes aleatorios, suite, race y diff check pasan. LSP no reporta errores; sólo muestra hints y reglas auxiliares preexistentes/no bloqueantes.
+- **Evidencia:** commit `63c1e62`; tests listados en L173; ejecución formal del gate el 2026-09-18; diagnóstico LSP de `internal/auth/auth.go`, `internal/auth/auth_test.go`, `cmd/auth-helper/main.go` y `cmd/auth-helper/batch_test.go`.
+- **Impacto:** el corte 7A queda aprobado sin inventar recurso, aplicación o scopes y sin abrir persistencia prematura. Fabric continúa no automatizable y ninguna credencial no verificada puede habilitarlo o degradar el snapshot.
+- **Acción siguiente:** esperar autorización explícita independiente antes de ejecutar el probe aislado 7B. No abrir navegador, adquirir Fabric, generar tráfico Microsoft ni tocar el tenant por esta aprobación.
+- **Riesgo residual:** el fallback manual puede alcanzar el servidor; 7B todavía debe demostrar aborto previo al servidor, cobertura ante Service Workers/reintentos, cero respuestas mutantes y auditoría sin cambios. La selección de un candidato tampoco demostrará autorización de escritura sin la evidencia independiente exigida por 7C.
+- **Gate:** aprobado; corte 7A cerrado formalmente. 7B, Fabric real y toda adquisición nueva permanecen bloqueados.

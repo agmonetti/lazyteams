@@ -2,9 +2,9 @@
 
 ## Estado del documento
 
-- **Estado:** operativo; Etapa 0 cerrada; Etapa 1 ejecutada y su gate no aprobado; Etapas 2, 3, 4, 5 y 6 corregidas, validadas y aprobadas por revisión Sol. La decimosexta revisión formal cerró Etapa 5 en L157; Etapa 6 fue corregida en L164 y su revisión formal aprobó el gate en L165. El corte 7A fue corregido nuevamente y su gate técnico local quedó aprobado en L173 tras el rechazo formal L171; resta otra revisión formal Sol y el probe 7B sigue bloqueado hasta autorización explícita.
+- **Estado:** operativo; Etapa 0 cerrada; Etapa 1 ejecutada y su gate no aprobado; Etapas 2, 3, 4, 5 y 6 corregidas, validadas y aprobadas por revisión Sol. La decimosexta revisión formal cerró Etapa 5 en L157; Etapa 6 fue corregida en L164 y su revisión formal aprobó el gate en L165. El corte 7A fue corregido en L173 y su tercera revisión formal Sol aprobó el gate en L174; el probe 7B sigue bloqueado hasta autorización explícita.
 - **Migración:** núcleo de Etapas 2 y 3 implementado; el helper por lotes, protocolo incremental y lifecycle de Etapa 4 quedaron aprobados formalmente en L088; Graph comparte el recorrido headless-first, valida aplicación/scopes, evita el delta vacío, propaga el fallo de cierre, rechaza puertos explícitos y conserva `incompatible_credential`; L156 restaura los tres seams productivos y L157 aprueba la evidencia terminal aislada.
-- **Etapa actual:** Etapa 6 cerrada formalmente en L165. L173 corrige los bloqueantes de L171 manteniendo la persistencia Fabric cerrada y completa la evidencia productiva local; el gate técnico de 7A está aprobado, pero su revisión formal sigue pendiente. El probe 7B, Fabric y toda adquisición real nueva permanecen bloqueados hasta autorización explícita independiente.
+- **Etapa actual:** Etapa 6 cerrada formalmente en L165 y corte 7A cerrado formalmente en L174. La persistencia Fabric permanece cerrada hasta disponer de una política contractual de escritura reproducible. El probe 7B, Fabric real y toda adquisición nueva permanecen bloqueados hasta autorización explícita independiente.
 - **Documentos fuente:** `plan.md` y `auth-migration-research.md`.
 - **Alcance:** permitir abrir y empezar con consumo liviano, mejorar el arranque, la renovación y la coordinación de credenciales sin reemplazar la arquitectura híbrida actual.
 - **Fuera de alcance inicial:** nueva aplicación OAuth, reescritura de la TUI, WebSockets, renderizado y captura automática de Fabric sin prueba de seguridad.
@@ -870,7 +870,7 @@ La revisión Sol debe comprobar especialmente que sólo metadata contractual age
 
 ### Estado de autorización
 
-Sol definió el contrato técnico previo en L167. Etapa 7, su implementación, el probe, Fabric y toda adquisición real nueva permanecen bloqueados hasta autorización explícita independiente. La instrucción que reanudó el análisis con Sol autorizó cerrar este contrato, no ejecutar el experimento.
+Sol definió el contrato técnico previo en L167. El corte local 7A fue autorizado, corregido y aprobado formalmente en L174. El probe 7B, Fabric real y toda adquisición nueva permanecen bloqueados hasta autorización explícita independiente; la aprobación de 7A no autoriza ejecutar el experimento.
 
 ### Antecedente obligatorio
 
@@ -958,6 +958,15 @@ Se descarta la automatización si cualquier escritura obtiene respuesta, si el t
 - Persistencia genérica y específica conservan `tokens.env` byte por byte ante variantes de recurso, aplicación, cuenta, tenant, procedencia y permisos. No existe un caso válido de persistencia específica en 7A porque aún no existe metadata contractual que lo autorice.
 - Tests focalizados, veinte órdenes aleatorios, suite completa, race detector, `git diff --check` y LSP pasan. No se ejecutó navegador, adquisición real, probe ni tráfico Microsoft. Evidencia completa: L172–L173.
 - **Estado:** gate técnico local de 7A aprobado; revisión formal Sol pendiente. No ejecutar 7B, Fabric real ni adquisiciones nuevas.
+
+### Tercera revisión formal Sol del corte 7A — 2026-09-18
+
+- La revisión estática confirma que el interceptor general, `captureLoop` y `fullRenewal` ya no capturan ni solicitan Fabric incidentalmente; el batch normal continúa sin admitir Fabric.
+- `--renew fabric` mantiene el fallback manual explícito, advierte que la acción puede llegar al servidor y termina con código no cero sin llamar a persistencia ni anunciar sesión guardada.
+- `PersistTokenValues` rechaza Fabric genérico y `ValidateFabricCandidate`/`PersistFabricCandidate` fallan cerradas hasta que exista una política contractual de escritura reproducible. Los rechazos conservan `tokens.env` byte por byte para recurso, aplicación, cuenta, tenant, procedencia y permisos.
+- Tests focalizados, veinte órdenes aleatorios, suite completa, race detector y `git diff --check` pasan. LSP no reporta errores; conserva sólo hints y reglas auxiliares preexistentes/no bloqueantes. No se ejecutó navegador, adquisición real, probe ni tráfico Microsoft.
+- Evidencia y decisión completas: L172–L174 en `auth-migration-lessons.md`.
+- **Decisión del gate:** corte 7A aprobado formalmente. Esto no autoriza 7B, Fabric real, navegador, tráfico Microsoft ni adquisiciones nuevas; requieren autorización explícita independiente.
 
 ---
 
@@ -1125,6 +1134,6 @@ Para cada etapa registrar en `auth-migration-lessons.md`:
 - [x] Correcciones L169 implementadas y gate técnico local repetido; evidencia en L170.
 - [x] Segunda revisión formal Sol del corte 7A ejecutada; gate rechazado en L171.
 - [x] Correcciones L171 implementadas y gate técnico local repetido; evidencia en L172–L173.
-- [ ] Tercera revisión formal Sol del corte 7A ejecutada.
+- [x] Tercera revisión formal Sol del corte 7A ejecutada; gate aprobado en L174.
 
-**Próximo paso permitido:** realizar la tercera revisión formal Sol del delta y del gate acumulado de 7A. El probe real 7B requiere otra autorización explícita posterior; no ejecutar Fabric ni adquisiciones reales.
+**Próximo paso permitido:** esperar autorización explícita independiente para el probe aislado 7B. No ejecutar Fabric real, navegador, tráfico Microsoft ni adquisiciones nuevas sin esa autorización.
