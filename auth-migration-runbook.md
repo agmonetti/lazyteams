@@ -813,6 +813,17 @@ Antes de solicitar aprobación formal deben quedar documentadas estas evidencias
 
 La revisión Sol debe comprobar especialmente que sólo metadata contractual agenda renovación, que los reintentos están acotados por proveedor/generación, que red/permisos no se confunden con expiración y que ninguna mutación se repite automáticamente.
 
+### Corrección local posterior a L161 — 2026-09-18
+
+- Se corrigió la distinción entre intento ausente y generación cero mediante presencia explícita por clave `provider:generation`.
+- `tea.ResumeMsg` sólo libera intentos marcados como retryables por red/timeout; permisos, interacción e incompatibilidad no se reintentan automáticamente.
+- Los fallos de una renovación por generación quedan acotados a esa generación; una generación nueva puede volver a intentarse.
+- El terminal de lote vuelve a planificar únicamente proveedores elegibles según el mapa de intentos; no reintroduce loops para estados terminales.
+- Los replies de thread capturan y restauran `messageDraft` con parent/thread, y los errores de red/timeout advierten que el resultado mutante puede ser incierto antes de un reenvío manual.
+- `go test -count=1 ./...`, `go test -race -count=1 ./...`, `git diff --check` y LSP sobre seis archivos pasan. Evidencia detallada en L162 de `auth-migration-lessons.md`.
+- No se ejecutaron adquisiciones reales, no se abrió navegador y Etapa 7/Fabric continúan bloqueadas.
+- **Estado:** gate técnico local repetido y aprobado; pendiente de revisión formal Sol. No avanzar de etapa.
+
 ### Primera revisión formal Sol — 2026-09-18
 
 - Suite completa, race detector y `git diff --check` pasan; LSP no reporta errores, sólo hints no bloqueantes. No se ejecutó navegador, adquisición real ni Etapa 7.

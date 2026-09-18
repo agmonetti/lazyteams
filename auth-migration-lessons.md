@@ -2522,3 +2522,19 @@ Copiar esta plantilla y completar todos los campos aplicables:
 - **Acción siguiente:** con Luna, usar presencia explícita para distinguir intento ausente de generación cero; centralizar el gate de reintento para que timer/reanudación respeten la causa y sólo red pueda reconsiderarse automáticamente tras `ResumeMsg`; replantear proveedores restantes tras el terminal del lote; capturar y restaurar el draft de thread en su modo correcto; advertir incertidumbre sólo ante red/timeout; agregar las pruebas contractuales faltantes y repetir suite, race, diff check y LSP.
 - **Riesgo residual:** incluso después de corregir el gate local, la renovación Microsoft real seguirá sin demostrarse y requerirá autorización independiente.
 - **Gate:** rechazado; primera revisión formal Sol no aprobada. No ejecutar adquisiciones reales ni Etapa 7/Fabric.
+
+### L162 — Luna corrige los bloqueantes de Etapa 6 y repite el gate técnico
+
+- **Fecha:** 2026-09-18
+- **Etapa:** 6
+- **Tipo:** corrección + evidencia
+- **Pregunta o hipótesis:** ¿La renovación durante el uso distingue generación cero, respeta terminales no reintentables, permite recuperación de red sólo al reanudar y conserva replies fallidos sin replay automático?
+- **Entorno no sensible:** rama `auth-fast-migration-research`; modelo `gemini-3.8-flash` activo en la sesión de ejecución; Go `1.26.6`; Bubble Tea `v1.3.10`; sin credenciales, navegador, Playwright, tráfico Microsoft ni Etapa 7.
+- **Hallazgos:** L161 confirmó que `0` se usaba como sentinel de “sin intento”, que `ResumeMsg` borraba todos los intentos, que los terminales del lote no replanteaban proveedores restantes y que los replies perdían su draft. También faltaba una advertencia de resultado mutante incierto ante red/timeout.
+- **Cambios:** se agregó presencia explícita por clave `provider:generation`, incluyendo generación cero; los errores retryables se registran por generación y sólo `ResumeMsg` libera esos intentos; permisos, interacción e incompatibilidad permanecen bloqueados; los fallos de generación nueva vuelven a ser elegibles; el terminal de lote vuelve a planificar sólo lo que el gate de renovación permite; los replies guardan `messageDraft` con parent/thread y se restauran en modo reply, con advertencia para red/timeout; se añadieron pruebas de generación cero, clasificación retryable y restauración de reply.
+- **Evidencia:** `internal/ui/model.go`, `renewal.go`, `update.go`, `update_popups.go`, `renewal_test.go`, `draft_test.go`; `go test -count=1 ./...`; `go test -race -count=1 ./...`; `git diff --check`; diagnóstico LSP sobre seis archivos sin errores.
+- **Resultado observado:** suite completa, race detector, diff check y LSP pasan. No se ejecutaron adquisiciones reales ni se abrió navegador.
+- **Impacto:** el gate técnico local de Etapa 6 queda repetido y aprobado para revisión formal Sol; la política de no replay automático y la separación entre red/terminales no recuperables quedan implementadas localmente.
+- **Acción siguiente:** solicitar revisión formal Sol del gate de Etapa 6. No iniciar Etapa 7, Fabric ni adquisiciones reales.
+- **Riesgo residual:** la renovación real frente a Microsoft, la clasificación de errores específicos del proveedor y la experiencia completa de reanudación aún requieren validación formal/revisión; no se afirma recuperación universal.
+- **Gate:** gate técnico local aprobado; revisión formal Sol pendiente.
