@@ -39,6 +39,24 @@ func TestRestoreFailedDraftRequiresExplicitRetry(t *testing.T) {
 	}
 }
 
+func TestThreadReplyFailureRestoresReplyThroughUpdate(t *testing.T) {
+	input := textarea.New()
+	input.SetValue("reply text")
+	m := Model{
+		input:          input,
+		threadViewport: viewport.New(80, 10),
+		threadParentID: "parent",
+	}
+	updated, _ := m.Update(threadReplySendErrMsg{err: fmt.Errorf("network timeout")})
+	m = updated.(Model)
+	if m.input.Value() != "reply text" || m.threadParentID != "parent" || !m.isReplyTyping || !m.showThread {
+		t.Fatalf("reply state was not restored: text=%q parent=%q typing=%v thread=%v", m.input.Value(), m.threadParentID, m.isReplyTyping, m.showThread)
+	}
+	if !strings.Contains(m.threadViewport.View(), "Result may be uncertain") {
+		t.Fatal("reply timeout did not warn about uncertain result")
+	}
+}
+
 func TestMessageAndUploadFailuresWarnOnlyWhenResultIsUncertain(t *testing.T) {
 	for _, test := range []struct {
 		err         error

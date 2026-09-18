@@ -187,6 +187,28 @@ func TestOnly401QueuesReactiveRenewal(t *testing.T) {
 	}
 }
 
+func TestNewGenerationCanRenewAgainViaUpdate(t *testing.T) {
+	old := startBatchRenewal
+	launches := 0
+	startBatchRenewal = func(*Model, []string) tea.Cmd {
+		launches++
+		return func() tea.Msg { return nil }
+	}
+	t.Cleanup(func() { startBatchRenewal = old })
+
+	m := Model{client: graph.NewClient(&auth.CredentialSet{Generation: 5, Graph: auth.Credential{Token: "graph"}})}
+	updated, _ := m.Update(errMsg{err: fmt.Errorf("MS_GRAPH request failed: 401")})
+	m = updated.(Model)
+	m.tokenRenewing = false
+	m.tokenRenewalQueue = nil
+	m.client = graph.NewClient(&auth.CredentialSet{Generation: 6, Graph: auth.Credential{Token: "graph-new"}})
+	updated, _ = m.Update(errMsg{err: fmt.Errorf("MS_GRAPH request failed: 401")})
+	m = updated.(Model)
+	if launches != 2 {
+		t.Fatalf("helper launches across two generations = %d, want 2", launches)
+	}
+}
+
 func TestCredentialReadyPreservesActiveView(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
