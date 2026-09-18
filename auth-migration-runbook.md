@@ -2,9 +2,9 @@
 
 ## Estado del documento
 
-- **Estado:** operativo; Etapa 0 cerrada; Etapa 1 ejecutada y su gate no aprobado; Etapas 2, 3, 4 y 5 corregidas, validadas y aprobadas por revisión Sol. La decimosexta revisión formal cerró Etapa 5 en L157.
+- **Estado:** operativo; Etapa 0 cerrada; Etapa 1 ejecutada y su gate no aprobado; Etapas 2, 3, 4 y 5 corregidas, validadas y aprobadas por revisión Sol. La decimosexta revisión formal cerró Etapa 5 en L157; Etapa 6 fue autorizada y su contrato técnico quedó definido en L158–L159.
 - **Migración:** núcleo de Etapas 2 y 3 implementado; el helper por lotes, protocolo incremental y lifecycle de Etapa 4 quedaron aprobados formalmente en L088; Graph comparte el recorrido headless-first, valida aplicación/scopes, evita el delta vacío, propaga el fallo de cierre, rechaza puertos explícitos y conserva `incompatible_credential`; L156 restaura los tres seams productivos y L157 aprueba la evidencia terminal aislada.
-- **Etapa actual:** Etapa 5 aprobada formalmente el 2026-09-18 en L157. No se autorizó ninguna adquisición real nueva ni trabajo de Etapas 6–7.
+- **Etapa actual:** Etapa 6 autorizada explícitamente el 2026-09-18; contrato técnico previo definido por Sol en L159. La implementación corresponde a Luna. No se autorizó ninguna adquisición real nueva ni trabajo de Etapa 7.
 - **Documentos fuente:** `plan.md` y `auth-migration-research.md`.
 - **Alcance:** permitir abrir y empezar con consumo liviano, mejorar el arranque, la renovación y la coordinación de credenciales sin reemplazar la arquitectura híbrida actual.
 - **Fuera de alcance inicial:** nueva aplicación OAuth, reescritura de la TUI, WebSockets, renderizado y captura automática de Fabric sin prueba de seguridad.
@@ -748,18 +748,70 @@ La revisión Sol debe comprobar especialmente que el camino headless precede al 
 
 Evitar que una expiración habitual obligue a salir de la TUI.
 
-### Reglas
+### Estado de autorización
 
-- Renovar anticipadamente sólo con vencimiento confiable.
-- Sin vencimiento confiable, reaccionar a rechazo real del proveedor o política acotada; no lanzar consultas duplicadas globales.
-- Replanificar después de suspensión o cambio de conectividad.
-- No reintentar indefinidamente permisos insuficientes.
-- No repetir mutaciones cuya respuesta se perdió.
-- Mantener drafts y operaciones en curso fuera de la ruta de reemplazo de credenciales.
+Etapa 6 fue autorizada explícitamente por el usuario el 2026-09-18 con Sol activo. Sol cerró el contrato técnico previo en L159. La implementación y sus pruebas corresponden a Luna. No se autorizan adquisiciones reales nuevas, Fabric ni trabajo de Etapa 7.
+
+### Hallazgos previos que condicionan el corte
+
+- `Credential.ExpiresAt` ya existe y se persiste, pero la adquisición actual no deriva `exp` del JWT ni dispone hoy de un vencimiento contractual. Por lo tanto el camino productivo actual debe seguir siendo reactivo; un `ExpiresAt` cero nunca agenda renovación.
+- La TUI ya renueva algunos proveedores ante un 401 real y no ejecuta el antiguo `CheckAllTokens()` al arrancar. Etapa 6 no reintroducirá probes globales ni requests duplicadas.
+- `tokenRenewFailures` bloquea un proveedor por el resto de la sesión, sin distinguir generación ni causa. Eso evita loops, pero también impide recuperarse de una falla transitoria.
+- Los envíos y replies limpian el editor antes de conocer el resultado. No se reintentan automáticamente, pero un error puede perder el draft local. Uploads y demás mutaciones tampoco deben repetirse tras una respuesta perdida.
+- Bubble Tea ya ofrece `tea.ResumeMsg`; los polls existentes permiten observar recuperación de red. No se necesita un daemon, watcher de red ni ticker global nuevo.
+
+### Contrato técnico aprobado previo a ejecución
+
+#### Planificación por vencimiento confiable
+
+- La planificación será una función pura sobre el snapshot vigente y `time.Time`: sólo considera proveedores con token presente y `ExpiresAt` contractual no cero. Nunca decodifica `exp` ni inventa vencimientos.
+- Se usará un margen fijo de cinco minutos. Si el vencimiento ya está dentro del margen, el proveedor queda vencido ahora; si no, se agenda únicamente el vencimiento confiable más próximo mediante un `tea.Tick`.
+- El mensaje del timer lleva proveedor, generación y `ExpiresAt`. Al dispararse vuelve a leer el snapshot y se descarta si cambió cualquiera de esos valores; un timer obsoleto nunca inicia un helper.
+- Graph, Web, Notif y EDU usan la cola y lifecycle batch ya aprobados. Web y Notif continúan deduplicados en una sola adquisición. Fabric queda excluido de toda renovación anticipada.
+- Tras `credential_ready` y `ReloadCredentials`, la TUI recalcula el próximo vencimiento. No se agrega un scheduler paralelo ni estado persistido adicional.
+
+#### Renovación reactiva y límites de reintento
+
+- Sin vencimiento contractual, sólo un rechazo de autenticación real del proveedor puede iniciar renovación. Ausencia, 403/permiso insuficiente, 404, timeout y fallo de red no se convierten en expiración.
+- El estado de intento se vincula a proveedor y generación observada. Para una misma generación existe como máximo un intento automático por vencimiento/rechazo; una nueva generación habilita otro intento.
+- `permission_denied`, `not_applicable`, `incompatible_credential` e `interaction_required` no generan reintentos automáticos. La UI conserva el estado concreto y espera acción del usuario cuando corresponda.
+- `network_unavailable` conserva snapshot, sesión y cola sin anunciar éxito. No crea un loop de helper: sólo `tea.ResumeMsg` o una acción explícita posterior puede volver a planificar esa misma generación.
+- Los éxitos de requests normales vuelven a marcar la capacidad `ready`; no se añade un probe de conectividad. Los polls existentes son la señal de recuperación.
+
+#### Suspensión, reanudación y reemplazo
+
+- `tea.ResumeMsg` relee el snapshot, invalida timers viejos y recalcula vencimientos desde el reloj actual. Si durante la suspensión venció metadata confiable, encola una sola renovación.
+- La publicación del snapshot sigue siendo atómica. Requests ya iniciadas conservan el puntero que cargaron; el reemplazo no cancela comandos, no reinicia vistas y no modifica texto, selección, archivos pendientes ni popups.
+- No se introduce lógica específica por sistema operativo ni listeners de conectividad.
+
+#### Mutaciones y drafts
+
+- Ningún envío, reply, reacción, edit, delete, upload, submit, cambio administrativo o presencia se repite automáticamente después de renovar, incluso si el error fue 401.
+- Los comandos mutantes pueden solicitar renovación para uso futuro sólo ante rechazo de autenticación inequívoco; su resultado original permanece fallido y requiere una nueva acción explícita del usuario.
+- Texto, reply e imágenes pendientes de un mensaje se conservan/restauran localmente cuando el envío falla. Si la respuesta se perdió por red o timeout, la UI debe advertir que el resultado es incierto antes de permitir un reenvío manual.
+- Uploads y demás mutaciones conservan su estado/error visible, pero no se guardan payloads duplicados ni se crea una cola de replay.
+
+#### Alcance excluido
+
+- No se obtiene `ExpiresAt` desde JWT, no se agrega refresh token directo ni app OAuth propia.
+- No se agrega daemon, navegador permanente, watcher de red, backoff genérico ni cola durable de operaciones.
+- No se modifica Fabric ni se ejecutan adquisiciones reales nuevas.
 
 ### Gate de salida
 
-La expiración normal actualiza la credencial y recupera la capacidad sin reinicio; red interrumpida conserva sesión y no anuncia éxito falso; mensajes/uploads no se duplican.
+Antes de solicitar aprobación formal deben quedar documentadas estas evidencias:
+
+- snapshot con vencimiento contractual futuro: agenda una sola renovación dentro del margen; snapshot sin `ExpiresAt`: no agenda ninguna;
+- reemplazo de generación antes de disparar el timer: el mensaje viejo se ignora y el nuevo snapshot se replantea;
+- `tea.ResumeMsg` después de cruzar un vencimiento confiable encola exactamente una renovación sin reiniciar la TUI;
+- rechazo 401 de un recorrido de lectura encola el proveedor correcto; 403, red y timeout no se clasifican como expiración ni lanzan helper;
+- una misma generación no entra en loop; una generación nueva permite otro intento; `network_unavailable` sólo se reconsidera por reanudación o acción explícita;
+- `credential_ready` recarga el snapshot, recupera la capacidad y sus datos sin reiniciar ni alterar la vista activa;
+- mensaje/reply fallido conserva texto, reply e imágenes pendientes y nunca se reenvía automáticamente; upload o mutación con respuesta perdida tampoco se duplica;
+- tests focalizados de planificación, timer obsoleto, reanudación, límites de intento y drafts; suite completa, race detector, `git diff --check` y LSP pasan;
+- cualquier recorrido real permanece fuera del gate local hasta autorización adicional independiente.
+
+La revisión Sol debe comprobar especialmente que sólo metadata contractual agenda renovación, que los reintentos están acotados por proveedor/generación, que red/permisos no se confunden con expiración y que ninguna mutación se repite automáticamente.
 
 ---
 
@@ -914,6 +966,10 @@ Para cada etapa registrar en `auth-migration-lessons.md`:
 - [x] Decimoquinta revisión formal Sol de Etapa 5 ejecutada; gate rechazado en L155.
 - [x] Cleanup de los tres seams corregido por Sol y gate técnico repetido; evidencia en L156.
 - [x] Decimosexta revisión formal Sol ejecutada; gate formal de Etapa 5 aprobado en L157.
+- [x] Etapa 6 autorizada explícitamente por el usuario en L158.
+- [x] Contrato técnico previo de Etapa 6 definido por Sol en L159.
+- [ ] Implementación local y gate técnico de Etapa 6 ejecutados por Luna.
+- [ ] Revisión formal Sol del gate de Etapa 6 aprobada.
 
 **Undécima revisión formal Sol — L147:** suite, race, diff check y LSP pasan. La clasificación incompatible quedó corregida, pero el test público L146 sustituye el runner antes del batch y no atraviesa la transición/propagación/cleanup productivos. También falta afirmar la secuencia terminal incompatible del protocolo.
 
@@ -937,4 +993,4 @@ Para cada etapa registrar en `auth-migration-lessons.md`:
 
 **Decimosexta revisión formal Sol — L157:** gate formal de Etapa 5 aprobado. La evidencia terminal queda exacta y aislada; no hubo cambios productivos en el último delta.
 
-**Próximo paso permitido:** esperar autorización explícita independiente antes de iniciar Etapa 6 o ejecutar una adquisición real nueva. Etapa 7 y Fabric permanecen bloqueados.
+**Próximo paso permitido:** implementar con Luna el contrato técnico de Etapa 6 definido en L159, en commits convencionales pequeños y coherentes. No ejecutar adquisiciones reales nuevas ni iniciar Etapa 7 o Fabric.

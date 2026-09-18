@@ -2461,3 +2461,34 @@ Copiar esta plantilla y completar todos los campos aplicables:
 - **Acción siguiente:** esperar autorización explícita independiente del usuario antes de iniciar Etapa 6 o cualquier recorrido real adicional.
 - **Riesgo residual:** la recuperabilidad headless depende de Microsoft, tenant, SSO y caché MSAL; `interaction_required` continúa siendo el fallback contractual.
 - **Gate:** aprobado; Etapa 5 cerrada formalmente. Etapas 6–7 permanecen bloqueadas hasta autorización explícita.
+
+### L158 — Usuario autoriza Etapa 6 con Sol activo y exige commits granulares
+
+- **Fecha:** 2026-09-18
+- **Etapa:** 6
+- **Tipo:** autorización + restricción
+- **Pregunta o hipótesis:** ¿Puede comenzar la definición y ejecución de Renovación durante el uso después del cierre formal de Etapa 5?
+- **Entorno no sensible:** rama `auth-fast-migration-research`; modelo `gpt-5.6-sol`; árbol limpio al inicio; sin credenciales, navegador ni adquisición Microsoft.
+- **Procedimiento:** confirmar el modelo activo y la rama; releer el estado contractual de L157 y la política de modelos/versionado; inspeccionar el flujo vigente de renovación, snapshots, errores, timers y operaciones mutantes antes de definir el corte.
+- **Resultado observado:** el usuario autorizó explícitamente comenzar Etapa 6. También estableció como requisito mantener commits Conventional Commits pequeños, coherentes e informativos, siguiendo la granularidad histórica y sin agrupar toda la etapa en un único commit.
+- **Evidencia:** instrucción directa del usuario “sol activo, comienza”; `PI_MODEL=gpt-5.6-sol`; rama `auth-fast-migration-research`.
+- **Impacto:** Sol puede cerrar el contrato técnico de Etapa 6. La implementación bien definida deberá pasar a Luna y dividirse por responsabilidad; Etapa 7 y toda adquisición real nueva permanecen bloqueadas.
+- **Acción siguiente:** documentar el contrato técnico y gate de Etapa 6; confirmar el diff y crear un commit documental convencional independiente.
+- **Riesgo residual:** la autorización de Etapa 6 no autoriza Fabric, una adquisición real ni Etapa 7.
+- **Gate:** autorización de inicio concedida; implementación pendiente del contrato previo.
+
+### L159 — Sol define el contrato técnico de Etapa 6
+
+- **Fecha:** 2026-09-18
+- **Etapa:** 6
+- **Tipo:** hallazgo + arquitectura + decisión
+- **Pregunta o hipótesis:** ¿Cuál es el corte mínimo que permite renovar durante el uso sin inventar vencimientos, repetir mutaciones ni introducir loops o servicios permanentes?
+- **Entorno no sensible:** rama `auth-fast-migration-research`; modelo `gpt-5.6-sol`; revisión estática de `internal/auth`, `internal/graph` e `internal/ui`; Bubble Tea `v1.3.10`; sin credenciales, Firefox, Playwright ni tráfico Microsoft.
+- **Procedimiento:** revisar `Credential`, `credentialFromToken`, `Model`, `Init`, `Update`, `queueTokenRenewal`, `startNextTokenRenewal`, `detectExpiredToken`, los comandos de envío y la disponibilidad de `tea.ResumeMsg`; comprobar los callers de renovación y el antiguo `CheckAllTokens`.
+- **Resultado observado:** `Credential.ExpiresAt` existe y se persiste, pero la adquisición actual no deriva `exp` ni obtiene vencimiento contractual, por lo que hoy la renovación debe seguir siendo reactiva. `CheckAllTokens` ya no se invoca al iniciar, así que no hay probe global que conservar. La TUI renueva algunos 401, pero `tokenRenewFailures` bloquea por sesión sin distinguir generación/causa. Los envíos y replies no se repiten, pero limpian texto, reply e imágenes antes de conocer el resultado y pueden perder el draft. Bubble Tea aporta `tea.ResumeMsg`; los polls existentes bastan como señal de recuperación de red, sin watcher adicional.
+- **Evidencia:** `internal/auth/auth.go:30-42,117-148`; `internal/ui/model.go:200-469,582-598`; `internal/ui/commands.go:231-246,662-671,1257-1281,1459-1486`; `internal/ui/update.go:125-301,1300-1421`; `internal/ui/update_insert.go:90-142`; `internal/graph/auth_check.go:13-59`; Bubble Tea `tea.go` declara `ResumeMsg`.
+- **Impacto:** el contrato usa planificación pura sólo para `ExpiresAt` contractual, timer etiquetado por generación/proveedor/vencimiento, máximo un intento automático por proveedor/generación, replanificación en `tea.ResumeMsg`, lifecycle batch existente y cero replay de mutaciones. Los drafts de mensajes/replies se restauran para reenvío manual; red, permisos e interacción conservan estados distintos y no generan loops.
+- **Decisión:** usar margen fijo de cinco minutos y un único `tea.Tick` para el vencimiento confiable más próximo; descartar timers obsoletos al releer el snapshot; no decodificar JWT, no crear scheduler paralelo, daemon, watcher de red, backoff genérico ni cola durable. Fabric continúa excluido.
+- **Acción siguiente:** con Luna, implementar en commits convencionales separados: (1) planificación/timers y límites por generación; (2) reanudación, clasificación y recuperación de capacidades; (3) preservación de drafts sin replay; (4) evidencia y documentación del gate. Repetir tests focalizados, suite, race, diff check y LSP antes de revisión Sol.
+- **Riesgo residual:** mientras ninguna adquisición informe `ExpiresAt` contractual, el camino anticipado permanecerá inactivo por diseño y la recuperación real seguirá dependiendo de rechazos del proveedor. La recuperabilidad Microsoft real continúa fuera del gate local.
+- **Gate:** contrato técnico previo aprobado por Sol; implementación de Etapa 6 pendiente de Luna. No ejecutar adquisición real ni Etapa 7.
