@@ -188,22 +188,108 @@ func loadFromDirWithoutEnv(dir string) (*CredentialSet, error) {
 
 func TestValidateGraphCandidateRequiresOriginAndBootstrapPermissions(t *testing.T) {
 	token := jwtToken(map[string]interface{}{
-		"aud": "https://graph.microsoft.com", "oid": "acct", "tid": "tenant", "appid": "client",
+		"aud": "https://graph.microsoft.com", "oid": "acct", "tid": "tenant", "appid": GraphExplorerClientID,
 		"scp": "User.Read Team.ReadBasic.All Channel.ReadBasic.All Chat.ReadBasic",
 	})
-	candidate := GraphCandidate{Token: token, RequestURL: "https://graph.microsoft.com/v1.0/me", PageURL: "https://developer.microsoft.com/en-us/graph/graph-explorer", ClientID: "client"}
+	candidate := GraphCandidate{Token: token, RequestURL: "https://graph.microsoft.com/v1.0/me", PageURL: "https://developer.microsoft.com/en-us/graph/graph-explorer", ClientID: GraphExplorerClientID}
 	got, err := ValidateGraphCandidate(candidate, nil)
 	if err != nil || got.Origin != "graph_explorer" {
 		t.Fatalf("valid candidate rejected: %#v, %v", got, err)
+	}
+	candidate.RequestURL = "https://graph.microsoft.com:443/v1.0/me"
+	if _, err := ValidateGraphCandidate(candidate, nil); err == nil {
+		t.Fatal("explicit Graph host port accepted")
 	}
 	candidate.RequestURL = "https://evil.example/graph.microsoft.com/v1.0/me"
 	if _, err := ValidateGraphCandidate(candidate, nil); err == nil {
 		t.Fatal("untrusted host accepted")
 	}
 	candidate.RequestURL = "https://graph.microsoft.com/v1.0/me"
+	candidate.PageURL = "https://developer.microsoft.com:443/en-us/graph/graph-explorer"
+	if _, err := ValidateGraphCandidate(candidate, nil); err == nil {
+		t.Fatal("explicit Graph Explorer host port accepted")
+	}
 	candidate.PageURL = "https://teams.microsoft.com/"
 	if _, err := ValidateGraphCandidate(candidate, nil); err == nil {
 		t.Fatal("untrusted origin accepted")
+	}
+}
+
+func TestPersistGraphCandidateReturnsPersistedGeneration(t *testing.T) {
+	dir := t.TempDir()
+	if err := PersistCredentialSet(dir, &CredentialSet{Version: schemaVersion, Generation: 4}); err != nil {
+		t.Fatal(err)
+	}
+	candidate := GraphCandidate{
+		Token:      jwtToken(map[string]interface{}{"aud": "https://graph.microsoft.com", "oid": "acct", "tid": "tenant", "appid": GraphExplorerClientID, "scp": "User.Read Team.ReadBasic.All Channel.ReadBasic.All Chat.ReadBasic"}),
+		RequestURL: "https://graph.microsoft.com/v1.0/me", PageURL: "https://developer.microsoft.com/en-us/graph/graph-explorer", ClientID: GraphExplorerClientID,
+	}
+	got, err := PersistGraphCandidate(dir, candidate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Generation != 5 || got.Graph.Token == "" {
+		t.Fatalf("persisted snapshot = generation %d, graph token present=%t", got.Generation, got.Graph.Token != "")
+	}
+}
+
+func TestPersistTokenValuesDoesNotAdvanceGenerationForEmptyDelta(t *testing.T) {
+	dir := t.TempDir()
+	before := &CredentialSet{Version: schemaVersion, Generation: 4, Graph: Credential{Token: "stable"}}
+	if err := PersistCredentialSet(dir, before); err != nil {
+		t.Fatal(err)
+	}
+	got, err := PersistTokenValues(dir, TokenValues{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Generation != before.Generation || got.Graph.Token != before.Graph.Token {
+		t.Fatalf("empty delta changed snapshot: generation=%d token=%q", got.Generation, got.Graph.Token)
+	}
+}
+
+func TestValidateGraphCandidateRequiresGraphExplorerClientID(t *testing.T) {
+	candidate := GraphCandidate{
+		Token:      jwtToken(map[string]interface{}{"aud": "https://graph.microsoft.com", "oid": "acct", "tid": "tenant", "appid": GraphExplorerClientID, "scp": "User.Read Team.ReadBasic.All Channel.ReadBasic.All Chat.ReadBasic"}),
+		RequestURL: "https://graph.microsoft.com/v1.0/me", PageURL: "https://developer.microsoft.com/en-us/graph/graph-explorer", ClientID: "wrong-client",
+	}
+	if _, err := ValidateGraphCandidate(candidate, nil); err == nil {
+		t.Fatal("candidate from an unknown client was accepted")
+	}
+}
+
+func TestPersistGraphCandidateSkipsInvalidThenAcceptsValid(t *testing.T) {
+	dir := t.TempDir()
+	if err := PersistCredentialSet(dir, &CredentialSet{Version: schemaVersion, Generation: 4, Graph: Credential{Token: "stable"}}); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "tokens.env")
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	invalid := GraphCandidate{
+		Token:      jwtToken(map[string]interface{}{"aud": "https://graph.microsoft.com", "oid": "acct", "tid": "tenant", "appid": GraphExplorerClientID, "scp": "User.Read"}),
+		RequestURL: "https://graph.microsoft.com/v1.0/me", PageURL: "https://developer.microsoft.com/en-us/graph/graph-explorer", ClientID: GraphExplorerClientID,
+	}
+	if _, err := PersistGraphCandidate(dir, invalid); err == nil {
+		t.Fatal("invalid candidate was persisted")
+	}
+	afterInvalid, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(afterInvalid) != string(before) {
+		t.Fatal("invalid candidate changed the snapshot")
+	}
+	valid := invalid
+	valid.Token = jwtToken(map[string]interface{}{"aud": "https://graph.microsoft.com", "oid": "acct", "tid": "tenant", "appid": GraphExplorerClientID, "scp": "User.Read Team.ReadBasic.All Channel.ReadBasic.All Chat.ReadBasic"})
+	got, err := PersistGraphCandidate(dir, valid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Generation != 5 || got.Graph.Token == "stable" {
+		t.Fatalf("valid candidate was not persisted: generation=%d token=%q", got.Generation, got.Graph.Token)
 	}
 }
 
@@ -214,13 +300,33 @@ func TestPersistGraphCandidateRejectsDowngradeWithoutChangingFile(t *testing.T) 
 		t.Fatal(err)
 	}
 	before, _ := os.ReadFile(filepath.Join(dir, "tokens.env"))
-	candidate := GraphCandidate{Token: jwtToken(map[string]interface{}{"aud": "https://graph.microsoft.com", "oid": "acct", "tid": "tenant", "appid": "client", "scp": "User.Read Team.ReadBasic.All Channel.ReadBasic.All Chat.ReadBasic"}), RequestURL: "https://graph.microsoft.com/v1.0/me", PageURL: "https://developer.microsoft.com/en-us/graph/graph-explorer", ClientID: "client"}
+	candidate := GraphCandidate{Token: jwtToken(map[string]interface{}{"aud": "https://graph.microsoft.com", "oid": "acct", "tid": "tenant", "appid": GraphExplorerClientID, "scp": "User.Read Team.ReadBasic.All Channel.ReadBasic.All Chat.ReadBasic"}), RequestURL: "https://graph.microsoft.com/v1.0/me", PageURL: "https://developer.microsoft.com/en-us/graph/graph-explorer", ClientID: GraphExplorerClientID}
 	if _, err := PersistGraphCandidate(dir, candidate); err == nil {
 		t.Fatal("candidate with unknown baseline permissions should not erase known permissions")
 	}
 	after, _ := os.ReadFile(filepath.Join(dir, "tokens.env"))
 	if string(before) != string(after) {
 		t.Fatal("rejected candidate changed snapshot")
+	}
+}
+
+func TestMetadataCompatibleAllowsGraphExplorerOriginUpgrade(t *testing.T) {
+	old := Credential{Origin: "browser"}
+	if !MetadataCompatible(old, Credential{Origin: "graph_explorer"}) {
+		t.Fatal("graph explorer should strengthen legacy browser origin")
+	}
+	if MetadataCompatible(Credential{Origin: "graph_explorer"}, Credential{Origin: "browser"}) {
+		t.Fatal("generic browser must not degrade graph explorer origin")
+	}
+}
+
+func TestValidateGraphCandidateRejectsUnknownBaselineIdentity(t *testing.T) {
+	token := jwtToken(map[string]interface{}{
+		"aud": "https://graph.microsoft.com", "scp": "User.Read Team.ReadBasic.All Channel.ReadBasic.All Chat.ReadBasic",
+	})
+	candidate := GraphCandidate{Token: token, RequestURL: "https://graph.microsoft.com/v1.0/me", PageURL: "https://developer.microsoft.com/en-us/graph/graph-explorer"}
+	if _, err := ValidateGraphCandidate(candidate, &Credential{Account: "known"}); err == nil {
+		t.Fatal("candidate with unknown account metadata replaced known identity")
 	}
 }
 

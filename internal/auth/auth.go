@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -19,6 +20,11 @@ import (
 const (
 	metadataKey   = "LAZYTEAMS_CREDENTIAL_METADATA"
 	schemaVersion = 1
+)
+
+var (
+	ErrStaleGeneration        = errors.New("stale credential generation")
+	ErrIncompatibleCredential = errors.New("incompatible credential")
 )
 
 // Credential contains one secret and only metadata that can be safely used to
@@ -299,6 +305,8 @@ func atomicWrite(path string, content []byte) error {
 }
 
 // GraphCandidate describes a token observed on a Graph Explorer request.
+const GraphExplorerClientID = "de8bc8b5-d9f9-48b1-a8ad-b748da725064"
+
 type GraphCandidate struct {
 	Token      string
 	RequestURL string
@@ -309,20 +317,20 @@ type GraphCandidate struct {
 // ValidateGraphCandidate validates the untrusted acquisition boundary before persistence.
 func ValidateGraphCandidate(candidate GraphCandidate, baseline *Credential) (Credential, error) {
 	u, err := url.Parse(candidate.RequestURL)
-	if err != nil || u.Scheme != "https" || u.Hostname() != "graph.microsoft.com" {
-		return Credential{}, errors.New("graph request is not the official HTTPS endpoint")
+	if err != nil || u.Scheme != "https" || u.Host != "graph.microsoft.com" {
+		return Credential{}, fmt.Errorf("%w: graph request is not the official HTTPS endpoint", ErrIncompatibleCredential)
 	}
 	page, err := url.Parse(candidate.PageURL)
-	if err != nil || page.Scheme != "https" || page.Hostname() != "developer.microsoft.com" || !strings.Contains(page.Path, "/graph/graph-explorer") {
-		return Credential{}, errors.New("graph token did not originate in Graph Explorer")
+	if err != nil || page.Scheme != "https" || page.Host != "developer.microsoft.com" || !strings.Contains(page.Path, "/graph/graph-explorer") {
+		return Credential{}, fmt.Errorf("%w: graph token did not originate in Graph Explorer", ErrIncompatibleCredential)
 	}
 	c := credentialFromToken(candidate.Token, time.Now().UTC())
 	c.Origin = "graph_explorer"
 	if c.Resource != "https://graph.microsoft.com" && c.Resource != "00000003-0000-0000-c000-000000000000" {
-		return Credential{}, errors.New("graph token has incompatible audience")
+		return Credential{}, fmt.Errorf("%w: graph token has incompatible audience", ErrIncompatibleCredential)
 	}
-	if candidate.ClientID != "" && c.Application != candidate.ClientID {
-		return Credential{}, errors.New("graph token has incompatible application")
+	if candidate.ClientID != GraphExplorerClientID || c.Application != GraphExplorerClientID {
+		return Credential{}, fmt.Errorf("%w: graph token has incompatible application", ErrIncompatibleCredential)
 	}
 	required := map[string]bool{"User.Read": false, "Team.ReadBasic.All": false, "Channel.ReadBasic.All": false}
 	chat := false
@@ -336,14 +344,21 @@ func ValidateGraphCandidate(candidate GraphCandidate, baseline *Credential) (Cre
 	}
 	for _, ok := range required {
 		if !ok {
-			return Credential{}, errors.New("graph token lacks bootstrap permissions")
+			return Credential{}, fmt.Errorf("%w: graph token lacks bootstrap permissions", ErrIncompatibleCredential)
 		}
 	}
 	if !chat {
-		return Credential{}, errors.New("graph token lacks chat permission")
+		return Credential{}, fmt.Errorf("%w: graph token lacks chat permission", ErrIncompatibleCredential)
 	}
-	if baseline != nil && !MetadataCompatible(*baseline, c) {
-		return Credential{}, errors.New("graph token is incompatible with the current credential")
+	if baseline != nil {
+		for name, value := range map[string]string{"account": c.Account, "tenant": c.Tenant, "application": c.Application} {
+			if value == "" {
+				return Credential{}, fmt.Errorf("%w: graph token has unknown %s", ErrIncompatibleCredential, name)
+			}
+		}
+		if !MetadataCompatible(*baseline, c) {
+			return Credential{}, fmt.Errorf("%w with the current credential", ErrIncompatibleCredential)
+		}
 	}
 	return c, nil
 }
@@ -377,9 +392,19 @@ type CredentialDelta struct {
 	Fabric         *Credential
 }
 
+func credentialSetEqual(a, b *CredentialSet) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	ac, bc := clone(a), clone(b)
+	ac.Generation, bc.Generation = 0, 0
+	ac.AcquiredAt, bc.AcquiredAt = time.Time{}, time.Time{}
+	return reflect.DeepEqual(ac, bc)
+}
+
 func mergeCredential(old Credential, incoming Credential) (Credential, error) {
 	if !MetadataCompatible(old, incoming) {
-		return Credential{}, errors.New("incompatible credential metadata")
+		return Credential{}, fmt.Errorf("%w metadata", ErrIncompatibleCredential)
 	}
 	out := old
 	if incoming.Token != "" {
@@ -419,7 +444,7 @@ func PersistDelta(configDir string, delta CredentialDelta) (*CredentialSet, erro
 		return nil, err
 	}
 	if set.Generation != delta.BaseGeneration {
-		return nil, fmt.Errorf("stale credential generation: have %d, want %d", set.Generation, delta.BaseGeneration)
+		return nil, fmt.Errorf("%w: have %d, want %d", ErrStaleGeneration, set.Generation, delta.BaseGeneration)
 	}
 	next := clone(set)
 	targets := []struct {
@@ -438,6 +463,9 @@ func PersistDelta(configDir string, delta CredentialDelta) (*CredentialSet, erro
 			return nil, mergeErr
 		}
 		*item.target = merged
+	}
+	if credentialSetEqual(set, next) {
+		return set, nil
 	}
 	next.Generation++
 	next.AcquiredAt = time.Now().UTC()
@@ -526,8 +554,11 @@ func ParseUserNameFromToken(token string) string {
 // never erases known values.
 func MetadataCompatible(old, incoming Credential) bool {
 	pairs := [][2]string{{old.Account, incoming.Account}, {old.Tenant, incoming.Tenant}, {old.Origin, incoming.Origin}, {old.Resource, incoming.Resource}, {old.Application, incoming.Application}}
-	for _, pair := range pairs {
+	for i, pair := range pairs {
 		if pair[0] != "" && pair[1] != "" && pair[0] != pair[1] {
+			if i == 2 && pair[0] == "browser" && pair[1] == "graph_explorer" {
+				continue
+			}
 			return false
 		}
 	}
@@ -552,5 +583,3 @@ func SortedPermissions(c Credential) []string {
 	sort.Strings(out)
 	return out
 }
-
-
