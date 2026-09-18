@@ -2,9 +2,9 @@
 
 ## Estado del documento
 
-- **Estado:** operativo; Etapa 0 cerrada; Etapa 1 ejecutada y su gate no aprobado; Etapas 2, 3, 4 y 5 corregidas, validadas y aprobadas por revisión Sol. La decimosexta revisión formal cerró Etapa 5 en L157; Etapa 6 fue autorizada e implementada localmente en L160, pero su primera revisión formal Sol rechazó el gate en L161.
+- **Estado:** operativo; Etapa 0 cerrada; Etapa 1 ejecutada y su gate no aprobado; Etapas 2, 3, 4 y 5 corregidas, validadas y aprobadas por revisión Sol. La decimosexta revisión formal cerró Etapa 5 en L157; Etapa 6 fue autorizada e implementada localmente en L160, pero sus revisiones formales Sol rechazaron el gate en L161 y L163.
 - **Migración:** núcleo de Etapas 2 y 3 implementado; el helper por lotes, protocolo incremental y lifecycle de Etapa 4 quedaron aprobados formalmente en L088; Graph comparte el recorrido headless-first, valida aplicación/scopes, evita el delta vacío, propaga el fallo de cierre, rechaza puertos explícitos y conserva `incompatible_credential`; L156 restaura los tres seams productivos y L157 aprueba la evidencia terminal aislada.
-- **Etapa actual:** Etapa 6 autorizada explícitamente el 2026-09-18; contrato técnico previo definido por Sol en L159 e implementación local ejecutada por Luna en L160. La primera revisión formal Sol rechazó el gate en L161; las correcciones corresponden a Luna. No se autorizó ninguna adquisición real nueva ni trabajo de Etapa 7.
+- **Etapa actual:** Etapa 6 autorizada explícitamente el 2026-09-18; contrato técnico previo definido por Sol en L159 e implementación local ejecutada por Luna en L160. Las revisiones formales Sol rechazaron el gate en L161 y L163; las correcciones restantes corresponden a Luna. No se autorizó ninguna adquisición real nueva ni trabajo de Etapa 7.
 - **Documentos fuente:** `plan.md` y `auth-migration-research.md`.
 - **Alcance:** permitir abrir y empezar con consumo liviano, mejorar el arranque, la renovación y la coordinación de credenciales sin reemplazar la arquitectura híbrida actual.
 - **Fuera de alcance inicial:** nueva aplicación OAuth, reescritura de la TUI, WebSockets, renderizado y captura automática de Fabric sin prueba de seguridad.
@@ -750,7 +750,7 @@ Evitar que una expiración habitual obligue a salir de la TUI.
 
 ### Estado de autorización
 
-Etapa 6 fue autorizada explícitamente por el usuario el 2026-09-18 con Sol activo. Sol cerró el contrato técnico previo en L159. La implementación y sus pruebas corresponden a Luna. No se autorizan adquisiciones reales nuevas, Fabric ni trabajo de Etapa 7.
+Etapa 6 fue autorizada explícitamente por el usuario el 2026-09-18 con Sol activo. Sol cerró el contrato técnico previo en L159. Luna implementó L160 y corrigió L161 en L162; la segunda revisión formal Sol rechazó todavía el gate en L163. Las correcciones restantes corresponden a Luna. No se autorizan adquisiciones reales nuevas, Fabric ni trabajo de Etapa 7.
 
 ### Hallazgos previos que condicionan el corte
 
@@ -832,6 +832,16 @@ La revisión Sol debe comprobar especialmente que sólo metadata contractual age
 - Las pruebas agregadas no cubren varios puntos obligatorios del gate: generación cero, timer y margen reales, ausencia de `ExpiresAt`, reanudación exacta, clasificación 401 frente a 403/red/timeout, terminales no reintentables, lifecycle de `credential_ready`, reply completo ni advertencia de resultado incierto.
 - Evidencia y acciones correctivas completas: L161 en `auth-migration-lessons.md`.
 - **Decisión del gate:** Etapa 6 rechazada en primera revisión formal. Corregir con Luna y repetir el gate técnico antes de otra revisión Sol. No ejecutar adquisiciones reales ni Etapa 7/Fabric.
+
+### Segunda revisión formal Sol — 2026-09-18
+
+- Suite completa, veinte ejecuciones aleatorias de `internal/ui`, race detector y `git diff --check` pasan; LSP no reporta diagnósticos. No se ejecutó navegador, adquisición real ni Etapa 7.
+- L162 corrige la presencia explícita para generación cero y conserva el draft real del reply en modo thread.
+- El gate se rechaza: `renewalTimerMsg` no consulta si ese proveedor/generación ya fue intentado y un timer duplicado puede iniciar otro helper; `provider_failed/network_unavailable` no alimenta la reanudación selectiva y el error agregado del batch pierde la causa por proveedor; un error de stream puede marcar incorrectamente todos los proveedores como retryables.
+- `messageSendErrMsg`, incluidos uploads, continúa sin advertencia de resultado incierto ante red/timeout.
+- Las pruebas nuevas no ejercitan `Update` para timer duplicado, reanudación selectiva, terminales batch mixtos, clasificación 401/403/red/timeout, lifecycle `credential_ready` ni mutaciones inciertas.
+- Evidencia y acciones correctivas completas: L163 en `auth-migration-lessons.md`.
+- **Decisión del gate:** Etapa 6 rechazada en segunda revisión formal. Corregir con Luna y repetir el gate técnico antes de otra revisión Sol. No ejecutar adquisiciones reales ni Etapa 7/Fabric.
 
 ---
 
@@ -990,6 +1000,8 @@ Para cada etapa registrar en `auth-migration-lessons.md`:
 - [x] Contrato técnico previo de Etapa 6 definido por Sol en L159.
 - [x] Implementación local y gate técnico de Etapa 6 ejecutados por Luna; evidencia en L160.
 - [x] Primera revisión formal Sol del gate de Etapa 6 ejecutada; gate rechazado en L161.
+- [x] Correcciones L161 implementadas por Luna y gate técnico repetido; evidencia en L162.
+- [x] Segunda revisión formal Sol del gate de Etapa 6 ejecutada; gate rechazado en L163.
 - [ ] Revisión formal Sol del gate de Etapa 6 aprobada.
 
 **Undécima revisión formal Sol — L147:** suite, race, diff check y LSP pasan. La clasificación incompatible quedó corregida, pero el test público L146 sustituye el runner antes del batch y no atraviesa la transición/propagación/cleanup productivos. También falta afirmar la secuencia terminal incompatible del protocolo.
@@ -1014,4 +1026,4 @@ Para cada etapa registrar en `auth-migration-lessons.md`:
 
 **Decimosexta revisión formal Sol — L157:** gate formal de Etapa 5 aprobado. La evidencia terminal queda exacta y aislada; no hubo cambios productivos en el último delta.
 
-**Próximo paso permitido:** implementar con Luna el contrato técnico de Etapa 6 definido en L159, en commits convencionales pequeños y coherentes. No ejecutar adquisiciones reales nuevas ni iniciar Etapa 7 o Fabric.
+**Próximo paso permitido:** corregir con Luna únicamente los bloqueantes de Etapa 6 documentados en L163 y repetir el gate técnico local. No ejecutar adquisiciones reales nuevas ni iniciar Etapa 7 o Fabric.
