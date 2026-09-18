@@ -2,9 +2,9 @@
 
 ## Estado del documento
 
-- **Estado:** operativo; Etapa 0 cerrada; Etapa 1 ejecutada y su gate no aprobado; Etapas 2, 3, 4 y 5 corregidas, validadas y aprobadas por revisión Sol. La decimosexta revisión formal cerró Etapa 5 en L157; Etapa 6 fue autorizada, implementada localmente y su gate técnico quedó documentado en L160; la revisión formal Sol sigue pendiente.
+- **Estado:** operativo; Etapa 0 cerrada; Etapa 1 ejecutada y su gate no aprobado; Etapas 2, 3, 4 y 5 corregidas, validadas y aprobadas por revisión Sol. La decimosexta revisión formal cerró Etapa 5 en L157; Etapa 6 fue autorizada e implementada localmente en L160, pero su primera revisión formal Sol rechazó el gate en L161.
 - **Migración:** núcleo de Etapas 2 y 3 implementado; el helper por lotes, protocolo incremental y lifecycle de Etapa 4 quedaron aprobados formalmente en L088; Graph comparte el recorrido headless-first, valida aplicación/scopes, evita el delta vacío, propaga el fallo de cierre, rechaza puertos explícitos y conserva `incompatible_credential`; L156 restaura los tres seams productivos y L157 aprueba la evidencia terminal aislada.
-- **Etapa actual:** Etapa 6 autorizada explícitamente el 2026-09-18; contrato técnico previo definido por Sol en L159 e implementación local ejecutada por Luna en L160. La revisión formal Sol del gate queda pendiente. No se autorizó ninguna adquisición real nueva ni trabajo de Etapa 7.
+- **Etapa actual:** Etapa 6 autorizada explícitamente el 2026-09-18; contrato técnico previo definido por Sol en L159 e implementación local ejecutada por Luna en L160. La primera revisión formal Sol rechazó el gate en L161; las correcciones corresponden a Luna. No se autorizó ninguna adquisición real nueva ni trabajo de Etapa 7.
 - **Documentos fuente:** `plan.md` y `auth-migration-research.md`.
 - **Alcance:** permitir abrir y empezar con consumo liviano, mejorar el arranque, la renovación y la coordinación de credenciales sin reemplazar la arquitectura híbrida actual.
 - **Fuera de alcance inicial:** nueva aplicación OAuth, reescritura de la TUI, WebSockets, renderizado y captura automática de Fabric sin prueba de seguridad.
@@ -813,6 +813,15 @@ Antes de solicitar aprobación formal deben quedar documentadas estas evidencias
 
 La revisión Sol debe comprobar especialmente que sólo metadata contractual agenda renovación, que los reintentos están acotados por proveedor/generación, que red/permisos no se confunden con expiración y que ninguna mutación se repite automáticamente.
 
+### Primera revisión formal Sol — 2026-09-18
+
+- Suite completa, race detector y `git diff --check` pasan; LSP no reporta errores, sólo hints no bloqueantes. No se ejecutó navegador, adquisición real ni Etapa 7.
+- El gate se rechaza: la generación `0` se confunde con “sin intento” y bloquea la primera renovación; `tea.ResumeMsg` borra todos los intentos y el timer encola directamente, por lo que puede reintentar automáticamente estados no recuperables como permiso, incompatibilidad o interacción; un fallo terminal del lote no replantea otros proveedores elegibles.
+- Los replies de thread no guardan `failedDraft` antes de limpiar el editor y su error sale del modo reply, por lo que el texto se pierde. Los errores de red/timeout tampoco advierten que el resultado mutante puede ser incierto.
+- Las pruebas agregadas no cubren varios puntos obligatorios del gate: generación cero, timer y margen reales, ausencia de `ExpiresAt`, reanudación exacta, clasificación 401 frente a 403/red/timeout, terminales no reintentables, lifecycle de `credential_ready`, reply completo ni advertencia de resultado incierto.
+- Evidencia y acciones correctivas completas: L161 en `auth-migration-lessons.md`.
+- **Decisión del gate:** Etapa 6 rechazada en primera revisión formal. Corregir con Luna y repetir el gate técnico antes de otra revisión Sol. No ejecutar adquisiciones reales ni Etapa 7/Fabric.
+
 ---
 
 ## Etapa 7 — Fabric y validación final
@@ -969,6 +978,7 @@ Para cada etapa registrar en `auth-migration-lessons.md`:
 - [x] Etapa 6 autorizada explícitamente por el usuario en L158.
 - [x] Contrato técnico previo de Etapa 6 definido por Sol en L159.
 - [x] Implementación local y gate técnico de Etapa 6 ejecutados por Luna; evidencia en L160.
+- [x] Primera revisión formal Sol del gate de Etapa 6 ejecutada; gate rechazado en L161.
 - [ ] Revisión formal Sol del gate de Etapa 6 aprobada.
 
 **Undécima revisión formal Sol — L147:** suite, race, diff check y LSP pasan. La clasificación incompatible quedó corregida, pero el test público L146 sustituye el runner antes del batch y no atraviesa la transición/propagación/cleanup productivos. También falta afirmar la secuencia terminal incompatible del protocolo.
