@@ -6,6 +6,15 @@ import (
 	"github.com/charmbracelet/bubbles/textarea"
 )
 
+func TestRestoreFailedThreadReplyDraftKeepsReplyMode(t *testing.T) {
+	input := textarea.New()
+	m := Model{input: input, failedDraft: &messageDraft{text: "reply", replyParentID: "parent", threadReply: true}}
+	m.restoreFailedDraft()
+	if m.input.Value() != "reply" || m.threadParentID != "parent" || !m.isReplyTyping || !m.showThread {
+		t.Fatal("thread reply draft was not restored in reply mode")
+	}
+}
+
 func TestRestoreFailedDraftRequiresExplicitRetry(t *testing.T) {
 	input := textarea.New()
 	m := Model{input: input, failedDraft: &messageDraft{

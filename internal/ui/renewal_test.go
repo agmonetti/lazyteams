@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -34,6 +35,36 @@ func TestRenewalTimerIgnoresObsoleteGeneration(t *testing.T) {
 	}
 	if !m.timerMatches(renewalTimerMsg{provider: CapabilityGraph, generation: 2, expiresAt: expires}) {
 		t.Fatal("current renewal timer did not match")
+	}
+}
+
+func TestNextRenewalPlanSupportsGenerationZero(t *testing.T) {
+	expires := time.Now().Add(time.Hour)
+	set := &auth.CredentialSet{Generation: 0, Graph: auth.Credential{Token: "graph", ExpiresAt: expires}}
+	plan, ok := nextRenewalPlan(set, map[string]bool{})
+	if !ok || plan.generation != 0 || plan.provider != CapabilityGraph {
+		t.Fatalf("generation-zero plan = %+v, ok=%v", plan, ok)
+	}
+}
+
+func TestRenewalAttemptPresenceBlocksGenerationZero(t *testing.T) {
+	m := Model{client: graph.NewClient(&auth.CredentialSet{Generation: 0, Graph: auth.Credential{Token: "graph"}})}
+	if queueTokenRenewal(&m, CapabilityGraph) == nil {
+		t.Fatal("generation-zero renewal was not queued")
+	}
+	m.tokenRenewing = false
+	m.tokenRenewalQueue = nil
+	if queueTokenRenewal(&m, CapabilityGraph) != nil {
+		t.Fatal("generation-zero renewal was queued twice")
+	}
+}
+
+func TestRenewalErrorClassification(t *testing.T) {
+	if !isRetryableRenewalError(fmt.Errorf("permission denied")) == false {
+		t.Fatal("permission errors must not be retryable")
+	}
+	if !isRetryableRenewalError(fmt.Errorf("network timeout")) {
+		t.Fatal("network errors must be retryable on resume")
 	}
 }
 

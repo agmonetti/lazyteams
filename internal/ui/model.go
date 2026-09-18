@@ -19,9 +19,11 @@ import (
 type errMsg struct{ err error }
 
 type messageDraft struct {
-	text    string
-	images  []PendingImage
-	replyTo *graph.Message
+	text          string
+	images        []PendingImage
+	replyTo       *graph.Message
+	replyParentID string
+	threadReply   bool
 }
 
 type CapabilityState string
@@ -321,6 +323,9 @@ type Model struct {
 	tokenRenewalQueue         []string
 	tokenRenewFailures        []string
 	renewalAttemptGeneration  map[string]uint64
+	renewalAttempted          map[string]bool
+	renewalRetryable          map[string]bool
+	renewalFailureGeneration  map[string]uint64
 	tokenRenewalFrame         int
 	tokenRenewalSpinnerActive bool
 	debug                     bool
@@ -584,6 +589,9 @@ func New(client *graph.Client, userName string, debug bool) Model {
 		userName:                 userName,
 		debug:                    debug,
 		renewalAttemptGeneration: make(map[string]uint64),
+		renewalAttempted:         make(map[string]bool),
+		renewalRetryable:         make(map[string]bool),
+		renewalFailureGeneration: make(map[string]uint64),
 		presenceOptions:          []string{"Available", "Busy", "DoNotDisturb", "BeRightBack", "Away", "Reset (Automatic)"},
 		reactionOptions:          []string{"like", "heart", "laugh", "surprised", "sad", "angry"},
 	}
@@ -620,7 +628,10 @@ func (m *Model) restoreFailedDraft() {
 	m.input.SetValue(draft.text)
 	m.pendingImages = append([]PendingImage(nil), draft.images...)
 	m.replyToMsg = draft.replyTo
-	m.isTyping = true
+	m.threadParentID = draft.replyParentID
+	m.isTyping = !draft.threadReply
+	m.isReplyTyping = draft.threadReply
+	m.showThread = draft.threadReply || m.showThread
 	m.input.Focus()
 	m.failedDraft = nil
 }

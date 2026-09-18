@@ -185,18 +185,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !m.timerMatches(msg) {
 			return m, scheduleNextRenewal(&m, time.Now())
 		}
-		if m.renewalAttemptGeneration == nil {
-			m.renewalAttemptGeneration = make(map[string]uint64)
-		}
-		if m.renewalAttemptGeneration[msg.provider] == msg.generation {
-			return m, scheduleNextRenewal(&m, time.Now())
-		}
-		m.renewalAttemptGeneration[msg.provider] = msg.generation
+		markRenewalAttempt(&m, msg.provider, msg.generation)
 		enqueueTokenRenewal(&m, msg.provider)
 		return m, startNextTokenRenewal(&m)
 
 	case tea.ResumeMsg:
-		m.renewalAttemptGeneration = make(map[string]uint64)
+		// Only network failures are retryable on resume. Permission, interaction,
+		// incompatibility and other terminal outcomes remain blocked.
+		for key := range m.renewalRetryable {
+			delete(m.renewalAttempted, key)
+			delete(m.renewalRetryable, key)
+		}
 		return m, scheduleNextRenewal(&m, time.Now())
 
 	case tokenRenewalTickMsg:
@@ -250,6 +249,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.tokenRenewingType = ""
 			if msg.err != nil {
 				m.tokenRenewErr = msg.err.Error()
+				if isRetryableRenewalError(msg.err) && m.renewalRetryable == nil {
+					m.renewalRetryable = make(map[string]bool)
+				}
+				for provider := range m.batchRequestedProviders {
+					key := renewalAttemptKey(provider, m.batchGeneration)
+					if isRetryableRenewalError(msg.err) {
+						m.renewalRetryable[key] = true
+					}
+				}
 			}
 			m.tokenRenewalQueue = nil
 			if m.quitAfterRenewal {
@@ -258,6 +266,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			// Each successful provider was reloaded when its credential_ready
 			// event arrived. Never replay unrelated providers at batch end.
+			if renewal := scheduleNextRenewal(&m, time.Now()); renewal != nil {
+				return m, renewal
+			}
 			return m, nil
 		}
 		finishTokenRenewal(&m, msg.tokenType)
@@ -266,11 +277,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmds []tea.Cmd
 		if msg.err != nil {
 			m.tokenRenewErr = msg.err.Error()
+			key := renewalAttemptKey(msg.tokenType, m.client.Credentials().Generation)
+			if isRetryableRenewalError(msg.err) {
+				if m.renewalRetryable == nil {
+					m.renewalRetryable = make(map[string]bool)
+				}
+				m.renewalRetryable[key] = true
+			}
+			if m.renewalFailureGeneration == nil {
+				m.renewalFailureGeneration = make(map[string]uint64)
+			}
+			m.renewalFailureGeneration[msg.tokenType] = m.client.Credentials().Generation
 			if !containsString(m.tokenRenewFailures, msg.tokenType) {
 				m.tokenRenewFailures = append(m.tokenRenewFailures, msg.tokenType)
 			}
 		} else {
 			m.tokenRenewFailures = removeString(m.tokenRenewFailures, msg.tokenType)
+			delete(m.renewalFailureGeneration, msg.tokenType)
 			cmds = append(cmds, reloadTokensCmd(m.client, msg.tokenType))
 		}
 		if next := startNextTokenRenewal(&m); next != nil {
@@ -307,11 +330,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmds []tea.Cmd
 		if msg.err != nil {
 			m.tokenRenewErr = msg.err.Error()
+			key := renewalAttemptKey(msg.tokenType, m.client.Credentials().Generation)
+			if isRetryableRenewalError(msg.err) {
+				if m.renewalRetryable == nil {
+					m.renewalRetryable = make(map[string]bool)
+				}
+				m.renewalRetryable[key] = true
+			}
+			if m.renewalFailureGeneration == nil {
+				m.renewalFailureGeneration = make(map[string]uint64)
+			}
+			m.renewalFailureGeneration[msg.tokenType] = m.client.Credentials().Generation
 			if !containsString(m.tokenRenewFailures, msg.tokenType) {
 				m.tokenRenewFailures = append(m.tokenRenewFailures, msg.tokenType)
 			}
 		} else {
 			m.tokenRenewFailures = removeString(m.tokenRenewFailures, msg.tokenType)
+			delete(m.renewalFailureGeneration, msg.tokenType)
 			if msg.tokenType == "edu" {
 				cmds = append(cmds, loadAssignmentsCmd(m.client))
 			}
@@ -416,9 +451,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, loadMessagesCmd(m.client, "", m.activeConversationID(), 200)
 
 	case threadReplySendErrMsg:
+		if m.failedDraft == nil {
+			m.failedDraft = &messageDraft{text: m.input.Value(), replyParentID: m.threadParentID, threadReply: true}
+		}
 		m.restoreFailedDraft()
-		m.isReplyTyping = false
-		m.threadViewport.SetContent(fmt.Sprintf("Error sending reply: %v\nDraft restored; press Enter to retry manually.", msg.err))
+		m.isReplyTyping = true
+		warning := ""
+		if mutationResultUncertain(msg.err) {
+			warning = " Result may be uncertain; verify before manually retrying."
+		}
+		m.threadViewport.SetContent(fmt.Sprintf("Error sending reply: %v.%s\nDraft restored; press Enter to retry manually.", msg.err, warning))
 		return m, nil
 
 	case editMessageMsg:
@@ -1325,6 +1367,33 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
+func markRenewalAttempt(m *Model, provider string, generation uint64) {
+	if m.renewalAttempted == nil {
+		m.renewalAttempted = make(map[string]bool)
+	}
+	if m.renewalAttemptGeneration == nil {
+		m.renewalAttemptGeneration = make(map[string]uint64)
+	}
+	m.renewalAttempted[renewalAttemptKey(provider, generation)] = true
+	m.renewalAttemptGeneration[provider] = generation
+}
+
+func isRetryableRenewalError(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "network") || strings.Contains(message, "timeout") || strings.Contains(message, "connection")
+}
+
+func mutationResultUncertain(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "network") || strings.Contains(message, "timeout") || strings.Contains(message, "connection")
+}
+
 func enqueueTokenRenewal(m *Model, tokenType string) {
 	if tokenType == "" {
 		return
@@ -1438,17 +1507,20 @@ func formatDownloadResults(results []string) string {
 }
 
 func queueTokenRenewal(m *Model, tokenType string) tea.Cmd {
-	if tokenType == "" || containsString(m.tokenRenewFailures, tokenType) {
+	if tokenType == "" || m.client == nil {
 		return nil
-	}
-	if m.renewalAttemptGeneration == nil {
-		m.renewalAttemptGeneration = make(map[string]uint64)
 	}
 	generation := m.client.Credentials().Generation
-	if m.renewalAttemptGeneration[tokenType] == generation {
+	if m.renewalFailureGeneration != nil && m.renewalFailureGeneration[tokenType] == generation {
 		return nil
 	}
-	m.renewalAttemptGeneration[tokenType] = generation
+	if m.renewalAttempted == nil {
+		m.renewalAttempted = make(map[string]bool)
+	}
+	if m.renewalAttempted[renewalAttemptKey(tokenType, generation)] {
+		return nil
+	}
+	markRenewalAttempt(m, tokenType, generation)
 	if !m.tokenRenewing && len(m.tokenRenewalQueue) == 0 {
 		m.tokenRenewErr = ""
 	}

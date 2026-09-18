@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/agmonetti/lazyteams/internal/auth"
@@ -30,14 +31,18 @@ func credentialForProvider(set *auth.CredentialSet, provider string) auth.Creden
 	}
 }
 
-func nextRenewalPlan(set *auth.CredentialSet, attempted map[string]uint64) (renewalPlan, bool) {
+func renewalAttemptKey(provider string, generation uint64) string {
+	return fmt.Sprintf("%s:%d", provider, generation)
+}
+
+func nextRenewalPlan(set *auth.CredentialSet, attempted map[string]bool) (renewalPlan, bool) {
 	if set == nil {
 		return renewalPlan{}, false
 	}
 	var plan renewalPlan
 	for _, provider := range []string{CapabilityGraph, CapabilityWeb, CapabilityNotif, CapabilityEDU} {
 		credential := credentialForProvider(set, provider)
-		if credential.Token == "" || credential.ExpiresAt.IsZero() || attempted[provider] == set.Generation {
+		if credential.Token == "" || credential.ExpiresAt.IsZero() || attempted[renewalAttemptKey(provider, set.Generation)] {
 			continue
 		}
 		candidate := renewalPlan{provider: provider, generation: set.Generation, expiresAt: credential.ExpiresAt}
@@ -60,7 +65,11 @@ func renewalTimerCmd(plan renewalPlan, now time.Time) tea.Cmd {
 }
 
 func scheduleNextRenewal(m *Model, now time.Time) tea.Cmd {
-	plan, ok := nextRenewalPlan(m.client.Credentials(), m.renewalAttemptGeneration)
+	attempted := m.renewalAttempted
+	if attempted == nil {
+		attempted = make(map[string]bool)
+	}
+	plan, ok := nextRenewalPlan(m.client.Credentials(), attempted)
 	if !ok {
 		return nil
 	}
