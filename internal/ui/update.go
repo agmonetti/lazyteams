@@ -185,9 +185,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !m.timerMatches(msg) {
 			return m, scheduleNextRenewal(&m, time.Now())
 		}
-		markRenewalAttempt(&m, msg.provider, msg.generation)
-		enqueueTokenRenewal(&m, msg.provider)
-		return m, startNextTokenRenewal(&m)
+		if cmd := queueTokenRenewal(&m, msg.provider); cmd != nil {
+			return m, cmd
+		}
+		return m, scheduleNextRenewal(&m, time.Now())
 
 	case tea.ResumeMsg:
 		// Only network failures are retryable on resume. Permission, interaction,
@@ -224,14 +225,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.event.Event == "credential_ready" {
 			m.batchReadyProvider = msg.event.Provider
 			m.batchPublishedProviders[msg.event.Provider] = true
+			clearRenewalRetryable(&m, msg.event.Provider, msg.event.Generation)
 			return m, reloadTokensCmd(m.client, msg.event.Provider)
 		}
 		if msg.event.Event == "provider_failed" {
 			m.capabilities[msg.event.Provider] = capabilityStateForError(fmt.Errorf("%s", msg.event.ErrorCode))
+			recordBatchRenewalOutcome(&m, msg.event.Provider, msg.event.Generation, msg.event.ErrorCode)
 			return m, readBatchEventCmd(&m)
 		}
 		if msg.event.Event == "interaction_required" {
 			m.capabilities[msg.event.Provider] = CapabilityInteractionNeeded
+			clearRenewalRetryable(&m, msg.event.Provider, msg.event.Generation)
 			return m, readBatchEventCmd(&m)
 		}
 		if msg.event.Event == "completed" || msg.event.Event == "cancelled" {
@@ -248,16 +252,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.tokenRenewing = false
 			m.tokenRenewingType = ""
 			if msg.err != nil {
+				// Per-provider events carry retry semantics. The aggregate process
+				// error must never guess one cause for every requested provider.
 				m.tokenRenewErr = msg.err.Error()
-				if isRetryableRenewalError(msg.err) && m.renewalRetryable == nil {
-					m.renewalRetryable = make(map[string]bool)
-				}
-				for provider := range m.batchRequestedProviders {
-					key := renewalAttemptKey(provider, m.batchGeneration)
-					if isRetryableRenewalError(msg.err) {
-						m.renewalRetryable[key] = true
-					}
-				}
 			}
 			m.tokenRenewalQueue = nil
 			if m.quitAfterRenewal {
@@ -436,7 +433,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case messageSendErrMsg:
 		m.restoreFailedDraft()
-		m.viewport.SetContent(fmt.Sprintf("Error sending message: %v\nDraft restored; press Enter to retry manually.", msg.err))
+		warning := ""
+		if mutationResultUncertain(msg.err) {
+			warning = " Result may be uncertain; verify before manually retrying."
+		}
+		m.viewport.SetContent(fmt.Sprintf("Error sending message: %v.%s\nDraft restored; press Enter to retry manually.", msg.err, warning))
 		m.loading = false
 		return m, nil
 
@@ -1376,6 +1377,29 @@ func markRenewalAttempt(m *Model, provider string, generation uint64) {
 	}
 	m.renewalAttempted[renewalAttemptKey(provider, generation)] = true
 	m.renewalAttemptGeneration[provider] = generation
+}
+
+func renewalOutcomeGeneration(m *Model, provider string, fallback uint64) uint64 {
+	if generation, ok := m.renewalAttemptGeneration[provider]; ok {
+		return generation
+	}
+	return fallback
+}
+
+func clearRenewalRetryable(m *Model, provider string, fallback uint64) {
+	delete(m.renewalRetryable, renewalAttemptKey(provider, renewalOutcomeGeneration(m, provider, fallback)))
+}
+
+func recordBatchRenewalOutcome(m *Model, provider string, fallback uint64, errorCode string) {
+	key := renewalAttemptKey(provider, renewalOutcomeGeneration(m, provider, fallback))
+	if errorCode != "network_unavailable" {
+		delete(m.renewalRetryable, key)
+		return
+	}
+	if m.renewalRetryable == nil {
+		m.renewalRetryable = make(map[string]bool)
+	}
+	m.renewalRetryable[key] = true
 }
 
 func isRetryableRenewalError(err error) bool {
