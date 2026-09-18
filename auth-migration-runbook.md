@@ -2,9 +2,9 @@
 
 ## Estado del documento
 
-- **Estado:** operativo; Etapa 0 cerrada; Etapa 1 ejecutada y su gate no aprobado; Etapas 2, 3 y 4 corregidas, validadas y aprobadas por revisión Sol; Etapa 5 implementada localmente, pero su primera revisión formal Sol rechazó el gate en L092.
-- **Migración:** núcleo de Etapas 2 y 3 implementado; el helper por lotes, protocolo incremental y lifecycle de Etapa 4 quedaron aprobados formalmente en L088; el corte local de Graph headless-first fue implementado y validado localmente en L091; su gate formal sigue pendiente.
-- **Etapa actual:** Etapa 5 autorizada explícitamente el 2026-09-16 en L089. Sol cerró el contrato técnico previo en L090; la implementación y las pruebas corresponden a Luna. No se autorizó ninguna adquisición real nueva ni trabajo de Etapas 6–7.
+- **Estado:** operativo; Etapa 0 cerrada; Etapa 1 ejecutada y su gate no aprobado; Etapas 2, 3, 4 y 5 corregidas, validadas y aprobadas por revisión Sol. La decimosexta revisión formal cerró Etapa 5 en L157.
+- **Migración:** núcleo de Etapas 2 y 3 implementado; el helper por lotes, protocolo incremental y lifecycle de Etapa 4 quedaron aprobados formalmente en L088; Graph comparte el recorrido headless-first, valida aplicación/scopes, evita el delta vacío, propaga el fallo de cierre, rechaza puertos explícitos y conserva `incompatible_credential`; L156 restaura los tres seams productivos y L157 aprueba la evidencia terminal aislada.
+- **Etapa actual:** Etapa 5 aprobada formalmente el 2026-09-18 en L157. No se autorizó ninguna adquisición real nueva ni trabajo de Etapas 6–7.
 - **Documentos fuente:** `plan.md` y `auth-migration-research.md`.
 - **Alcance:** permitir abrir y empezar con consumo liviano, mejorar el arranque, la renovación y la coordinación de credenciales sin reemplazar la arquitectura híbrida actual.
 - **Fuera de alcance inicial:** nueva aplicación OAuth, reescritura de la TUI, WebSockets, renderizado y captura automática de Fabric sin prueba de seguridad.
@@ -520,7 +520,7 @@ Usar credencial vigente y sesión recuperable antes de abrir una ventana visible
 
 ### Estado de autorización
 
-Etapa 5 fue autorizada explícitamente por el usuario el 2026-09-16 con Sol activo. Sol cerró el contrato técnico previo en L090. El corte local fue implementado y validado por Luna en L091, pero la primera revisión formal Sol rechazó el gate en L092 por incumplimientos de cuarentena, procedencia, compatibilidad, protocolo y evidencia. No se autorizan adquisiciones reales nuevas ni trabajo de Etapas 6–7.
+Etapa 5 fue autorizada explícitamente por el usuario el 2026-09-16 con Sol activo. Sol cerró el contrato técnico previo en L090. Después de quince revisiones rechazadas y sus correcciones focalizadas, L156 eliminó la contaminación restante de seams y la decimosexta revisión formal Sol aprobó el gate en L157. No se autorizan adquisiciones reales nuevas ni trabajo de Etapas 6–7.
 
 ### Hallazgos previos que condicionan el corte
 
@@ -596,6 +596,149 @@ La revisión Sol debe comprobar especialmente que el camino headless precede al 
 - El gate se rechaza: permanece el fallback Graph de `localStorage` y puede persistir por el camino genérico; el candidato se copia a `captured.graphToken` antes de validación completa/persistencia; `interaction_required` no se emite antes de abrir visible; la compatibilidad acepta identidad entrante desconocida y rechaza el upgrade permitido `browser`→`graph_explorer`; no se restringe la captura al frame principal; los códigos de error no conservan su clasificación contractual; faltan las pruebas focalizadas del lifecycle y protocolo.
 - Evidencia y acciones correctivas completas: L092 en `auth-migration-lessons.md`.
 - **Decisión del gate:** Etapa 5 rechazada en primera revisión formal. Corregir con Luna y repetir el gate técnico antes de otra revisión Sol. No ejecutar adquisición real ni Etapas 6–7.
+
+### Segunda revisión formal Sol — 2026-09-16
+
+- Suite focalizada, suite completa, race detector y `git diff --check` pasan; no se ejecutó navegador ni adquisición real.
+- L093 elimina `localStorage` del recorrido Graph, mantiene el candidato separado de `graphToken`, restringe host/frame, emite `interaction_required` antes de visible y permite el upgrade `browser`→`graph_explorer`.
+- El gate se rechaza: `credential_ready` Graph conserva la generación anterior porque se ignora la generación devuelta por `PersistGraphCandidate`; timeout/red y varios rechazos de compatibilidad siguen perdiendo sus códigos; el modo CLI legacy Graph y el flujo completo esperan `graphToken` aunque el listener sólo llena `graphCandidate`, por lo que pueden agotar el plazo y anunciar guardado sin persistir Graph; `notifyTokenCaptured` imprime salida humana al observar un candidato aún no validado y puede contaminar stdout JSONL; el primer candidato no validado detiene la espera e impide considerar una request posterior válida; y continúan ausentes las pruebas contractuales del lifecycle, protocolo, frame/storage y cero navegador.
+- Evidencia y acciones correctivas completas: L094 en `auth-migration-lessons.md`.
+- **Decisión del gate:** Etapa 5 rechazada en segunda revisión formal. Corregir con Luna y repetir el gate técnico antes de otra revisión Sol. No ejecutar adquisición real ni Etapas 6–7.
+
+### Tercera revisión formal Sol — 2026-09-16
+
+- Suite completa, race detector y `git diff --check` pasan; LSP no reporta errores de compilación; no se ejecutó navegador ni adquisición real.
+- L095 corrige la generación publicada por el batch, conserva el candidato en cuarentena hasta persistir y tipa incompatibilidad/generación obsoleta.
+- El gate se rechaza: `fullRenewal` aún espera `graphToken` sin validar/persistir `graphCandidate`; `--renew graph` sigue siendo visible-first y duplica la implementación batch; el fallback visible devuelve otra vez `interaction_required` sin esperar que el usuario complete el flujo; la clasificación `network_unavailable` no tiene una señal alcanzable; y faltan las pruebas contractuales de secuencia, lifecycle, wrapper/full, frame/storage y cero navegador.
+- Evidencia y acciones correctivas completas: L096 en `auth-migration-lessons.md`.
+- **Decisión del gate:** Etapa 5 rechazada en tercera revisión formal. Corregir con Luna y repetir el gate técnico antes de otra revisión Sol. No ejecutar adquisición real ni Etapas 6–7.
+
+### Corrección local posterior — 2026-09-17 (L097)
+
+- `--renew graph` usa ahora el recorrido batch headless-first en lugar de una adquisición visible independiente.
+- `fullRenewal` delega la adquisición Graph al mismo recorrido compartido; la persistencia y publicación siguen pasando por `PersistGraphCandidate` antes de marcar Graph listo.
+- Los errores de navegación Graph se clasifican como `network_unavailable` mediante `errGraphNetwork`.
+- El fallback visible espera un candidato, cancelación o timeout sin retornar inmediatamente por la pantalla de login/MFA/consentimiento.
+- `go test -count=1 ./...`, `go test -race -count=1 ./...`, `git diff --check` y LSP sin errores de compilación pasan.
+- No se ejecutó navegador ni adquisición real.
+- La evidencia contractual de Etapa 5 sigue incompleta; no se aprueba el gate ni se autoriza Etapa 6–7.
+
+### Cuarta revisión formal Sol — 2026-09-17
+
+- Suite completa, race detector, `git diff --check` y LSP pasan; no se ejecutó navegador ni adquisición real.
+- L097 unifica parcialmente los puntos de entrada y corrige la espera visible, pero el gate se rechaza.
+- `--renew graph` no propaga `batchErr` al exit code y puede anunciar éxito tras fallar; `saveTokens` puede persistir un delta vacío e incrementar la generación.
+- `fullRenewal` puede pasar un contexto/página cerrados después del re-login, no propaga el error al caller y conserva un bloque Graph histórico inalcanzable.
+- La cancelación no interrumpe el retry ni la espera visible; un contexto cerrado puede dejar el helper activo hasta el timeout.
+- Faltan las pruebas contractuales completas de secuencia, lifecycle, wrapper/full, frame/storage, candidato inválido→válido y cero navegador.
+- Evidencia y acciones correctivas completas: L098 en `auth-migration-lessons.md`.
+- **Decisión del gate:** Etapa 5 rechazada en cuarta revisión formal. Corregir con Luna y repetir el gate técnico antes de otra revisión Sol. No ejecutar adquisición real ni Etapas 6–7.
+
+### Quinta revisión formal Sol — 2026-09-17
+
+- Suite completa, race detector, `git diff --check` y LSP pasan; no se ejecutó navegador ni adquisición real.
+- L099–L105 corrigen propagación, contexto cerrado, bloque inalcanzable y cancelación antes del fallback visible.
+- El gate se rechaza: `--renew graph` todavía llama `saveTokens` después de persistir Graph y aumenta la generación con un delta vacío; el candidato productivo no aporta `ClientID`, de modo que el chequeo de aplicación queda desactivado en bootstrap; y el auto-click de la consulta por defecto no demuestra ni solicita los scopes mínimos que luego exige el validador.
+- La evidencia tampoco cubre los puntos públicos wrapper/full, la secuencia JSONL exitosa con generación exacta, frame/storage en el listener real, contexto único ni el caso de credencial vigente con cero helper/navegador. El test llamado “DoesNotOpenVisible” todavía ejecuta adquisición headless.
+- Evidencia y acciones correctivas completas: L106 en `auth-migration-lessons.md`.
+- **Decisión del gate:** Etapa 5 rechazada en quinta revisión formal. Corregir con Luna y repetir el gate técnico local antes de otra revisión Sol. No ejecutar adquisición real ni Etapas 6–7.
+
+### Sexta revisión formal Sol — 2026-09-17
+
+- Suite completa, race detector y `git diff --check` pasan; LSP no reporta errores, sólo advisories no bloqueantes; no se ejecutó navegador ni adquisición real.
+- L107–L121 corrigen el delta vacío, aplicación/scopes, generación y protocolo, y agregan evidencia local de selección TUI, frame/storage y transición de contexto.
+- El gate se rechaza: la transición ignora el error de `BrowserContext.Close()` y puede abrir visible sin demostrar que headless cerró; la prueba de cero helper sólo llama el guard de cola vacía sin credencial ni operación Graph; wrapper `run()` y `fullRenewal` siguen sin ejecución mediante seams públicos; el filtro por `Hostname()` acepta puertos explícitos pese al requisito de host exacto.
+- Evidencia y acciones correctivas completas: L122 en `auth-migration-lessons.md`.
+- **Decisión del gate:** Etapa 5 rechazada en sexta revisión formal. Corregir con Luna y repetir el gate técnico local antes de otra revisión Sol. No ejecutar adquisición real ni Etapas 6–7.
+
+### Séptima revisión formal Sol — 2026-09-17
+
+- Suite completa, race detector y `git diff --check` pasan; LSP no reporta errores; no se ejecutó navegador ni adquisición real.
+- L123 corrige el cierre headless→visible y los puertos explícitos, pero el gate se rechaza nuevamente.
+- `fullRenewal` retorna incondicionalmente antes del recorrido de cookies/Fabric, dejando código inalcanzable y causando una regresión funcional.
+- Los tests L124 ejercitan helpers triviales, no los puntos públicos `run()`/`fullRenewal`; la prueba TUI usa cola vacía y no ejecuta una operación Graph local ni demuestra por contadores separados cero helper/navegador.
+- Evidencia y acciones correctivas completas: L125 en `auth-migration-lessons.md`.
+- **Decisión del gate:** Etapa 5 rechazada en séptima revisión formal. Corregir con Luna y repetir el gate técnico local antes de otra revisión Sol. No ejecutar adquisición real ni Etapas 6–7.
+
+### Corrección local posterior a L129 — 2026-09-17
+
+- `runBatchJobsState` devuelve página/contexto vigentes; `fullRenewal` conserva el reemplazo headless→visible antes de continuar con cookies/Fabric.
+- El dispatch de renovación se centralizó en `dispatchRenewal` para que las entradas Graph y full usen los runners inyectables.
+- `go test -count=1 ./...`, `go test -race -count=1 ./...`, `git diff --check` y LSP pasan.
+- No se ejecutó navegador ni adquisición real. La evidencia de launchers reales y ejecución end-to-end de `run()`/`fullRenewal` sigue pendiente.
+- **Estado:** corrección técnica parcial; el gate formal de Etapa 5 continúa rechazado por L129.
+
+### Octava revisión formal Sol — 2026-09-17
+
+- Suite completa, race detector y `git diff --check` pasan; LSP no reporta errores de compilación; no se ejecutó navegador ni adquisición real.
+- L126–L128 eliminan el retorno incondicional, agregan una operación Graph local y seams de dispatch, pero el gate se rechaza nuevamente.
+- Después de adquirir Graph, `runBatchJobs` cierra el contexto que `fullRenewal` intenta reutilizar para cookies/Fabric; el recorrido posterior sigue roto en ese caso.
+- El test de dispatch invoca directamente los callbacks inyectados y no ejecuta `run()` ni `fullRenewal`; el contador de navegador TUI no está conectado a ningún launcher y vale cero por construcción.
+- Evidencia y acciones correctivas completas: L129 en `auth-migration-lessons.md`.
+- **Decisión del gate:** Etapa 5 rechazada en octava revisión formal. Corregir con Luna y repetir el gate técnico local antes de otra revisión Sol. No ejecutar adquisición real ni Etapas 6–7.
+
+### Novena revisión formal Sol — 2026-09-17
+
+- Suite completa, race detector, `git diff --check` y LSP pasan; no se ejecutó navegador ni adquisición real.
+- L130–L133 corrigen el ownership del modo batch, el cleanup diferido y conectan el launcher real del proceso helper en la TUI.
+- El gate se rechaza: `fullRenewal` recibe página/contexto por valor y sólo actualiza sus variables locales después de `runBatchJobsState`; `run()` conserva el contexto original. Si Graph abre visible y Fabric ya existe, el contexto visible puede retornar sin que el cleanup exterior lo conozca.
+- `TestRenewalDispatchSeamsExecutePublicEntryPoints` continúa llamando `dispatchRenewal` y los runners directamente, no `run()` ni el cuerpo real de `fullRenewal`. Ningún test referencia `launchPersistentContext`, por lo que el launcher de navegador agregado sigue sin evidencia ejecutable; la prueba TUI demuestra cero helper y una request local, pero no instrumenta el launcher del helper.
+- Evidencia y acciones correctivas completas: L134 en `auth-migration-lessons.md`.
+- **Decisión del gate:** Etapa 5 rechazada en novena revisión formal. Corregir con Luna, devolver explícitamente el estado vigente desde `fullRenewal` y completar los tests públicos/launcher antes de otra revisión Sol. No ejecutar adquisición real ni Etapas 6–7.
+
+### Décima revisión formal Sol — 2026-09-17
+
+- Tests focalizados, suite completa, race detector y `git diff --check` pasan; LSP no reporta errores de compilación y sólo conserva hints/advisories no bloqueantes. No se ejecutó navegador ni adquisición real.
+- L135–L139 hacen que `fullRenewal` devuelva página/contexto, ejecutan su cuerpo con hooks y exponen el launcher persistente.
+- El gate se rechaza: el callback productivo convierte `auth.ErrIncompatibleCredential` en `errGraphInteractionRequired`, corta el lifecycle y publica la clasificación equivocada en lugar de permitir otro candidato o terminar con `incompatible_credential`.
+- `runSetupHook` retorna antes del cuerpo productivo de `run()`; su test invoca manualmente `openPersistentContext` dentro del hook. Por tanto no demuestra dispatch, propagación, cleanup del contexto reemplazado ni cero launches del navegador con credencial vigente. La transición con máximo un contexto sigue probada sólo mediante callbacks abstractos.
+- Evidencia y acciones correctivas completas: L140 en `auth-migration-lessons.md`.
+- **Decisión del gate:** Etapa 5 rechazada en décima revisión formal. Corregir con Luna la semántica incompatible y reemplazar la evidencia circular de `run()`/launcher antes de otra revisión Sol. No ejecutar adquisición real ni Etapas 6–7.
+
+### Undécima revisión formal Sol — 2026-09-17
+
+- Tests focalizados, suite completa, race detector y `git diff --check` pasan; LSP no reporta errores de compilación, sólo hints y reglas auxiliares no bloqueantes. No se ejecutó navegador ni adquisición real.
+- L141–L143 preservan `auth.ErrIncompatibleCredential` y cubren candidato incompatible seguido de válido. L144–L146 eliminan el short-circuit de `run()` y atraviesan setup, dispatch y cleanup inyectados.
+- El gate se rechaza: `TestRunPublicEntryPointTraversesInjectedSetupAndDispatch` sustituye `graphRenewalRunner` por un callback que no ejecuta el batch, por lo que no alcanza `runBatchJobsState`, la transición visible, la propagación del contexto reemplazado ni su cleanup. Además, el launcher inicial usa `runOpenPersistentContext`, mientras el fallback productivo usa directamente `openPersistentContext`; la prueba de máximo un contexto continúa usando callbacks abstractos.
+- Falta también la secuencia terminal exigida por L140: no existe una prueba que haga terminar el callback productivo incompatible y afirme `provider_failed/incompatible_credential` seguido de `completed/partial_failure` con el código coherente. La prueba L143 termina en éxito con el segundo candidato y el mapeo unitario de `batchErrorCode` no cubre el protocolo.
+- Evidencia y acciones correctivas completas: L147 en `auth-migration-lessons.md`.
+- **Decisión del gate:** Etapa 5 rechazada en undécima revisión formal. Corregir con Luna únicamente la conexión del launcher/lifecycle productivo y la evidencia terminal incompatible; repetir el gate técnico antes de otra revisión Sol. No ejecutar adquisición real ni Etapas 6–7.
+
+### Duodécima revisión formal Sol — 2026-09-17
+
+- L148 unifica el seam de launcher, pero sustituye `runBatchJobsState` en el test público y prueba el terminal incompatible desde `runBatchJobSequence`, no desde el callback productivo.
+- Suite, race, diff check y LSP pasan; no se ejecutó navegador ni adquisición real.
+- Evidencia y acciones correctivas completas: L149 en `auth-migration-lessons.md`.
+- **Decisión del gate:** rechazada; conectar ambas evidencias al cuerpo real de `runBatchJobsState`.
+
+### Decimotercera revisión formal Sol — 2026-09-18
+
+- L150 alcanza `runBatchJobsState` desde `run()` y su callback productivo de persistencia; tests focalizados, suite, race, diff check y LSP pasan.
+- El test de lifecycle devuelve `nil` para el contexto inicial y visible y sólo cuenta cierres, por lo que no prueba que el estado visible reemplazado vuelva a `run()` ni que el cleanup final cierre ese contexto específico.
+- El test incompatible busca substrings independientes y no afirma la secuencia JSONL exacta, su orden ni ausencia de duplicados. El test público tampoco restaura `os.Stdout` después de ejecutar `run()`.
+- Evidencia y acciones correctivas completas: L151 en `auth-migration-lessons.md`.
+- **Decisión del gate:** rechazada; corregir únicamente identidad/cleanup del contexto y aserción exacta del protocolo con Luna. No ejecutar adquisición real ni Etapas 6–7.
+
+### Decimocuarta revisión formal Sol — 2026-09-18
+
+- L152 corrige identidad/cleanup del contexto y decodifica los eventos terminales, pero la prueba incompatible falla aislada porque no inicializa el estado global completo del protocolo.
+- Evidencia y acciones correctivas completas: L153 en `auth-migration-lessons.md`.
+- **Decisión del gate:** rechazada; reutilizar `withBatchEvents` y la comparación exacta existente.
+
+### Decimoquinta revisión formal Sol — 2026-09-18
+
+- L154 corrige L153: la prueba aislada pasa y valida exactamente versión, batch ID, generación, orden, proveedor, estado y código de los dos eventos; suite, shuffle repetido, race, diff check y LSP pasan.
+- El gate se rechaza porque la prueba no restaura `runBatchGraphCapture`, `runBatchGraphOutcome` ni `persistGraphCandidate`; deja seams productivos globales contaminados para tests posteriores.
+- Evidencia y acciones correctivas completas: L155 en `auth-migration-lessons.md`.
+- **Decisión del gate:** rechazada; restaurar únicamente esos tres seams con `t.Cleanup` y repetir el gate técnico. No ejecutar adquisición real ni Etapas 6–7.
+
+### Decimosexta revisión formal Sol — 2026-09-18
+
+- L156 guarda y restaura mediante `t.Cleanup` exactamente `runBatchGraphCapture`, `runBatchGraphOutcome` y `persistGraphCandidate`; no modifica producción.
+- La prueba aislada, veinte ejecuciones con orden aleatorio, suite completa, race detector y `git diff --check` pasan. LSP no reporta errores y conserva sólo un hint no bloqueante ajeno al cambio.
+- La revisión del delta confirma que el cleanup queda registrado antes de sustituir los seams y se ejecuta también ante `Fatal`; la secuencia terminal exacta de L154 se conserva sin contaminación posterior.
+- Evidencia y decisión completas: L156–L157 en `auth-migration-lessons.md`.
+- **Decisión del gate:** Etapa 5 aprobada formalmente. Esto no autoriza adquisiciones reales nuevas ni el inicio de Etapas 6–7 o Fabric; se requiere autorización explícita independiente.
 
 ---
 
@@ -726,6 +869,72 @@ Para cada etapa registrar en `auth-migration-lessons.md`:
 - [x] Contrato técnico de Etapa 5 aprobado por Sol en L090.
 - [x] Implementación local de Etapa 5 y checks técnicos documentados por Luna en L091.
 - [x] Primera revisión formal Sol de Etapa 5 ejecutada; gate rechazado en L092.
-- [ ] Bloqueantes L092 pendientes de corrección por Luna y repetición del gate técnico.
+- [x] Bloqueantes L092 corregidos parcialmente por Luna y gate técnico repetido en L093.
+- [x] Segunda revisión formal Sol de Etapa 5 ejecutada; gate rechazado en L094.
+- [x] Bloqueantes L094 corregidos parcialmente por Luna y gate técnico repetido; evidencia en L095.
+- [x] Tercera revisión formal Sol de Etapa 5 ejecutada; gate rechazado en L096.
+- [x] Bloqueantes L096 corregidos parcialmente por Luna y gate técnico repetido; evidencia en L097.
+- [x] Cuarta revisión formal Sol de Etapa 5 ejecutada; gate rechazado en L098.
+- [x] Bloqueantes L098 corregidos por Luna en L099–L100; propagación, contexto, cancelación y eliminación del bloque inalcanzable tienen checks locales.
+- [x] Seams/tests locales parciales de lifecycle y cancelación completados en L101–L105; suite, race, diff check y LSP pasan.
+- [x] Quinta revisión formal Sol ejecutada; gate rechazado en L106.
+- [x] Corregir persistencia vacía, Client ID/scopes del recorrido productivo; evidencia inicial en L107–L113.
+- [x] Agregar secuencia JSONL exitosa con interacción intermedia y generación exacta; evidencia en L114.
+- [x] Repetir gate técnico completo tras L114; evidencia en L115.
+- [x] Unificar renovación Graph de la TUI con el lifecycle batch; evidencia en L116.
+- [x] Verificar selección de Graph en el batch normal de la TUI; evidencia en L117.
+- [x] Probar el punto público de renovación Graph de la TUI; evidencia en L118.
+- [x] Actualizar la ayuda pública para reflejar Graph headless-first; evidencia en L119.
+- [x] Cubrir la decisión de adquisición de `fullRenewal`; evidencia en L120.
+- [x] Completar evidencia local inicial de contexto único y cero helper/navegador; evidencia en L121, insuficiente según L122.
+- [x] Sexta revisión formal Sol ejecutada; gate rechazado en L122.
+- [x] Propagar fallo de cierre antes de abrir visible y probar cero coexistencia también ante error; evidencia local en L123.
+- [x] Rechazar host/origen con puerto explícito en el límite Graph; evidencia local en L123.
+- [x] Séptima revisión formal Sol ejecutada; gate rechazado en L125.
+- [x] Eliminar el retorno incondicional de `fullRenewal`; L126 lo elimina, pero L129 detecta que el contexto queda cerrado después de adquirir Graph.
+- [x] Conservar el recorrido post-Graph de `fullRenewal` con un contexto vivo y devolver el estado vigente; correcciones L130 y L135.
+- [x] Ejecutar el cuerpo real de `fullRenewal` mediante dependencias inyectadas; evidencia L137.
+- [x] Ejecutar el cuerpo productivo de `run()` con setup, dispatch y cleanup inyectados; evidencia L146 atraviesa el cuerpo sin Playwright real.
+- [x] Demostrar mediante el cuerpo real de `runBatchJobsState` un único launcher para apertura inicial/fallback, máximo un contexto, propagación y cleanup del reemplazo; corregido con contextos distinguibles en L152.
+- [x] Octava revisión formal Sol ejecutada; gate rechazado en L129.
+- [x] Novena revisión formal Sol ejecutada; gate rechazado en L134.
+- [x] Correcciones locales L135–L139 y gate técnico repetido por Luna.
+- [x] Décima revisión formal Sol ejecutada; gate rechazado en L140.
+- [x] Conservar `incompatible_credential` en el recorrido productivo y permitir candidato inválido→válido; evidencia L141–L143.
+- [x] Agregar evidencia terminal exacta y autosuficiente del protocolo conectada al callback productivo de `runBatchJobsState`: L154 valida `provider_failed/incompatible_credential` seguido de `completed/partial_failure`.
+- [x] Restaurar los tres seams productivos modificados por la prueba terminal; corregido y validado en L156.
+- [x] Undécima revisión formal Sol ejecutada; gate rechazado en L147.
+- [x] Correcciones L147 implementadas por Luna y gate técnico local completo repetido; evidencia L148.
+- [x] Duodécima revisión formal Sol ejecutada; gate rechazado en L149.
+- [x] Correcciones de L149 implementadas por Luna y gate técnico local completo repetido; evidencia L150.
+- [x] Decimotercera revisión formal Sol de Etapa 5 ejecutada; gate rechazado en L151.
+- [x] Correcciones L151 implementadas por Luna y gate técnico local completo repetido; evidencia L152.
+- [x] Decimocuarta revisión formal Sol de Etapa 5 ejecutada; gate rechazado en L153.
+- [x] Corrección L153 implementada por Luna y gate técnico repetido; evidencia en L154.
+- [x] Decimoquinta revisión formal Sol de Etapa 5 ejecutada; gate rechazado en L155.
+- [x] Cleanup de los tres seams corregido por Sol y gate técnico repetido; evidencia en L156.
+- [x] Decimosexta revisión formal Sol ejecutada; gate formal de Etapa 5 aprobado en L157.
 
-**Próximo paso permitido:** cambiar a Luna para corregir los bloqueantes L092 y repetir únicamente el gate técnico local de Etapa 5. No ejecutar adquisiciones reales nuevas sin autorización adicional; no iniciar Etapas 6–7 ni Fabric.
+**Undécima revisión formal Sol — L147:** suite, race, diff check y LSP pasan. La clasificación incompatible quedó corregida, pero el test público L146 sustituye el runner antes del batch y no atraviesa la transición/propagación/cleanup productivos. También falta afirmar la secuencia terminal incompatible del protocolo.
+
+**Corrección L148:** se unificó el seam de launcher en la apertura inicial y el fallback visible y los checks locales pasan. L149 determinó que las pruebas sustituyen `runBatchJobsState` o usan directamente `runBatchJobSequence`, por lo que no demuestran los recorridos productivos exigidos.
+
+**Duodécima revisión formal Sol — L149:** gate rechazado. Debe ejecutarse el cuerpo real de `runBatchJobsState` desde `run()` con sólo sus bordes inyectados y conectarse el terminal incompatible al callback productivo.
+
+**Corrección L150:** los tests alcanzan el cuerpo real y el callback productivo, pero L151 determinó que los contextos `nil` no prueban identidad/propagación y que las búsquedas de substrings no prueban orden ni exactitud del protocolo.
+
+**Decimotercera revisión formal Sol — L151:** gate rechazado. Deben usarse identidades distinguibles para el contexto inicial/visible, afirmarse el cierre específico de cada uno y decodificarse la secuencia JSONL exacta. También debe restaurarse `os.Stdout` después del test público.
+
+**Corrección L152:** la prueba de lifecycle usa contextos falsos distinguibles, afirma el cierre específico headless→visible y del cleanup final y restaura `os.Stdout`. La prueba terminal decodifica eventos, pero L153 comprobó que no inicializa el estado global completo y falla aislada.
+
+**Decimocuarta revisión formal Sol — L153:** gate rechazado. El test terminal depende del `eventBatchID`/generación dejados por otro test; debe inicializar/restaurar el protocolo completo y usar la comparación exacta existente.
+
+**Corrección local L154 — 2026-09-18:** Luna reutilizó `withBatchEvents` y `assertBatchEvents`; la prueba terminal incompatible ahora inicializa/restaura el protocolo completo, pasa aislada y valida exactamente los dos eventos contractuales. Suite, race, diff check y LSP pasan.
+
+**Decimoquinta revisión formal Sol — L155:** gate rechazado. La prueba deja modificados `runBatchGraphCapture`, `runBatchGraphOutcome` y `persistGraphCandidate`; debe restaurarlos con `t.Cleanup` para no contaminar tests posteriores.
+
+**Corrección L156:** Sol, por solicitud explícita del usuario, restauró exactamente los tres seams con `t.Cleanup`; prueba aislada, shuffle repetido, suite, race, diff check y LSP quedaron aprobados.
+
+**Decimosexta revisión formal Sol — L157:** gate formal de Etapa 5 aprobado. La evidencia terminal queda exacta y aislada; no hubo cambios productivos en el último delta.
+
+**Próximo paso permitido:** esperar autorización explícita independiente antes de iniciar Etapa 6 o ejecutar una adquisición real nueva. Etapa 7 y Fabric permanecen bloqueados.
