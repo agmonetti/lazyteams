@@ -322,11 +322,6 @@ func registerFullInterceptor(ctx playwright.BrowserContext, captured *tokens) {
 			captured.spacesToken = token
 			notifyTokenCaptured("TEAMS_SPACES_TOKEN")
 
-		case strings.Contains(url, "fabric/"):
-			if captured.fabricToken == "" {
-				captured.fabricToken = token
-				notifyTokenCaptured("TEAMS_FABRIC_TOKEN")
-			}
 		}
 	})
 }
@@ -404,6 +399,8 @@ var runContextOnClose = func(ctx playwright.BrowserContext, fn func()) {
 	ctx.On("close", func(playwright.BrowserContext) { fn() })
 }
 var runRegisterInterceptor = registerFullInterceptor
+var runManualFabricCapture = manualFabricTokenCapture
+var runSaveTokens = saveTokens
 var runCloseContext = func(ctx playwright.BrowserContext) error {
 	if ctx == nil {
 		return nil
@@ -755,8 +752,16 @@ OPTIONS:
 	case renewOnly == "fabric":
 		fmt.Println("→ Renewing FABRIC token...")
 		captured.markIntentionalClose()
-		context.Close()
-		manualFabricTokenCapture(pw, sessionDir, captured)
+		if err := runCloseContext(context); err != nil {
+			fmt.Printf("Fabric renewal failed: %v\n", err)
+			return 1
+		}
+		runManualFabricCapture(pw, sessionDir, captured)
+		// Manual capture has no contractual proof of write authorization or the
+		// metadata required by PersistFabricCandidate. Never report success or
+		// route it through generic token persistence.
+		fmt.Println("⚠ Fabric candidate is unverified and was not persisted.")
+		return 1
 
 	case renewOnly == "graph":
 		fmt.Println("→ Renewing GRAPH token...")
@@ -808,7 +813,7 @@ OPTIONS:
 	}
 	printTokenStatus(captured)
 
-	if err := saveTokens(captured, configDir); err != nil {
+	if err := runSaveTokens(captured, configDir); err != nil {
 		fmt.Printf("Error saving tokens: %v\n", err)
 		return 1
 	}
@@ -1218,7 +1223,7 @@ func saveTokens(t *tokens, configDir string) error {
 	t.mu.Lock()
 	values := auth.TokenValues{
 		Graph: t.graphToken, Web: t.webToken, Notif: t.notifToken, EDU: t.eduToken,
-		Cookie: t.cookie, Spaces: t.spacesToken, Fabric: t.fabricToken,
+		Cookie: t.cookie, Spaces: t.spacesToken,
 	}
 	// A Graph Explorer candidate is already persisted by the shared Graph path;
 	// do not rewrite it through the legacy browser metadata path.
@@ -1552,13 +1557,6 @@ var fullRenewalPostGraph = func(pw *playwright.Playwright, page playwright.Page,
 		}
 		captured.mu.Unlock()
 	}
-	if captured.fabricToken == "" {
-		captured.markIntentionalClose()
-		if err := ctx.Close(); err != nil {
-			return err
-		}
-		manualFabricTokenCapture(pw, sessionDir, captured)
-	}
 	return nil
 }
 
@@ -1688,11 +1686,10 @@ func captureLoop(page playwright.Page, ctx playwright.BrowserContext, pw *playwr
 		hasNotif := captured.notifToken != ""
 		hasEdu := captured.eduToken != ""
 		hasCookie := captured.cookie != ""
-		hasFabric := captured.fabricToken != ""
 		hasSpaces := captured.spacesToken != ""
 		captured.mu.Unlock()
 
-		if hasGraph && hasWeb && hasNotif && hasEdu && hasCookie && hasSpaces && hasFabric {
+		if hasGraph && hasWeb && hasNotif && hasEdu && hasCookie && hasSpaces {
 			notifyTokenCaptured("All tokens")
 			break
 		}
@@ -1760,12 +1757,6 @@ func captureLoop(page playwright.Page, ctx playwright.BrowserContext, pw *playwr
 		}
 
 		// Step 4 (55s): try to extract EDU_TOKEN from JS
-		// Step 5 (70s): Navigate to private channel to get FabricToken
-		if elapsed > 70*time.Second && !hasFabric && hasGraph {
-			globalSpin.SetLabel("Automating TEAMS_FABRIC_TOKEN capture...")
-			manualFabricTokenCapture(pw, sessionDir, captured)
-		}
-
 		if elapsed > 55*time.Second && !hasEdu {
 			globalSpin.SetLabel("Attempting to extract EDU_TOKEN from JS memory...")
 			if err := tryExtractEduTokenFromJS(page, captured); err != nil {
@@ -2039,7 +2030,8 @@ func manualFabricTokenCapture(pw *playwright.Playwright, sessionDir string, capt
 		"Action required: TEAMS_FABRIC_TOKEN",
 		"1. Go to any Private or Shared Channel.",
 		"2. Go to the 'Members' tab.",
-		"3. Try to change your own role",
+		"3. Warning: this action may reach the server.",
+		"4. Try to change your own role",
 		"	(e.g., Owner -> Member)",
 		"   (It will fail if you are the only owner",
 		"but the token will be captured instantly!)",
@@ -2073,7 +2065,7 @@ func manualFabricTokenCapture(pw *playwright.Playwright, sessionDir string, capt
 			if captured.fabricToken == "" {
 				captured.fabricToken = token
 				notifyTokenCaptured("TEAMS_FABRIC_TOKEN")
-				fmt.Println("\n  " + symOK + "  TEAMS_FABRIC_TOKEN manually captured!")
+				fmt.Println("\n  " + symOK + "  Fabric candidate captured (not persisted; write authorization is unverified).")
 			}
 			captured.mu.Unlock()
 		}
@@ -2122,7 +2114,7 @@ func manualFabricTokenCapture(pw *playwright.Playwright, sessionDir string, capt
 				globalSpin.Stop("")
 				globalSpin = nil
 			}
-			fmt.Println("  " + symOK + "  Token captured! Browser closes in 10s...")
+			fmt.Println("  " + symOK + "  Candidate captured but not persisted; browser closes in 10s...")
 			time.Sleep(10 * time.Second) // wait before closing browser
 			return
 		}

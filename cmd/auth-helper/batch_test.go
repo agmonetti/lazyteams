@@ -473,7 +473,44 @@ type fakeBrowserContext struct {
 	id string
 }
 
-func (f *fakeBrowserContext) OnClose(func(playwright.BrowserContext)) {}
+func (f *fakeBrowserContext) OnClose(func(playwright.BrowserContext))        {}
+func (f *fakeBrowserContext) Cookies(...string) ([]playwright.Cookie, error) { return nil, nil }
+
+type requestEventContext struct {
+	playwright.BrowserContext
+	requestHandler func(playwright.Request)
+}
+
+func (c *requestEventContext) On(name string, handler any) {
+	if name == "request" {
+		c.requestHandler = handler.(func(playwright.Request))
+	}
+}
+
+type fakeRequest struct {
+	playwright.Request
+	url     string
+	headers map[string]string
+}
+
+func (r *fakeRequest) URL() string                { return r.url }
+func (r *fakeRequest) Headers() map[string]string { return r.headers }
+
+func TestFullInterceptorIgnoresFabricReadRequest(t *testing.T) {
+	ctx := &requestEventContext{}
+	captured := &tokens{}
+	registerFullInterceptor(ctx, captured)
+	if ctx.requestHandler == nil {
+		t.Fatal("full interceptor did not register request handler")
+	}
+	ctx.requestHandler(&fakeRequest{
+		url:     "https://teams.microsoft.com/api/fabric/read/members",
+		headers: map[string]string{"authorization": "Bearer opaque-read-token"},
+	})
+	if captured.fabricToken != "" {
+		t.Fatal("Fabric read request produced a candidate")
+	}
+}
 
 func TestRunPublicBatchTraversesGraphLifecycleAndCleansReplacement(t *testing.T) {
 	oldArgs := os.Args
@@ -616,6 +653,84 @@ func TestRunBatchJobsStateEmitsIncompatibleTerminalProtocol(t *testing.T) {
 		{Version: auth.EventVersion, BatchID: "batch", Provider: "graph", Generation: 1, Event: "provider_failed", State: "unknown", ErrorCode: "incompatible_credential"},
 		{Version: auth.EventVersion, BatchID: "batch", Provider: "batch", Generation: 1, Event: "completed", State: "partial_failure", ErrorCode: "incompatible_credential"},
 	})
+}
+
+func TestRunPublicFabricRenewalFailsWithoutSaving(t *testing.T) {
+	oldArgs, oldStdout := os.Args, os.Stdout
+	oldSetup, oldInstall, oldRun, oldPatch := runSetupHook, runPlaywrightInstall, runPlaywrightRun, runPatchWebSocketAsserts
+	oldOpen, oldPages, oldNewPage := runOpenPersistentContext, runContextPages, runContextNewPage
+	oldViewport, oldOnClose, oldRegister, oldClose := runPageSetViewport, runContextOnClose, runRegisterInterceptor, runCloseContext
+	oldManual, oldSave := runManualFabricCapture, runSaveTokens
+	t.Cleanup(func() {
+		os.Args, os.Stdout = oldArgs, oldStdout
+		runSetupHook, runPlaywrightInstall, runPlaywrightRun, runPatchWebSocketAsserts = oldSetup, oldInstall, oldRun, oldPatch
+		runOpenPersistentContext, runContextPages, runContextNewPage = oldOpen, oldPages, oldNewPage
+		runPageSetViewport, runContextOnClose, runRegisterInterceptor, runCloseContext = oldViewport, oldOnClose, oldRegister, oldClose
+		runManualFabricCapture, runSaveTokens = oldManual, oldSave
+		activeContexts = contextRegistry{}
+	})
+	t.Setenv("HOME", t.TempDir())
+	runSetupHook = func() {}
+	runPlaywrightInstall = func(...*playwright.RunOptions) error { return nil }
+	runPlaywrightRun = func(...*playwright.RunOptions) (*playwright.Playwright, error) { return nil, nil }
+	runPatchWebSocketAsserts = func() {}
+	runOpenPersistentContext = func(*playwright.Playwright, string, bool) (playwright.BrowserContext, error) { return nil, nil }
+	runContextPages = func(playwright.BrowserContext) []playwright.Page { return nil }
+	runContextNewPage = func(playwright.BrowserContext) (playwright.Page, error) { return nil, nil }
+	runPageSetViewport = func(playwright.Page, int, int) error { return nil }
+	runContextOnClose = func(playwright.BrowserContext, func()) {}
+	runRegisterInterceptor = func(playwright.BrowserContext, *tokens) {}
+	runCloseContext = func(playwright.BrowserContext) error { return nil }
+	manualCalls, saveCalls := 0, 0
+	runManualFabricCapture = func(*playwright.Playwright, string, *tokens) { manualCalls++ }
+	runSaveTokens = func(*tokens, string) error { saveCalls++; return nil }
+
+	readPipe, writePipe, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stdout = writePipe
+	os.Args = []string{"lazyteams-auth", "--renew", "fabric"}
+	code := run()
+	if err := writePipe.Close(); err != nil {
+		t.Fatal(err)
+	}
+	output, err := io.ReadAll(readPipe)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if code == 0 || manualCalls != 1 || saveCalls != 0 {
+		t.Fatalf("exit/manual/save = %d/%d/%d, want nonzero/1/0", code, manualCalls, saveCalls)
+	}
+	if strings.Contains(string(output), "Session saved") {
+		t.Fatalf("Fabric fallback announced persistence: %s", output)
+	}
+}
+
+func TestFullRenewalNeverCapturesFabric(t *testing.T) {
+	oldGoto, oldCapture, oldSleep, oldGraph := fullRenewalGoto, fullRenewalCapture, fullRenewalSleep, fullRenewalGraph
+	oldManual := runManualFabricCapture
+	t.Cleanup(func() {
+		fullRenewalGoto, fullRenewalCapture, fullRenewalSleep, fullRenewalGraph = oldGoto, oldCapture, oldSleep, oldGraph
+		runManualFabricCapture = oldManual
+	})
+	fullRenewalGoto = func(playwright.Page) error { return nil }
+	fullRenewalCapture = func(playwright.Page, playwright.BrowserContext, *playwright.Playwright, string, *tokens, <-chan struct{}) string {
+		return captureOK
+	}
+	fullRenewalSleep = func(time.Duration) {}
+	fullRenewalGraph = func(_ *playwright.Playwright, page playwright.Page, ctx playwright.BrowserContext, _ *tokens, _, _ string) (playwright.Page, playwright.BrowserContext, error) {
+		return page, ctx, nil
+	}
+	manualCalls := 0
+	runManualFabricCapture = func(*playwright.Playwright, string, *tokens) { manualCalls++ }
+	ctx := &fakeBrowserContext{}
+	if _, _, err := fullRenewal(nil, nil, ctx, &tokens{}, "session", false, make(chan struct{}), "config"); err != nil {
+		t.Fatal(err)
+	}
+	if manualCalls != 0 {
+		t.Fatalf("full renewal invoked Fabric capture %d times", manualCalls)
+	}
 }
 
 func TestRunPublicEntryPointExecutesSetupWithoutShortCircuit(t *testing.T) {

@@ -3,6 +3,7 @@ package auth
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -230,6 +231,79 @@ func TestPersistGraphCandidateReturnsPersistedGeneration(t *testing.T) {
 	}
 	if got.Generation != 5 || got.Graph.Token == "" {
 		t.Fatalf("persisted snapshot = generation %d, graph token present=%t", got.Generation, got.Graph.Token != "")
+	}
+}
+
+func TestPersistTokenValuesDoesNotPersistFabricFromGenericCapture(t *testing.T) {
+	dir := t.TempDir()
+	before := &CredentialSet{Version: schemaVersion, Generation: 4, Fabric: Credential{Token: "stable-fabric"}}
+	if err := PersistCredentialSet(dir, before); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "tokens.env")
+	beforeBytes, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = PersistTokenValues(dir, TokenValues{Fabric: "unverified-fabric"})
+	if !errors.Is(err, ErrIncompatibleCredential) {
+		t.Fatalf("expected generic Fabric capture rejection, got %v", err)
+	}
+	afterBytes, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(afterBytes) != string(beforeBytes) {
+		t.Fatal("generic Fabric capture changed snapshot")
+	}
+}
+
+func TestValidateFabricCandidateFailsClosedWithoutWritePolicy(t *testing.T) {
+	candidate := Credential{
+		Token: "candidate", Origin: "fabric_write_intercept", Resource: "observed-resource",
+		Application: "observed-application", Account: "acct", Tenant: "tenant", Permissions: []string{"read-scope"},
+	}
+	if _, err := ValidateFabricCandidate(candidate, nil); !errors.Is(err, ErrIncompatibleCredential) {
+		t.Fatalf("Fabric candidate accepted without contractual write policy: %v", err)
+	}
+}
+
+func TestPersistFabricCandidateRejectsEveryMetadataVariantWithoutChangingFile(t *testing.T) {
+	baseline := Credential{
+		Token: "stable", Origin: "previous-origin", Resource: "previous-resource",
+		Application: "previous-application", Account: "acct-a", Tenant: "tenant-a", Permissions: []string{"previous-permission"},
+	}
+	candidates := map[string]Credential{
+		"apparent complete metadata": {Token: "replacement", Origin: "fabric_write_intercept", Resource: "observed-resource", Application: "observed-application", Account: "acct-a", Tenant: "tenant-a", Permissions: []string{"apparent-write-scope"}},
+		"resource mismatch":          {Token: "replacement", Origin: baseline.Origin, Resource: "other-resource", Application: baseline.Application, Account: baseline.Account, Tenant: baseline.Tenant, Permissions: baseline.Permissions},
+		"application mismatch":       {Token: "replacement", Origin: baseline.Origin, Resource: baseline.Resource, Application: "other-application", Account: baseline.Account, Tenant: baseline.Tenant, Permissions: baseline.Permissions},
+		"account mismatch":           {Token: "replacement", Origin: baseline.Origin, Resource: baseline.Resource, Application: baseline.Application, Account: "acct-b", Tenant: baseline.Tenant, Permissions: baseline.Permissions},
+		"tenant mismatch":            {Token: "replacement", Origin: baseline.Origin, Resource: baseline.Resource, Application: baseline.Application, Account: baseline.Account, Tenant: "tenant-b", Permissions: baseline.Permissions},
+		"provenance mismatch":        {Token: "replacement", Origin: "browser", Resource: baseline.Resource, Application: baseline.Application, Account: baseline.Account, Tenant: baseline.Tenant, Permissions: baseline.Permissions},
+		"permission mismatch":        {Token: "replacement", Origin: baseline.Origin, Resource: baseline.Resource, Application: baseline.Application, Account: baseline.Account, Tenant: baseline.Tenant, Permissions: []string{"read-only"}},
+	}
+	for name, candidate := range candidates {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := PersistCredentialSet(dir, &CredentialSet{Version: schemaVersion, Generation: 2, Fabric: baseline}); err != nil {
+				t.Fatal(err)
+			}
+			path := filepath.Join(dir, "tokens.env")
+			before, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := PersistFabricCandidate(dir, candidate); !errors.Is(err, ErrIncompatibleCredential) {
+				t.Fatalf("Fabric candidate accepted without write policy: %v", err)
+			}
+			after, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(after) != string(before) {
+				t.Fatal("rejected Fabric candidate changed snapshot")
+			}
+		})
 	}
 }
 

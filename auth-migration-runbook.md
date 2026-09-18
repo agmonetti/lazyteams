@@ -2,9 +2,9 @@
 
 ## Estado del documento
 
-- **Estado:** operativo; Etapa 0 cerrada; Etapa 1 ejecutada y su gate no aprobado; Etapas 2, 3, 4, 5 y 6 corregidas, validadas y aprobadas por revisión Sol. La decimosexta revisión formal cerró Etapa 5 en L157; Etapa 6 fue corregida en L164 y su revisión formal aprobó el gate en L165. El contrato técnico previo de Etapa 7 quedó definido por Sol en L167, sin autorizar su ejecución.
+- **Estado:** operativo; Etapa 0 cerrada; Etapa 1 ejecutada y su gate no aprobado; Etapas 2, 3, 4, 5 y 6 corregidas, validadas y aprobadas por revisión Sol. La decimosexta revisión formal cerró Etapa 5 en L157; Etapa 6 fue corregida en L164 y su revisión formal aprobó el gate en L165. El corte 7A fue corregido nuevamente y su gate técnico local quedó aprobado en L173 tras el rechazo formal L171; resta otra revisión formal Sol y el probe 7B sigue bloqueado hasta autorización explícita.
 - **Migración:** núcleo de Etapas 2 y 3 implementado; el helper por lotes, protocolo incremental y lifecycle de Etapa 4 quedaron aprobados formalmente en L088; Graph comparte el recorrido headless-first, valida aplicación/scopes, evita el delta vacío, propaga el fallo de cierre, rechaza puertos explícitos y conserva `incompatible_credential`; L156 restaura los tres seams productivos y L157 aprueba la evidencia terminal aislada.
-- **Etapa actual:** Etapa 6 cerrada formalmente en L165. Etapa 7 tiene contrato técnico previo en L167, pero su implementación, el probe, Fabric y toda adquisición real nueva permanecen bloqueados hasta autorización explícita independiente.
+- **Etapa actual:** Etapa 6 cerrada formalmente en L165. L173 corrige los bloqueantes de L171 manteniendo la persistencia Fabric cerrada y completa la evidencia productiva local; el gate técnico de 7A está aprobado, pero su revisión formal sigue pendiente. El probe 7B, Fabric y toda adquisición real nueva permanecen bloqueados hasta autorización explícita independiente.
 - **Documentos fuente:** `plan.md` y `auth-migration-research.md`.
 - **Alcance:** permitir abrir y empezar con consumo liviano, mejorar el arranque, la renovación y la coordinación de credenciales sin reemplazar la arquitectura híbrida actual.
 - **Fuera de alcance inicial:** nueva aplicación OAuth, reescritura de la TUI, WebSockets, renderizado y captura automática de Fabric sin prueba de seguridad.
@@ -934,6 +934,31 @@ Antes de solicitar aprobación formal deben quedar documentadas estas evidencias
 
 Se descarta la automatización si cualquier escritura obtiene respuesta, si el token aparece sólo después de permitirla, si el candidato sólo tiene permisos de lectura, si no puede demostrarse autorización de escritura sin mutar o si la auditoría no es concluyente.
 
+### Primera revisión formal Sol del corte 7A — 2026-09-18
+
+- Suite completa, race detector y `git diff --check` pasan; LSP no reporta errores, sólo hints y reglas auxiliares preexistentes/no bloqueantes. No se ejecutó navegador, adquisición real, probe ni tráfico Microsoft.
+- El gate se rechaza: `--renew fabric` captura un candidato pero `saveTokens` y `PersistTokenValues` lo omiten; el proceso termina con éxito y anuncia sesión guardada aunque Fabric no fue persistido. Además, `PersistTokenValues` acepta silenciosamente un valor Fabric y devuelve éxito sin aplicarlo.
+- `ValidateFabricCandidate` sólo exige strings no vacíos para recurso/aplicación y permite identidad/permisos desconocidos en bootstrap; con baseline permite permisos entrantes vacíos porque `MetadataCompatible` sólo compara permisos cuando ambos lados los aportan. Así puede reemplazar el token y heredar metadata/permisos viejos, exactamente la degradación que 7A debía impedir.
+- La evidencia no cubre el camino público `--renew fabric`, ausencia de captura Fabric de lectura en el interceptor real, ausencia de invocación Fabric en captura completa, persistencia válida específica ni rechazo byte por byte de recurso, aplicación, tenant, procedencia y permisos incompatibles.
+- Evidencia y acciones correctivas completas: L169 en `auth-migration-lessons.md`.
+- **Decisión del gate:** Corte 7A rechazado en primera revisión formal. Corregir con Luna y repetir el gate técnico antes de otra revisión Sol. No ejecutar 7B, Fabric real ni adquisiciones nuevas.
+
+### Segunda revisión formal Sol del corte 7A — 2026-09-18
+
+- L170 corrige el éxito falso de `--renew fabric` y hace que `PersistTokenValues` rechace Fabric genérico. Suite, race detector, veinte órdenes aleatorios, `git diff --check` y LSP pasan; no se ejecutó navegador, adquisición real, probe ni tráfico Microsoft.
+- El gate se rechaza: los valores esperados de recurso/aplicación no tienen evidencia contractual registrada y cualquier lista no vacía de permisos —incluida una de sólo lectura— pasa el bootstrap. La prueba usa `Member.Write`, pero producción no exige ese permiso ni otro equivalente demostrado.
+- Continúan ausentes las pruebas productivas exigidas por L169: punto público `--renew fabric`, interceptor real ante lectura Fabric, recorrido completo sin captura Fabric, persistencia específica válida y conservación byte por byte para recurso, aplicación, tenant, procedencia y permisos incompatibles.
+- Evidencia y acciones correctivas completas: L171 en `auth-migration-lessons.md`.
+- **Decisión del gate:** Corte 7A rechazado en segunda revisión formal. Corregir y repetir el gate técnico antes de otra revisión Sol. No ejecutar 7B, Fabric real ni adquisiciones nuevas.
+
+### Corrección local posterior a L171 — 2026-09-18
+
+- Se eliminaron las constantes y scopes Fabric no demostrados. `ValidateFabricCandidate` y `PersistFabricCandidate` permanecen cerradas con `incompatible_credential` hasta que 7B/7C aporten una política contractual de escritura reproducible; Fabric genérico continúa rechazado.
+- El punto público `--renew fabric` retorna fallo después del fallback manual explícito, no llama al guardado ni anuncia persistencia. El interceptor productivo ignora una request Fabric de lectura y el cuerpo real de `fullRenewal` no invoca adquisición Fabric.
+- Persistencia genérica y específica conservan `tokens.env` byte por byte ante variantes de recurso, aplicación, cuenta, tenant, procedencia y permisos. No existe un caso válido de persistencia específica en 7A porque aún no existe metadata contractual que lo autorice.
+- Tests focalizados, veinte órdenes aleatorios, suite completa, race detector, `git diff --check` y LSP pasan. No se ejecutó navegador, adquisición real, probe ni tráfico Microsoft. Evidencia completa: L172–L173.
+- **Estado:** gate técnico local de 7A aprobado; revisión formal Sol pendiente. No ejecutar 7B, Fabric real ni adquisiciones nuevas.
+
 ---
 
 ## 4. Matriz de aceptación final
@@ -1094,6 +1119,12 @@ Para cada etapa registrar en `auth-migration-lessons.md`:
 
 **Decimosexta revisión formal Sol — L157:** gate formal de Etapa 5 aprobado. La evidencia terminal queda exacta y aislada; no hubo cambios productivos en el último delta.
 
-- [x] Contrato técnico previo de Etapa 7 definido por Sol en L167, sin autorizar implementación ni experimento.
+- [x] Contrato técnico previo de Etapa 7 definido por Sol en L167.
+- [x] Corte local 7A implementado con Luna; evidencia técnica documentada en L168.
+- [x] Primera revisión formal Sol del gate de 7A ejecutada; gate rechazado en L169.
+- [x] Correcciones L169 implementadas y gate técnico local repetido; evidencia en L170.
+- [x] Segunda revisión formal Sol del corte 7A ejecutada; gate rechazado en L171.
+- [x] Correcciones L171 implementadas y gate técnico local repetido; evidencia en L172–L173.
+- [ ] Tercera revisión formal Sol del corte 7A ejecutada.
 
-**Próximo paso permitido:** esperar autorización explícita independiente para implementar el corte local 7A con Luna. El probe real 7B requiere otra autorización explícita posterior; no ejecutar Fabric ni adquisiciones reales por la aprobación del contrato.
+**Próximo paso permitido:** realizar la tercera revisión formal Sol del delta y del gate acumulado de 7A. El probe real 7B requiere otra autorización explícita posterior; no ejecutar Fabric ni adquisiciones reales.

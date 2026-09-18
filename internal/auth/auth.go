@@ -363,6 +363,21 @@ func ValidateGraphCandidate(candidate GraphCandidate, baseline *Credential) (Cre
 	return c, nil
 }
 
+// ValidateFabricCandidate remains closed until an authorized probe establishes
+// a reproducible policy for Fabric write resource, application and permissions.
+// A captured Bearer or read scope is not proof of write authorization.
+func ValidateFabricCandidate(_ Credential, _ *Credential) (Credential, error) {
+	return Credential{}, fmt.Errorf("%w: Fabric write policy is not established", ErrIncompatibleCredential)
+}
+
+// PersistFabricCandidate deliberately cannot write before ValidateFabricCandidate
+// has a contractual write policy. Keeping the boundary closed prevents a new
+// token from inheriting unproven metadata from an existing snapshot.
+func PersistFabricCandidate(_ string, candidate Credential) (*CredentialSet, error) {
+	_, err := ValidateFabricCandidate(candidate, nil)
+	return nil, err
+}
+
 // PersistGraphCandidate validates and atomically persists a Graph Explorer token.
 func PersistGraphCandidate(configDir string, candidate GraphCandidate) (*CredentialSet, error) {
 	set, err := loadFromDir(configDir)
@@ -487,6 +502,9 @@ func PersistTokenValues(configDir string, values TokenValues) (*CredentialSet, e
 	if err != nil {
 		return nil, err
 	}
+	if values.Fabric != "" {
+		return nil, fmt.Errorf("%w: Fabric persistence is disabled until a write policy is established", ErrIncompatibleCredential)
+	}
 	now := time.Now().UTC()
 	browserCredential := func(value string) *Credential {
 		if value == "" {
@@ -499,7 +517,8 @@ func PersistTokenValues(configDir string, values TokenValues) (*CredentialSet, e
 		BaseGeneration: set.Generation,
 		Graph:          browserCredential(values.Graph), Web: browserCredential(values.Web), Notif: browserCredential(values.Notif),
 		EDU: browserCredential(values.EDU), Cookie: browserCredential(values.Cookie), EDUCookie: browserCredential(values.EDUCookie),
-		Spaces: browserCredential(values.Spaces), Fabric: browserCredential(values.Fabric),
+		// Fabric persistence stays closed until a contractual write policy exists.
+		Spaces: browserCredential(values.Spaces),
 	})
 }
 
