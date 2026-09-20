@@ -91,6 +91,27 @@ func TestRouteAdapterAbortsUnknownMutationAndRejectsResponse(t *testing.T) {
 	}
 }
 
+func TestLifecycleCancellationClosesContext(t *testing.T) {
+	probe, _ := fabricprobe.New(probeTarget)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	closed := 0
+	err := runLifecycle(ctx, probe, lifecycleEdges{
+		installRoute: func() error { return nil },
+		goOnline:     func() error { return nil },
+		audit: func(context.Context) (fabricprobe.Audit, error) {
+			return fabricprobe.Audit{Exists: true, Role: "User"}, nil
+		},
+		navigate:          func() error { return nil },
+		waitForTarget:     func(context.Context) error { return ctx.Err() },
+		closeContext:      func() error { closed++; return nil },
+		snapshotUnchanged: func() bool { return true },
+	})
+	if err == nil || probe.Reason() != fabricprobe.RejectCancelled || closed != 1 {
+		t.Fatalf("err=%v reason=%s closed=%d", err, probe.Reason(), closed)
+	}
+}
+
 func TestLifecycleRejectsChangedSnapshot(t *testing.T) {
 	probe, _ := fabricprobe.New(probeTarget)
 	tracker := newRequestTracker()

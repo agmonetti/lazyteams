@@ -37,6 +37,12 @@ type lifecycleEdges struct {
 }
 
 func runLifecycle(ctx context.Context, probe *fabricprobe.Probe, edges lifecycleEdges) error {
+	closed := false
+	defer func() {
+		if !closed {
+			_ = edges.closeContext()
+		}
+	}()
 	fail := func() error {
 		if probe.State() != fabricprobe.Rejected {
 			probe.RejectExternal(fabricprobe.RejectRuntime)
@@ -60,7 +66,11 @@ func runLifecycle(ctx context.Context, probe *fabricprobe.Probe, edges lifecycle
 		}
 		return errors.New("probe rejected")
 	}
-	if edges.closeContext() != nil || !probe.CloseContext() {
+	if edges.closeContext() != nil {
+		return fail()
+	}
+	closed = true
+	if !probe.CloseContext() {
 		return fail()
 	}
 	after, err := edges.audit(ctx)
