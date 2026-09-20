@@ -1185,5 +1185,6 @@ Para cada etapa registrar en `auth-migration-lessons.md`:
 - [x] Preflight técnico de 7B definido por Sol sin implementar ni ejecutar el probe; evidencia en L175.
 - [x] Núcleo local sin red de 7B implementado y validado por Sol; evidencia en L176.
 - [x] Adaptador/binario de laboratorio de 7B conectado a Playwright y validado localmente sin red; evidencia y revisión formal en L177.
+- [x] Resolución interactiva de targets y corrida real user-run de 7B ejecutada; evidencia y hallazgo del método PATCH en L181–L183.
 
-**Próximo paso pendiente:** L180 autoriza una única corrida real user-run de 7B. El usuario debe ejecutar el binario preparado en el laboratorio y devolver la evidencia sanitizada definida en “Encargo obligatorio al usuario para pruebas reales”. Hasta recibirla, no se interpreta el gate, no se inicia otra corrida y no se habilita 7C, promoción ni persistencia.
+**Próximo paso pendiente:** En L183 se demostró empíricamente la intercepción y el aborto de seguridad en Teams real, y se descubrió que Teams Web dispara `PATCH` (no `POST`) al cambiar roles en canales privados. Para la próxima sesión: ajustar el matcher de `internal/fabricprobe` para aceptar `PATCH` (o la ruta específica de PATCH), repetir la corrida autorizada en el laboratorio para capturar el token de escritura en cuarentena y verificar la auditoría antes/después (`unchanged=true`).

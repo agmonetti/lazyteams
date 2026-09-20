@@ -2852,3 +2852,32 @@ Copiar esta plantilla y completar todos los campos aplicables:
 - **Acción siguiente:** consultar al usuario qué observó en Firefox (si llegó a hacer clic en cambiar rol o si se cerró antes) y repetir la prueba con el binario corregido.
 - **Gate:** corrida real ejecutada; rechazo confirmado; diagnóstico corregido.
 
+### L183 — Corrida real de 7B demuestra aborto exitoso y revela que Teams usa PATCH para roles de canal privado
+
+- **Fecha:** 2026-09-20
+- **Etapa:** 7B / hallazgo empírico de mutación real
+- **Tipo:** hecho observado + hipótesis descartada + seguridad demostrada + decisión
+- **Pregunta o hipótesis:** ¿Qué método HTTP y comportamiento de red dispara realmente Teams Web al modificar el rol de un miembro en un canal privado?
+- **Entorno no sensible:** corrida real en el laboratorio `/home/agus-hy/lazyteams-auth-lab` con Firefox visible, sesión Microsoft real y segundo miembro en el canal privado ("private chann"); target configurado para cambiar rol de Member a Owner (rol 2).
+- **Procedimiento:** el usuario ejecutó `./run-fabric-probe.sh`, seleccionó el equipo "prueba", el canal "private chann" y el miembro "MONETTI FRANCISCO" (Member -> Owner); en Teams Web navegó a la pestaña Miembros y cambió el desplegable del miembro a Owner.
+- **Resultado observado:**
+  1. En el primer intento (L182) con un único miembro Owner, la UI de Teams bloqueó la acción localmente con el mensaje *"You can't make yourself a member because you're the last team admin"*, impidiendo disparar tráfico HTTP.
+  2. En el segundo intento (con dos miembros), el usuario cambió el rol de Francisco a Owner. Inmediatamente el probe interceptó la petición, abortó la conexión antes de alcanzar el servidor Microsoft y cerró Firefox limpiamente.
+  3. La salida exacta en terminal fue:
+     `probe: unexpected Fabric mutation intercepted and aborted: PATCH`
+     `{"state":"rejected","attempts":0,"unchanged":false,"error_code":"unknown_mutation"}`
+     Log sanitizado: `/home/agus-hy/lazyteams-auth-lab/runtime/logs/stage7b-fabric-probe-20260920T231328Z.stderr`.
+- **Hallazgo principal:**
+  - La hipótesis previa (heredada del código legacy de `internal/graph/teams_api.go`) asumía que el cambio de rol en Fabric se realizaba mediante `POST https://teams.microsoft.com/fabric/.../users`.
+  - La evidencia empírica real demostró que Teams Web moderno no usa `POST`, sino **`PATCH`** para esta mutación.
+- **Seguridad comprobada:**
+  - La garantía fail-closed de Etapa 7B funcionó con total eficacia: al no coincidir el método con el `POST` estricto configurado en el matcher, la petición mutante fue **abortada en el acto** (`unexpected Fabric mutation intercepted and aborted: PATCH`).
+  - Ninguna mutación alcanzó el servidor ni modificó roles en el tenant.
+- **Impacto en el diseño:**
+  - Para completar 7B y capturar el token de escritura sin tocar el servidor, el matcher de `internal/fabricprobe` debe actualizarse para admitir el método `PATCH` (o la ruta exacta de PATCH que Teams utiliza para miembros individuales).
+  - Se debe registrar en el probe la ruta parametrizada de la petición `PATCH` abortada para ajustar el contrato exacto.
+- **Acción siguiente para la próxima sesión:**
+  1. Actualizar el matcher de `internal/fabricprobe` para que admita `PATCH` además de `POST`, o inspeccionar la ruta parametrizada del `PATCH` abortado.
+  2. Repetir la corrida en el laboratorio con el cambio a `PATCH` para que el probe reconozca la petición como target legítimo, la aborte, certifique `requestfailed` sin `response`, capture el token en cuarentena y complete la auditoría antes/después (`unchanged=true`).
+- **Gate:** intercepción y aborto fail-closed demostrados empíricamente; método `PATCH` identificado; corrida 7B pendiente de ajuste de método para captura final.
+
