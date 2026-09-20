@@ -114,11 +114,10 @@ func frameURL(req playwright.Request) (raw string) {
 }
 
 func bearer(req playwright.Request) string {
-	headers, err := req.AllHeaders()
+	value, err := req.HeaderValue("authorization")
 	if err != nil {
 		return ""
 	}
-	value := headers["authorization"]
 	if !strings.HasPrefix(value, "Bearer ") {
 		return ""
 	}
@@ -291,7 +290,13 @@ func run(args []string) int {
 	}()
 
 	tracker := newRequestTracker()
-	client := &http.Client{Timeout: 15 * time.Second}
+	client := &http.Client{
+		Timeout:   15 * time.Second,
+		Transport: &http.Transport{},
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
 	signalCtx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stopSignals()
 	ctx, cancel := context.WithTimeout(signalCtx, 3*time.Minute)
