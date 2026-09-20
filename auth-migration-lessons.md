@@ -2805,3 +2805,19 @@ Copiar esta plantilla y completar todos los campos aplicables:
 - **Acción siguiente:** pedir al usuario que elija entre autorizar expresamente la corrida real de `cmd/fabric-probe` en el laboratorio con navegador y tráfico Microsoft/tenant, o mantenerla bloqueada y cerrar la migración con Fabric en fallback manual.
 - **Riesgo residual:** aun con una corrida exitosa, `write_candidate_unverified` no demuestra autorización de escritura y no permite persistir ni habilitar Fabric.
 - **Gate:** no autorizado; no se abrió navegador ni se generó tráfico Microsoft.
+
+### L180 — Usuario autoriza una única corrida real user-run de 7B
+
+- **Fecha:** 2026-09-20
+- **Etapa:** 7B / ejecución real pendiente
+- **Tipo:** autorización + preparación + restricción
+- **Pregunta o hipótesis:** ¿Queda autorizado encargar al usuario la primera corrida real del probe Fabric en el laboratorio aislado?
+- **Entorno no sensible:** rama `auth-fast-migration-research`; modelo `gpt-5.6-sol`; laboratorio `/home/agus-hy/lazyteams-auth-lab` con raíz, configuración y perfil en modo `0700`; sin ejecución del probe, navegador ni tráfico Microsoft por parte del agente.
+- **Autorización:** el usuario eligió explícitamente “Autorizar 7B real”, cuyo alcance declarado es una sola corrida user-run de `cmd/fabric-probe`, navegador visible y tráfico Microsoft/tenant en el laboratorio; no autoriza persistir el candidato.
+- **Procedimiento:** verificar el aislamiento del laboratorio sin leer secretos; localizar `tokens.env` y el perfil dedicado sólo por ruta/permisos; compilar el binario en `/home/agus-hy/lazyteams-auth-lab/probe/fabric-probe` con modo `0700`; no ejecutarlo.
+- **Resultado observado:** la raíz, configuración y perfil resuelven dentro del laboratorio y tienen permisos restrictivos; el binario quedó preparado. No se abrió Firefox, no se accedió al tenant, no se generó tráfico y no se leyó ni modificó `tokens.env`.
+- **Evidencia:** respuesta estructurada del usuario; `stat`/`find` sanitizados de rutas y permisos; `go build -o /home/agus-hy/lazyteams-auth-lab/probe/fabric-probe ./cmd/fabric-probe`; binario modo `0700`.
+- **Impacto:** puede encargarse al usuario una única corrida interactiva conforme a L178. El agente debe esperar su devolución antes de interpretar el gate o pedir otra corrida.
+- **Acción siguiente:** entregar el comando user-run con variables objetivo introducidas localmente y solicitar exclusivamente evidencia sanitizada: timestamps, exit code, JSON final/log, lifecycle del navegador, ausencia de huérfanos, snapshot idéntico, aborto de la request, `requestfailed` sin `response`, ausencia de mutaciones no cubiertas y auditoría `unchanged=true`.
+- **Riesgo residual:** el probe puede terminar `rejected`; incluso `write_candidate_unverified` sólo asocia el candidato con la request abortada y no demuestra permiso de escritura ni autoriza persistencia o 7C.
+- **Gate:** autorización concedida para una sola corrida user-run; ejecución y evidencia pendientes.

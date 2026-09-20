@@ -2,9 +2,9 @@
 
 ## Estado del documento
 
-- **Estado:** operativo; Etapa 0 cerrada; Etapa 1 ejecutada y su gate no aprobado; Etapas 2, 3, 4, 5 y 6 corregidas, validadas y aprobadas por revisión Sol. La decimosexta revisión formal cerró Etapa 5 en L157; Etapa 6 fue corregida en L164 y su revisión formal aprobó el gate en L165. El corte 7A fue corregido en L173 y aprobado en L174; el núcleo y el adaptador/binario local sin red de 7B quedaron implementados y aprobados en L176–L177. Su ejecución real sigue bloqueada hasta autorización explícita posterior.
+- **Estado:** operativo; Etapa 0 cerrada; Etapa 1 ejecutada y su gate no aprobado; Etapas 2, 3, 4, 5 y 6 corregidas, validadas y aprobadas por revisión Sol. La decimosexta revisión formal cerró Etapa 5 en L157; Etapa 6 fue corregida en L164 y su revisión formal aprobó el gate en L165. El corte 7A fue corregido en L173 y aprobado en L174; el núcleo y el adaptador/binario local sin red de 7B quedaron implementados y aprobados en L176–L177. En L180 el usuario autorizó expresamente una única corrida real user-run de 7B en el laboratorio con Firefox/sesión real y tráfico Microsoft/tenant; la ejecución y su evidencia siguen pendientes.
 - **Migración:** núcleo de Etapas 2 y 3 implementado; el helper por lotes, protocolo incremental y lifecycle de Etapa 4 quedaron aprobados formalmente en L088; Graph comparte el recorrido headless-first, valida aplicación/scopes, evita el delta vacío, propaga el fallo de cierre, rechaza puertos explícitos y conserva `incompatible_credential`; L156 restaura los tres seams productivos y L157 aprueba la evidencia terminal aislada.
-- **Etapa actual:** Etapa 6 cerrada formalmente en L165 y corte 7A cerrado formalmente en L174. El preflight técnico de 7B quedó definido en L175; L176 implementó su núcleo puro y L177 conectó y aprobó el adaptador/binario de laboratorio mediante pruebas locales sin red. La persistencia Fabric permanece cerrada hasta disponer de una política contractual de escritura reproducible. La ejecución del binario, el navegador, el tráfico Microsoft, Fabric real y toda adquisición nueva permanecen bloqueados hasta una autorización explícita posterior que los mencione.
+- **Etapa actual:** Etapa 6 cerrada formalmente en L165 y corte 7A cerrado formalmente en L174. El preflight técnico de 7B quedó definido en L175; L176 implementó su núcleo puro y L177 conectó y aprobó el adaptador/binario de laboratorio mediante pruebas locales sin red. La persistencia Fabric permanece cerrada hasta disponer de una política contractual de escritura reproducible. L180 autoriza una única corrida real de 7B, ejecutada por el usuario según el protocolo sanitizado; no autoriza al agente a ejecutarla ni autoriza promoción, persistencia o 7C.
 - **Documentos fuente:** `plan.md` y `auth-migration-research.md`.
 - **Alcance:** permitir abrir y empezar con consumo liviano, mejorar el arranque, la renovación y la coordinación de credenciales sin reemplazar la arquitectura híbrida actual.
 - **Fuera de alcance inicial:** nueva aplicación OAuth, reescritura de la TUI, WebSockets, renderizado y captura automática de Fabric sin prueba de seguridad.
@@ -870,7 +870,7 @@ La revisión Sol debe comprobar especialmente que sólo metadata contractual age
 
 ### Estado de autorización
 
-Sol definió el contrato técnico previo en L167. El corte local 7A fue autorizado, corregido y aprobado formalmente en L174. El probe 7B, Fabric real y toda adquisición nueva permanecen bloqueados hasta autorización explícita independiente; la aprobación de 7A no autoriza ejecutar el experimento.
+Sol definió el contrato técnico previo en L167. El corte local 7A fue autorizado, corregido y aprobado formalmente en L174. La implementación local sin red de 7B fue aprobada en L177. En L180 el usuario autorizó expresamente una única corrida real user-run de `cmd/fabric-probe` en el laboratorio aislado con Firefox/sesión Microsoft real y tráfico al tenant autorizado. Esta autorización no permite que el agente ejecute la prueba interactiva, no habilita persistencia/promoción del candidato y no autoriza 7C.
 
 ### Antecedente obligatorio
 
@@ -1186,4 +1186,4 @@ Para cada etapa registrar en `auth-migration-lessons.md`:
 - [x] Núcleo local sin red de 7B implementado y validado por Sol; evidencia en L176.
 - [x] Adaptador/binario de laboratorio de 7B conectado a Playwright y validado localmente sin red; evidencia y revisión formal en L177.
 
-**Próximo paso bloqueado:** no queda ejecución autorizada en 7B. Ejecutar `cmd/fabric-probe`, abrir navegador, generar tráfico Microsoft, acceder al tenant, capturar Fabric o realizar cualquier adquisición nueva requiere una autorización posterior que lo mencione expresamente. Las pruebas reales deben ser encargadas al usuario según el protocolo de devolución documentado en la sección “Encargo obligatorio al usuario para pruebas reales”.
+**Próximo paso pendiente:** L180 autoriza una única corrida real user-run de 7B. El usuario debe ejecutar el binario preparado en el laboratorio y devolver la evidencia sanitizada definida en “Encargo obligatorio al usuario para pruebas reales”. Hasta recibirla, no se interpreta el gate, no se inicia otra corrida y no se habilita 7C, promoción ni persistencia.
