@@ -2,9 +2,9 @@
 
 ## Estado del documento
 
-- **Estado:** operativo; Etapa 0 cerrada; Etapa 1 ejecutada y su gate no aprobado; Etapas 2, 3, 4, 5 y 6 corregidas, validadas y aprobadas por revisión Sol. La decimosexta revisión formal cerró Etapa 5 en L157; Etapa 6 fue corregida en L164 y su revisión formal aprobó el gate en L165. El corte 7A fue corregido en L173 y su tercera revisión formal Sol aprobó el gate en L174; el probe 7B sigue bloqueado hasta autorización explícita.
+- **Estado:** operativo; Etapa 0 cerrada; Etapa 1 ejecutada y su gate no aprobado; Etapas 2, 3, 4, 5 y 6 corregidas, validadas y aprobadas por revisión Sol. La decimosexta revisión formal cerró Etapa 5 en L157; Etapa 6 fue corregida en L164 y su revisión formal aprobó el gate en L165. El corte 7A fue corregido en L173 y aprobado en L174; la implementación local sin red de 7B fue autorizada e inició en L176, pero su ejecución real sigue bloqueada hasta autorización explícita posterior.
 - **Migración:** núcleo de Etapas 2 y 3 implementado; el helper por lotes, protocolo incremental y lifecycle de Etapa 4 quedaron aprobados formalmente en L088; Graph comparte el recorrido headless-first, valida aplicación/scopes, evita el delta vacío, propaga el fallo de cierre, rechaza puertos explícitos y conserva `incompatible_credential`; L156 restaura los tres seams productivos y L157 aprueba la evidencia terminal aislada.
-- **Etapa actual:** Etapa 6 cerrada formalmente en L165 y corte 7A cerrado formalmente en L174. El preflight técnico de 7B quedó definido en L175 sin ejecutar el probe. La persistencia Fabric permanece cerrada hasta disponer de una política contractual de escritura reproducible. El probe 7B, Fabric real y toda adquisición nueva permanecen bloqueados hasta autorización explícita independiente.
+- **Etapa actual:** Etapa 6 cerrada formalmente en L165 y corte 7A cerrado formalmente en L174. El preflight técnico de 7B quedó definido en L175; L176 implementa y valida únicamente su núcleo local sin red. La persistencia Fabric permanece cerrada hasta disponer de una política contractual de escritura reproducible. El binario Playwright, la ejecución real, Fabric real y toda adquisición nueva permanecen bloqueados hasta sus gates y autorizaciones explícitas correspondientes.
 - **Documentos fuente:** `plan.md` y `auth-migration-research.md`.
 - **Alcance:** permitir abrir y empezar con consumo liviano, mejorar el arranque, la renovación y la coordinación de credenciales sin reemplazar la arquitectura híbrida actual.
 - **Fuera de alcance inicial:** nueva aplicación OAuth, reescritura de la TUI, WebSockets, renderizado y captura automática de Fabric sin prueba de seguridad.
@@ -916,6 +916,15 @@ La evidencia histórica disponible para este antecedente es el reporte directo d
 - El probe será un binario temporal/laboratorio separado, sin llamadas a `PersistFabricCandidate`, `PersistTokenValues` ni al helper normal. El snapshot canónico se compara byte por byte antes/después y cualquier diferencia rechaza el gate.
 - Primero se implementarán y probarán localmente, sin navegador ni red, el matcher exacto, el state machine, aborto/reintentos, correlación `requestfailed`/`response`, cancelación y sanitización. Esa implementación también requiere autorización explícita de 7B; este preflight documental no la concede.
 
+##### Primer corte local implementado — 2026-09-20
+
+- La autorización directa “Sol activo, comienza con el trabajo” habilitó únicamente la implementación local de 7B sin navegador ni red; no habilitó el experimento real.
+- `internal/fabricprobe` implementa el matcher exacto y fail-closed, cuarentena en memoria, correlación de `Abort`/`requestfailed`/`response` —incluido orden concurrente—, rechazo de candidatos distintos, cancelación, timeout y evidencia sanitizada sin IDs ni secretos.
+- Toda mutación bajo un path Fabric normalizado se aborta; sólo `GET`, `HEAD` y `OPTIONS` continúan. El candidato exacto exige esquema/host/puerto, método, path, query, frame, payload, identidad y rol contractuales, y rechaza campos o claves JSON duplicadas.
+- El auditor quedó fijado sobre el `GET` ChatSvc de miembros ya usado por LazyTeams. Sólo extrae en memoria existencia y rol del miembro objetivo; ausencia, duplicados, rol desconocido o respuesta ambigua rechazan la corrida. La evidencia pública sólo contiene estado, método, ruta parametrizada, cantidad de intentos, `unchanged` y código clasificado.
+- Tests focalizados, suite completa, race detector, `git diff --check` y LSP pasan. No se importó Playwright en el núcleo, no se creó el binario ejecutable, no se abrió navegador, no hubo tráfico Microsoft y no se leyó ni modificó `tokens.env`.
+- **Gate local parcial:** aprobado para el núcleo puro. Antes de compilar el binario de laboratorio deben conectarse Route/Service Workers/eventos y lifecycle mediante bordes inyectables y repetir el gate sin red. La ejecución real continúa requiriendo otra autorización explícita que mencione navegador y tráfico Microsoft.
+
 #### Corte 7C — promoción o fallback
 
 - Mantener el candidato en cuarentena y el snapshot byte por byte intacto hasta cerrar contexto, confirmar todos los abortos y completar la auditoría sin cambios.
@@ -1146,5 +1155,7 @@ Para cada etapa registrar en `auth-migration-lessons.md`:
 - [x] Correcciones L171 implementadas y gate técnico local repetido; evidencia en L172–L173.
 - [x] Tercera revisión formal Sol del corte 7A ejecutada; gate aprobado en L174.
 - [x] Preflight técnico de 7B definido por Sol sin implementar ni ejecutar el probe; evidencia en L175.
+- [x] Núcleo local sin red de 7B implementado y validado por Sol; evidencia en L176.
+- [ ] Adaptador/binario de laboratorio de 7B conectado a Playwright y validado localmente sin red.
 
-**Próximo paso permitido:** esperar autorización explícita independiente para implementar localmente el probe 7B y sus pruebas sin red. La ejecución real, navegador, tráfico Microsoft, Fabric y adquisiciones nuevas requieren una autorización posterior que los mencione expresamente.
+**Próximo paso permitido:** continuar bajo la autorización vigente únicamente con el adaptador/binario local de 7B y pruebas sin red. La ejecución real, navegador, tráfico Microsoft, Fabric y adquisiciones nuevas requieren una autorización posterior que los mencione expresamente.
