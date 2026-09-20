@@ -62,7 +62,7 @@ func runLifecycle(ctx context.Context, probe *fabricprobe.Probe, edges lifecycle
 			probe.Timeout()
 		} else if errors.Is(ctx.Err(), context.Canceled) {
 			probe.Cancel()
-		} else {
+		} else if probe.State() != fabricprobe.Rejected {
 			probe.RejectExternal(fabricprobe.RejectRuntime)
 		}
 		return errors.New("probe rejected")
@@ -151,14 +151,16 @@ func dispatchRoute(probe *fabricprobe.Probe, tracker *requestTracker, key any, c
 	candidate.ID = tracker.reserve()
 	switch probe.Classify(candidate) {
 	case fabricprobe.Continue:
-		if continueRequest() != nil {
+		if continueRequest() != nil && probe.State() != fabricprobe.Rejected {
 			probe.RejectExternal(fabricprobe.RejectRuntime)
 		}
 	case fabricprobe.AbortTarget:
 		tracker.track(key, candidate.ID)
 		probe.Aborted(candidate.ID, abort())
+		fmt.Fprintln(os.Stderr, "probe: target role change intercepted and aborted")
 	default:
 		_ = abort()
+		fmt.Fprintf(os.Stderr, "probe: unexpected Fabric mutation intercepted and aborted: %s\n", candidate.Method)
 	}
 }
 

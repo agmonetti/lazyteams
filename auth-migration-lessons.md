@@ -2836,3 +2836,19 @@ Copiar esta plantilla y completar todos los campos aplicables:
 - **Acción siguiente:** compilar y entregar el wrapper actualizado para que el usuario ejecute la corrida autorizada sin fricción de configuración.
 - **Riesgo residual:** si el equipo no posee canales privados, la resolución informará el error antes de abrir el navegador y requerirá seleccionar un equipo con canales privados.
 - **Gate:** implementación local aprobada; corrida real 7B pendiente de ejecución por el usuario.
+
+### L182 — Corrida real 7B ejecutada; se corrige enmascaramiento de error en el probe
+
+- **Fecha:** 2026-09-20
+- **Etapa:** 7B / evidencia real y corrección de diagnóstico
+- **Tipo:** resultado observado + corrección de código + evidencia
+- **Pregunta o hipótesis:** ¿Qué causó el rechazo con error `runtime_error` en la primera corrida real de 7B?
+- **Entorno no sensible:** corrida real en el laboratorio `/home/agus-hy/lazyteams-auth-lab` ejecutada por el usuario con Firefox visible y sesión Microsoft real.
+- **Resultado observado:** la resolución interactiva funcionó perfectamente: listó los equipos, detectó el canal privado recién creado "private chann", fijó al usuario como Owner y configuró el target para simular cambio a Member (rol 1). Sin embargo, tras 77 segundos la corrida terminó con `{"state":"rejected","attempts":0,"unchanged":false,"error_code":"runtime_error"}`.
+- **Diagnóstico:** en `runLifecycle`, cuando `waitForTarget` retornaba ante un rechazo previo del probe, la rama `edges.waitForTarget(ctx) != nil` llamaba incondicionalmente a `probe.RejectExternal(fabricprobe.RejectRuntime)`, sobrescribiendo la causa real del rechazo (por ejemplo, si Teams envió una mutación con método/ruta no esperada) con `runtime_error`. Además, `dispatchRoute` no emitía diagnóstico sanitizado al interceptar mutaciones inesperadas.
+- **Cambios:** se agregó la condición `probe.State() != fabricprobe.Rejected` en `runLifecycle` y en `dispatchRoute` para preservar la causa original de rechazo; se añadieron mensajes sanitizados a stderr indicando si se abortó el target o una mutación inesperada (mostrando únicamente el método HTTP). Se recompiló el binario en el laboratorio.
+- **Evidencia:** logs de la corrida `stage7b-fabric-probe-20260920T230600Z`; delta en `cmd/fabric-probe/main.go`; suite `go test -count=1 ./...` y `go test -race -count=1 ./...` aprobadas; binario actualizado en el laboratorio.
+- **Impacto:** el probe ahora preserva el motivo exacto de rechazo si Teams emite una petición no esperada o si ocurre un evento ambiguo.
+- **Acción siguiente:** consultar al usuario qué observó en Firefox (si llegó a hacer clic en cambiar rol o si se cerró antes) y repetir la prueba con el binario corregido.
+- **Gate:** corrida real ejecutada; rechazo confirmado; diagnóstico corregido.
+
