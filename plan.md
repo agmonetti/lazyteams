@@ -383,6 +383,16 @@ Microsoft también aclara que los refresh tokens de SPA tienen una ventana limit
 
 El proyecto ya tiene tests y CI; aprovecharía esa base para las transiciones y errores. **La renovación real de Graph y Fabric necesita además verificación con la sesión Microsoft: los mocks no la demuestran.**
 
+### Pruebas reales encargadas al usuario
+
+Los agentes deben encargar al usuario toda prueba que ejecute un binario, abra Firefox, use una sesión Microsoft o genere tráfico contra un tenant. El encargo debe nombrar el escenario, el laboratorio, el comando y la acción visible exacta; el agente no debe asumir que una prueba local equivale a una prueba del producto.
+
+El usuario debe devolver, sin secretos: comando/flags, timestamps, código de salida, estado final, pantallas o interacción requerida descritas en texto, cierre del navegador/helper y procesos huérfanos, ruta del log sanitizado, errores y timeouts clasificados, confirmación de que `tokens.env` no cambió y, cuando corresponda, auditoría antes/después con `unchanged=true/false`. Nunca debe devolver tokens, cookies, headers, claims, perfiles, URLs completas, payloads ni capturas con datos sensibles.
+
+Para Fabric 7B debe informar además: si la request objetivo fue abortada, si hubo `requestfailed` sin `response`, si apareció una mutación no cubierta, si la auditoría quedó sin cambios y si el estado final fue `write_candidate_unverified` o `rejected`. El candidato no se persiste. Para TUI/renovación debe informar el estado de cada capacidad, el error visible y si la capacidad se recuperó sin reiniciar ni repetir mutaciones.
+
+Una autorización de implementación o de tests sin red no habilita esta prueba. La autorización debe mencionar explícitamente el binario o producto, navegador/sesión real, laboratorio y tráfico Microsoft/tenant.
+
 ---
 
 ## 9. Qué experiencia buscaría

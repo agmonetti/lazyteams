@@ -936,6 +936,23 @@ La evidencia histórica disponible para este antecedente es el reporte directo d
 - Evidencia y revisión formal: L177 en `auth-migration-lessons.md`; commits `c485fe0`, `32bb7fc` y `9ecb804`.
 - **Decisión del gate:** implementación local de 7B aprobada. Esto no autoriza ejecutar `cmd/fabric-probe`, abrir Playwright/Firefox, generar tráfico Microsoft, acceder al tenant, capturar Fabric ni persistir credenciales.
 
+#### Encargo obligatorio al usuario para pruebas reales
+
+Los agentes no pueden ejecutar por su cuenta las pruebas que abren el navegador, usan una sesión Microsoft real, interactúan con el producto o generan tráfico contra el tenant. Deben encargar esas acciones explícitamente al usuario y esperar su devolución antes de interpretar el resultado o avanzar el gate.
+
+El encargo debe pedir al usuario:
+
+1. Ejecutar el binario sólo en el laboratorio autorizado, con ventana visible, perfil dedicado y operación/identificadores fijados previamente. No usar el perfil productivo ni cambiar roles manualmente fuera del flujo indicado.
+2. Observar la experiencia real: si Firefox abre, qué pantalla aparece, si Teams carga, si solicita login/MFA/consentimiento, si la operación continúa y cuándo termina o falla. No copiar tokens, cookies, headers, claims, IDs, URLs completas ni contenido sensible.
+3. Devolver únicamente: comando, flags y timestamps; código de salida; estado final del binario/probe; apertura y cierre limpio del navegador; procesos huérfanos; errores, timeout, cancelación o interacción manual descritos sin datos sensibles; ruta y contenido del log sanitizado; confirmación de que `tokens.env` quedó byte por byte idéntico; y auditoría antes/después con sólo `unchanged=true/false` y código clasificado.
+4. No enviar capturas, texto de página, perfiles, cookies, tokens ni logs sin sanitizar. Si aparece un secreto, conservarlo localmente y avisar sólo que esa evidencia fue descartada.
+
+Para 7B, el agente debe encargar una corrida por vez y pedir específicamente si la request objetivo fue abortada, si hubo `requestfailed` sin `response`, si apareció una mutación no cubierta, si la auditoría confirmó `unchanged=true` y si el resultado fue `write_candidate_unverified` o `rejected`. El candidato queda en cuarentena: esta prueba no autoriza promoción ni persistencia.
+
+Para pruebas reales de la TUI o del producto (arranque, renovación, capacidades parciales o cancelación), el encargo debe indicar el escenario, la acción visible exacta y los criterios observables. El usuario debe devolver estados por capacidad, errores mostrados, procesos helper/navegador, código de salida y log sanitizado. “Funcionó” no constituye evidencia de gate.
+
+**Regla de autorización:** implementar o probar localmente sin red no autoriza una prueba interactiva real. Para ejecutarla, el usuario debe mencionar expresamente binario/producto, navegador o sesión real, laboratorio y tráfico Microsoft/tenant autorizado.
+
 #### Corte 7C — promoción o fallback
 
 - Mantener el candidato en cuarentena y el snapshot byte por byte intacto hasta cerrar contexto, confirmar todos los abortos y completar la auditoría sin cambios.
@@ -1169,4 +1186,4 @@ Para cada etapa registrar en `auth-migration-lessons.md`:
 - [x] Núcleo local sin red de 7B implementado y validado por Sol; evidencia en L176.
 - [x] Adaptador/binario de laboratorio de 7B conectado a Playwright y validado localmente sin red; evidencia y revisión formal en L177.
 
-**Próximo paso bloqueado:** no queda ejecución autorizada en 7B. Ejecutar `cmd/fabric-probe`, abrir navegador, generar tráfico Microsoft, acceder al tenant, capturar Fabric o realizar cualquier adquisición nueva requiere una autorización posterior que lo mencione expresamente.
+**Próximo paso bloqueado:** no queda ejecución autorizada en 7B. Ejecutar `cmd/fabric-probe`, abrir navegador, generar tráfico Microsoft, acceder al tenant, capturar Fabric o realizar cualquier adquisición nueva requiere una autorización posterior que lo mencione expresamente. Las pruebas reales deben ser encargadas al usuario según el protocolo de devolución documentado en la sección “Encargo obligatorio al usuario para pruebas reales”.

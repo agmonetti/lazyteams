@@ -427,6 +427,16 @@ No conviene llenar la suite con tests que sólo comprueben asignación de campos
 
 Los escenarios reales de renovación de Graph y Fabric no quedan demostrados por mocks; requieren la sesión Microsoft autorizada y evidencia de red/estado sin secretos.
 
+### Protocolo de encargos al usuario para pruebas reales
+
+Los agentes deben pedir al usuario que ejecute las pruebas interactivas: binarios, Firefox, sesión Microsoft, TUI y cualquier flujo que genere tráfico de tenant. Deben entregar un encargo acotado con laboratorio, comando, flags, escenario, acción visible y condición de finalización. No deben ejecutar ni inferir el resultado en lugar del usuario.
+
+La devolución requerida es: comando y timestamps; código de salida; estado final del binario y del producto; pasos/interacción observados (login, MFA, consentimiento, pantalla inesperada); errores, timeout o cancelación; cierre y procesos huérfanos; ruta de log sanitizado; estados por capacidad para la TUI; confirmación de snapshot/`tokens.env` sin cambios; y auditoría antes/después reducida a `unchanged=true/false` y códigos clasificados. No se aceptan tokens, cookies, Authorization, claims, perfiles, URLs completas, payloads, contenido de página ni capturas sensibles.
+
+En 7B la devolución debe afirmar por separado: route instalada antes de navegar, request exacta abortada, `requestfailed` sin `response`, ausencia de mutaciones desconocidas, auditoría sin cambios y estado `write_candidate_unverified` o `rejected`. Incluso una corrida exitosa no autoriza persistir el candidato: la asociación de la request requiere la evidencia no mutante de 7C.
+
+La autorización debe ser explícita y específica. “Continuar”, “probar” o autorizar tests locales no habilita navegador, tenant ni tráfico Microsoft; debe mencionar expresamente esos recursos y acciones.
+
 ## 7. Orden concreto de implementación posterior
 
 1. **Introducir snapshot y parser único.** Mantener temporalmente la API actual mediante adaptación interna sólo durante el corte; eliminarla cuando todos los callers migren.

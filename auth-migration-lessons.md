@@ -2775,3 +2775,33 @@ Copiar esta plantilla y completar todos los campos aplicables:
 - **Acción siguiente:** detenerse. Sólo una autorización posterior que mencione expresamente ejecutar el binario, abrir navegador y generar tráfico Microsoft puede iniciar el probe real en el laboratorio. Aun con candidato, 7C debe conservarlo sin persistir salvo evidencia contractual no mutante de autorización de escritura.
 - **Riesgo residual:** Playwright/Firefox, Teams y ChatSvc pueden comportarse distinto en ejecución real; el auditor puede fallar por cambios de endpoint o identidad, y eso rechaza la corrida. La selección de un Bearer por una request abortada sigue sin demostrar permisos de escritura.
 - **Gate:** revisión formal Sol aprobada para implementación local sin red. Ejecución real, navegador, tráfico Microsoft, acceso al tenant, Fabric y adquisiciones nuevas permanecen bloqueados.
+
+### L178 — Se formaliza el encargo al usuario de pruebas reales
+
+- **Fecha:** 2026-09-20
+- **Etapa:** transversal / 7B
+- **Tipo:** decisión + cambio de documentación
+- **Pregunta o hipótesis:** ¿Cómo deben obtener los agentes evidencia de binarios y comportamiento real sin ejecutar ellos pruebas interactivas contra Microsoft?
+- **Entorno no sensible:** documentación del proyecto; sin navegador, credenciales, tráfico Microsoft ni tenant.
+- **Procedimiento:** incorporar el mismo protocolo en `auth-migration-runbook.md`, `plan.md` y `auth-migration-research.md`: el agente encarga al usuario las pruebas reales y exige una devolución estructurada y sanitizada.
+- **Resultado observado:** quedó definido que el usuario debe ejecutar el binario/producto en el laboratorio autorizado, observar la experiencia visible y devolver comando, timestamps, código de salida, estados, errores clasificados, lifecycle de navegador/helper, log sanitizado, auditoría antes/después y confirmación de snapshot sin cambios. Para 7B debe informar aborto, `requestfailed` sin `response`, ausencia de mutaciones no cubiertas y `write_candidate_unverified`/`rejected`. “Funcionó” no es evidencia suficiente.
+- **Evidencia:** secciones nuevas en los tres documentos; no se ejecutó ninguna prueba real.
+- **Impacto:** los agentes tienen un formato operativo para pedir tareas al usuario y no confunden tests locales con validación del producto o tenant. Los secretos, perfiles y logs sensibles siguen excluidos.
+- **Acción siguiente:** esperar una autorización explícita que mencione binario, navegador/sesión real, laboratorio y tráfico Microsoft/tenant antes de encargar o ejecutar 7B real.
+- **Riesgo residual:** la evidencia devuelta depende de la observación humana; cualquier dato sensible debe descartarse y registrarse sólo como evidencia no utilizable.
+- **Gate:** informativo; 7B real permanece bloqueada.
+
+### L179 — Sol confirma que la autorización genérica no habilita el probe real
+
+- **Fecha:** 2026-09-20
+- **Etapa:** 7B / control de autorización
+- **Tipo:** hallazgo + decisión
+- **Pregunta o hipótesis:** ¿La instrucción “Sol activo, comienza” autoriza ejecutar el binario de laboratorio con navegador y tráfico Microsoft?
+- **Entorno no sensible:** rama `auth-fast-migration-research`; modelo `gpt-5.6-sol`; revisión documental y del estado Git; sin navegador, credenciales, tráfico Microsoft, probe ni acceso al tenant.
+- **Procedimiento:** contrastar la instrucción directa con L177–L178 y con la regla reforzada del runbook que exige mencionar expresamente binario/producto, navegador o sesión real, laboratorio y tráfico Microsoft/tenant.
+- **Resultado observado:** la instrucción confirma el modelo y permite reanudar la evaluación, pero no contiene los recursos y acciones exigidos para autorizar una corrida real. El árbol conserva cambios documentales de L178 y un cambio de formato no funcional en `internal/fabricprobe/probe.go`; no se ejecutó el binario ni ninguna etapa bloqueada.
+- **Evidencia:** `PI_MODEL=gpt-5.6-sol`; rama `auth-fast-migration-research`; `git status --short`; contrato de autorización de L177–L178.
+- **Impacto:** 7B real continúa bloqueada. El próximo paso ejecutable es obtener una autorización específica y, recién entonces, encargar al usuario una única corrida siguiendo el protocolo sanitizado; el agente no ejecutará la prueba interactiva.
+- **Acción siguiente:** pedir al usuario que elija entre autorizar expresamente la corrida real de `cmd/fabric-probe` en el laboratorio con navegador y tráfico Microsoft/tenant, o mantenerla bloqueada y cerrar la migración con Fabric en fallback manual.
+- **Riesgo residual:** aun con una corrida exitosa, `write_candidate_unverified` no demuestra autorización de escritura y no permite persistir ni habilitar Fabric.
+- **Gate:** no autorizado; no se abrió navegador ni se generó tráfico Microsoft.
