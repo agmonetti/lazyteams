@@ -20,6 +20,7 @@ import (
 
 	"github.com/agmonetti/lazyteams/internal/auth"
 	"github.com/agmonetti/lazyteams/internal/fabricprobe"
+	"github.com/agmonetti/lazyteams/internal/graph"
 	"github.com/agmonetti/lazyteams/internal/helpers"
 	"github.com/mxschmitt/playwright-go"
 )
@@ -240,19 +241,47 @@ func run(args []string) int {
 		fmt.Fprintln(os.Stderr, "rejected: invalid isolated laboratory")
 		return 1
 	}
-	role, err := strconv.Atoi(os.Getenv("LAZYTEAMS_FABRIC_PROBE_ROLE"))
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "rejected: invalid target")
+	credentials, err := auth.LoadCredentialSet()
+	if err != nil || credentials.Web.Token == "" {
+		fmt.Fprintln(os.Stderr, "rejected: missing credentials in tokens.env")
 		return 1
 	}
-	target := fabricprobe.Target{Team: os.Getenv("LAZYTEAMS_FABRIC_PROBE_TEAM"), Channel: os.Getenv("LAZYTEAMS_FABRIC_PROBE_CHANNEL"), User: os.Getenv("LAZYTEAMS_FABRIC_PROBE_USER"), Role: role}
+
+	var target fabricprobe.Target
+	var threadID, auditUser string
+	var resolved *resolvedTarget
+
+	roleStr := os.Getenv("LAZYTEAMS_FABRIC_PROBE_ROLE")
+	teamID := os.Getenv("LAZYTEAMS_FABRIC_PROBE_TEAM")
+	channelOID := os.Getenv("LAZYTEAMS_FABRIC_PROBE_CHANNEL")
+	userOID := os.Getenv("LAZYTEAMS_FABRIC_PROBE_USER")
+	threadID = os.Getenv("LAZYTEAMS_FABRIC_PROBE_THREAD")
+	auditUser = os.Getenv("LAZYTEAMS_FABRIC_PROBE_AUDIT_USER")
+
+	if teamID == "" || channelOID == "" || userOID == "" || roleStr == "" || threadID == "" || auditUser == "" {
+		graphClient := graph.NewClient(credentials)
+		resolved, err = resolveTargetInteractive(graphClient, os.Stdin, os.Stderr)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "rejected: target resolution failed: %v\n", err)
+			return 1
+		}
+		target = resolved.target
+		threadID = resolved.threadID
+		auditUser = resolved.auditUser
+	} else {
+		role, err := strconv.Atoi(roleStr)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "rejected: invalid target")
+			return 1
+		}
+		target = fabricprobe.Target{Team: teamID, Channel: channelOID, User: userOID, Role: role}
+	}
+
 	probe, err := fabricprobe.New(target)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "rejected: invalid target")
 		return 1
 	}
-	threadID := os.Getenv("LAZYTEAMS_FABRIC_PROBE_THREAD")
-	auditUser := os.Getenv("LAZYTEAMS_FABRIC_PROBE_AUDIT_USER")
 	if _, err := fabricprobe.AuditURL(threadID); err != nil || auditUser == "" {
 		probe.RejectExternal(fabricprobe.RejectRuntime)
 		sanitizedEvidence(probe)
@@ -268,12 +297,6 @@ func run(args []string) int {
 	snapshotPath := filepath.Join(configDir, "tokens.env")
 	beforeSnapshot, err := os.ReadFile(snapshotPath)
 	if err != nil {
-		probe.RejectExternal(fabricprobe.RejectRuntime)
-		sanitizedEvidence(probe)
-		return 1
-	}
-	credentials, err := auth.LoadCredentialSet()
-	if err != nil || credentials.Web.Token == "" {
 		probe.RejectExternal(fabricprobe.RejectRuntime)
 		sanitizedEvidence(probe)
 		return 1
@@ -326,7 +349,11 @@ func run(args []string) int {
 			}
 			_, err = page.Goto(teamsURL, playwright.PageGotoOptions{Timeout: playwright.Float(20000)})
 			if err == nil {
-				fmt.Fprintln(os.Stderr, "probe armed: perform the configured private-channel role change; it will be aborted")
+				if resolved != nil {
+					fmt.Fprintf(os.Stderr, "probe armed: en Teams, abrí el canal privado %q -> pestaña 'Miembros' -> cambiá el rol de %s a %s (el cambio será abortado antes de llegar al servidor)\n", resolved.chanName, resolved.userName, resolved.toRole)
+				} else {
+					fmt.Fprintln(os.Stderr, "probe armed: perform the configured private-channel role change; it will be aborted")
+				}
 			}
 			return err
 		},

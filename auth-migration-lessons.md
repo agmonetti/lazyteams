@@ -2821,3 +2821,18 @@ Copiar esta plantilla y completar todos los campos aplicables:
 - **Acción siguiente:** entregar el comando user-run con variables objetivo introducidas localmente y solicitar exclusivamente evidencia sanitizada: timestamps, exit code, JSON final/log, lifecycle del navegador, ausencia de huérfanos, snapshot idéntico, aborto de la request, `requestfailed` sin `response`, ausencia de mutaciones no cubiertas y auditoría `unchanged=true`.
 - **Riesgo residual:** el probe puede terminar `rejected`; incluso `write_candidate_unverified` sólo asocia el candidato con la request abortada y no demuestra permiso de escritura ni autoriza persistencia o 7C.
 - **Gate:** autorización concedida para una sola corrida user-run; ejecución y evidencia pendientes.
+
+### L181 — Se añade resolución automática e interactiva de targets para 7B
+
+- **Fecha:** 2026-09-20
+- **Etapa:** 7B / usabilidad y automatización de targets
+- **Tipo:** hallazgo + cambio + decisión + evidencia
+- **Pregunta o hipótesis:** ¿Puede el probe resolver interactivamente equipo, canal privado, miembro y rol objetivo a partir de las credenciales vigentes sin exigir al usuario copiar identificadores internos a ciegas?
+- **Entorno no sensible:** rama `auth-fast-migration-research`; modelo autorizado directamente por el usuario; Go `1.26.6`; sin credenciales, navegador ni tráfico Microsoft en la prueba de código.
+- **Hallazgos:** el prompt ciego de L180 exigía 6 identificadores internos (`substrateGroupId`, `channelOID`, `userOID`, etc.) inaccesibles para un usuario humano sin inspección de red. Las APIs de Graph y ChatSvc ya existentes en LazyTeams permiten listar equipos, filtrar canales privados, consultar `substrateGroupId`, determinar `tenantID` y listar miembros de forma automática.
+- **Cambios:** se implementó `resolveTargetInteractive` en `cmd/fabric-probe/resolve.go` y su integración en `main.go`. Si las variables de entorno no están presentes, el binario consulta los equipos del usuario, lista los canales privados disponibles, obtiene los miembros y permite seleccionar numéricamente qué rol simular cambiar (Owner a Member o viceversa). Se simplificó `run-fabric-probe.sh` eliminando los prompts manuales de shell. Se cubrió con pruebas unitarias en `resolve_test.go` utilizando transporte HTTP simulado.
+- **Evidencia:** `cmd/fabric-probe/resolve.go`, `cmd/fabric-probe/resolve_test.go`, `cmd/fabric-probe/main.go`; `go test -count=1 ./...`; `go test -race -count=1 ./...`; `GOOS=windows GOARCH=amd64 go test -c ./cmd/fabric-probe`; `git diff --check`; LSP limpio.
+- **Impacto:** el usuario sólo debe elegir opciones numeradas simples (`[1]`, `[2]...`) en la terminal; todos los identificadores OID, substrate y ChatSvc se calculan en memoria de forma exacta.
+- **Acción siguiente:** compilar y entregar el wrapper actualizado para que el usuario ejecute la corrida autorizada sin fricción de configuración.
+- **Riesgo residual:** si el equipo no posee canales privados, la resolución informará el error antes de abrir el navegador y requerirá seleccionar un equipo con canales privados.
+- **Gate:** implementación local aprobada; corrida real 7B pendiente de ejecución por el usuario.
