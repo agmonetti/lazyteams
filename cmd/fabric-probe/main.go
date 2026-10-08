@@ -78,11 +78,12 @@ func runLifecycle(ctx context.Context, probe *fabricprobe.Probe, edges lifecycle
 	if err != nil || !probe.AuditAfter(after) {
 		return fail()
 	}
-	if !edges.snapshotUnchanged() {
-		probe.RejectExternal(fabricprobe.RejectSnapshotChanged)
+	snapshotUnchanged := edges.snapshotUnchanged()
+	if probe.Reason() == fabricprobe.RejectUnknownMutation {
+		probe.FinalizeDiagnostic(snapshotUnchanged)
 		return errors.New("probe rejected")
 	}
-	if !probe.Finalize() {
+	if !probe.Finalize(snapshotUnchanged) {
 		return fail()
 	}
 	return nil
@@ -116,12 +117,48 @@ func (t *requestTracker) lookup(req any) (string, bool) {
 	return id, ok
 }
 
-func frameURL(req playwright.Request) (raw string) {
-	defer func() { _ = recover() }()
-	if frame := req.Frame(); frame != nil {
-		return frame.URL()
+type frameReader interface {
+	URL() string
+	Parent() frameReader
+}
+
+type playwrightFrame struct{ playwright.Frame }
+
+func (f playwrightFrame) Parent() frameReader {
+	parent := f.ParentFrame()
+	if parent == nil {
+		return nil
 	}
-	return ""
+	return playwrightFrame{parent}
+}
+
+func frameInfo(load func() frameReader) (raw string, ancestors []string, relation string) {
+	relation = "indeterminate"
+	defer func() {
+		if recover() != nil {
+			raw, ancestors, relation = "", nil, "indeterminate"
+		}
+	}()
+	frame := load()
+	if frame == nil {
+		return
+	}
+	raw = frame.URL()
+	parent := frame.Parent()
+	if parent == nil {
+		return raw, nil, "main"
+	}
+	for len(ancestors) < 4 {
+		ancestors = append(ancestors, parent.URL())
+		if len(ancestors) == 4 {
+			break
+		}
+		parent = parent.Parent()
+		if parent == nil {
+			break
+		}
+	}
+	return raw, ancestors, "child"
 }
 
 func bearer(req playwright.Request) string {
@@ -159,8 +196,9 @@ func dispatchRoute(probe *fabricprobe.Probe, tracker *requestTracker, key any, c
 		probe.Aborted(candidate.ID, abort())
 		fmt.Fprintln(os.Stderr, "probe: target role change intercepted and aborted")
 	default:
-		_ = abort()
-		fmt.Fprintf(os.Stderr, "probe: unexpected Fabric mutation intercepted and aborted: %s\n", candidate.Method)
+		tracker.track(key, candidate.ID)
+		_ = probe.Aborted(candidate.ID, abort())
+		fmt.Fprintln(os.Stderr, "probe: Fabric mutation intercepted and aborted")
 	}
 }
 
@@ -170,7 +208,15 @@ func installPlaywrightRoute(ctx playwright.BrowserContext, probe *fabricprobe.Pr
 	return ctx.Route("**/*", func(route playwright.Route) {
 		req := route.Request()
 		body, _ := req.PostDataBuffer()
-		candidate := fabricprobe.Request{Method: req.Method(), URL: req.URL(), FrameURL: frameURL(req), Body: body, Candidate: bearer(req)}
+		contentType, _ := req.HeaderValue("content-type")
+		frameURL, frameAncestors, frameRelation := frameInfo(func() frameReader {
+			frame := req.Frame()
+			if frame == nil {
+				return nil
+			}
+			return playwrightFrame{frame}
+		})
+		candidate := fabricprobe.Request{Method: req.Method(), URL: req.URL(), FrameURL: frameURL, FrameRelation: frameRelation, FrameAncestors: frameAncestors, ContentType: contentType, Body: body, Candidate: bearer(req)}
 		dispatchRoute(probe, tracker, req, candidate, func() error { return route.Abort("aborted") }, func() error { return route.Continue() })
 	})
 }
@@ -223,6 +269,43 @@ func isolatedLabPaths(root, profile, config string) bool {
 	return rootErr == nil && profileErr == nil && configErr == nil && statErr == nil && info.IsDir() && info.Mode().Perm()&0077 == 0 && within(root, profile) && within(root, config)
 }
 
+type probeInputs struct {
+	lock        *helpers.ProfileLock
+	credentials *auth.CredentialSet
+	target      fabricprobe.Target
+	threadID    string
+	auditUser   string
+}
+
+func prepareProbeInputs(
+	configDir string,
+	acquireLock func(string) (*helpers.ProfileLock, error),
+	loadCredentials func() (*auth.CredentialSet, error),
+	resolveTarget func(*auth.CredentialSet) (fabricprobe.Target, string, string, error),
+) (*probeInputs, error) {
+	lock, err := acquireLock(configDir)
+	if err != nil {
+		return nil, err
+	}
+	inputs := &probeInputs{lock: lock}
+	ok := false
+	defer func() {
+		if !ok {
+			_ = lock.Release()
+		}
+	}()
+	inputs.credentials, err = loadCredentials()
+	if err != nil {
+		return nil, err
+	}
+	inputs.target, inputs.threadID, inputs.auditUser, err = resolveTarget(inputs.credentials)
+	if err != nil {
+		return nil, err
+	}
+	ok = true
+	return inputs, nil
+}
+
 func sanitizedEvidence(probe *fabricprobe.Probe) {
 	_ = json.NewEncoder(os.Stdout).Encode(probe.Evidence())
 }
@@ -243,41 +326,44 @@ func run(args []string) int {
 		fmt.Fprintln(os.Stderr, "rejected: invalid isolated laboratory")
 		return 1
 	}
-	credentials, err := auth.LoadCredentialSet()
-	if err != nil || credentials.Web.Token == "" {
-		fmt.Fprintln(os.Stderr, "rejected: missing credentials in tokens.env")
-		return 1
-	}
-
-	var target fabricprobe.Target
-	var threadID, auditUser string
-	var resolved *resolvedTarget
-
-	roleStr := os.Getenv("LAZYTEAMS_FABRIC_PROBE_ROLE")
-	teamID := os.Getenv("LAZYTEAMS_FABRIC_PROBE_TEAM")
-	channelOID := os.Getenv("LAZYTEAMS_FABRIC_PROBE_CHANNEL")
-	userOID := os.Getenv("LAZYTEAMS_FABRIC_PROBE_USER")
-	threadID = os.Getenv("LAZYTEAMS_FABRIC_PROBE_THREAD")
-	auditUser = os.Getenv("LAZYTEAMS_FABRIC_PROBE_AUDIT_USER")
-
-	if teamID == "" || channelOID == "" || userOID == "" || roleStr == "" || threadID == "" || auditUser == "" {
-		graphClient := graph.NewClient(credentials)
-		resolved, err = resolveTargetInteractive(graphClient, os.Stdin, os.Stderr)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "rejected: target resolution failed: %v\n", err)
-			return 1
+	inputs, err := prepareProbeInputs(configDir, helpers.AcquireProfileLock, auth.LoadCredentialSet, func(credentials *auth.CredentialSet) (fabricprobe.Target, string, string, error) {
+		if credentials.Web.Token == "" {
+			return fabricprobe.Target{}, "", "", errors.New("missing credentials")
 		}
-		target = resolved.target
-		threadID = resolved.threadID
-		auditUser = resolved.auditUser
-	} else {
+		roleStr := os.Getenv("LAZYTEAMS_FABRIC_PROBE_ROLE")
+		teamID := os.Getenv("LAZYTEAMS_FABRIC_PROBE_TEAM")
+		channelOID := os.Getenv("LAZYTEAMS_FABRIC_PROBE_CHANNEL")
+		userOID := os.Getenv("LAZYTEAMS_FABRIC_PROBE_USER")
+		threadID := os.Getenv("LAZYTEAMS_FABRIC_PROBE_THREAD")
+		auditUser := os.Getenv("LAZYTEAMS_FABRIC_PROBE_AUDIT_USER")
+		if teamID == "" || channelOID == "" || userOID == "" || roleStr == "" || threadID == "" || auditUser == "" {
+			ttyPath := "/dev/tty"
+			if os.PathSeparator == '\\' {
+				ttyPath = "CON"
+			}
+			tty, err := os.OpenFile(ttyPath, os.O_RDWR, 0)
+			if err != nil {
+				return fabricprobe.Target{}, "", "", errors.New("target resolution requires an interactive terminal")
+			}
+			defer tty.Close()
+			resolved, err := resolveTargetInteractive(graph.NewClient(credentials), tty, tty)
+			if err != nil {
+				return fabricprobe.Target{}, "", "", errors.New("target resolution failed")
+			}
+			return resolved.target, resolved.threadID, resolved.auditUser, nil
+		}
 		role, err := strconv.Atoi(roleStr)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "rejected: invalid target")
-			return 1
+			return fabricprobe.Target{}, "", "", errors.New("invalid target")
 		}
-		target = fabricprobe.Target{Team: teamID, Channel: channelOID, User: userOID, Role: role}
+		return fabricprobe.Target{Team: teamID, Channel: channelOID, User: userOID, Role: role}, threadID, auditUser, nil
+	})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "rejected: probe preflight failed")
+		return 1
 	}
+	defer inputs.lock.Release()
+	credentials, target, threadID, auditUser := inputs.credentials, inputs.target, inputs.threadID, inputs.auditUser
 
 	probe, err := fabricprobe.New(target)
 	if err != nil {
@@ -289,13 +375,6 @@ func run(args []string) int {
 		sanitizedEvidence(probe)
 		return 1
 	}
-	lock, err := helpers.AcquireProfileLock(configDir)
-	if err != nil {
-		probe.RejectExternal(fabricprobe.RejectRuntime)
-		sanitizedEvidence(probe)
-		return 1
-	}
-	defer lock.Release()
 	snapshotPath := filepath.Join(configDir, "tokens.env")
 	beforeSnapshot, err := os.ReadFile(snapshotPath)
 	if err != nil {
@@ -351,11 +430,7 @@ func run(args []string) int {
 			}
 			_, err = page.Goto(teamsURL, playwright.PageGotoOptions{Timeout: playwright.Float(20000)})
 			if err == nil {
-				if resolved != nil {
-					fmt.Fprintf(os.Stderr, "probe armed: en Teams, abrí el canal privado %q -> pestaña 'Miembros' -> cambiá el rol de %s a %s (el cambio será abortado antes de llegar al servidor)\n", resolved.chanName, resolved.userName, resolved.toRole)
-				} else {
-					fmt.Fprintln(os.Stderr, "probe armed: perform the configured private-channel role change; it will be aborted")
-				}
+				fmt.Fprintln(os.Stderr, "probe armed: perform the configured private-channel role change; it will be aborted")
 			}
 			return err
 		},
@@ -367,6 +442,9 @@ func run(args []string) int {
 				case fabricprobe.RequestFailedConfirmed:
 					return nil
 				case fabricprobe.Rejected:
+					if probe.DiagnosticReady() {
+						return nil
+					}
 					return errors.New("probe rejected")
 				}
 				select {
