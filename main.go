@@ -8,16 +8,12 @@ import (
 
 	"github.com/agmonetti/lazyteams/internal/auth"
 	"github.com/agmonetti/lazyteams/internal/graph"
-	"github.com/agmonetti/lazyteams/internal/helpers"
 	"github.com/agmonetti/lazyteams/internal/ui"
 	"github.com/agmonetti/lazyteams/internal/version"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
 func main() {
-	// Kill any stale browser holding our profile from a previous crashed run.
-	helpers.KillZombieBrowser()
-
 	// Handle --help, --version, --update and --debug flags
 	debugMode := false
 	doUpdate := false
@@ -95,12 +91,15 @@ NOTES:
 
 	userName := auth.ParseUserNameFromToken(graphToken)
 
+	model := ui.New(graphClient, userName, debugMode)
+	defer model.Close()
 	p := tea.NewProgram(
-		ui.New(graphClient, userName, debugMode),
+		model,
 		tea.WithAltScreen(),
 		tea.WithMouseCellMotion(),
 	)
 	if _, err := p.Run(); err != nil {
+		model.Close()
 		fmt.Printf("Fatal TUI error: %v\n", err)
 		os.Exit(1)
 	}

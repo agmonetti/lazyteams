@@ -204,9 +204,8 @@ func renewalSpinnerTickCmd() tea.Cmd {
 	})
 }
 
-// authHelperRenewal starts a background lazyteams-auth --renew process, records
-// it on the model (so it is killed on quit), and returns a cmd that resolves
-// with the result once the process exits.
+// authHelperRenewal starts an owned helper immediately. Its deadline and cleanup
+// run independently of Bubble Tea's command scheduling.
 func authHelperRenewal(m *Model, expiredToken string) tea.Cmd {
 	exe, err := os.Executable()
 	if err != nil {
@@ -225,7 +224,6 @@ func authHelperRenewal(m *Model, expiredToken string) tea.Cmd {
 
 	logPath := filepath.Join(helpers.ConfigDir(), "auth-helper.log")
 	var logFile *os.File
-	var output io.Writer = io.Discard
 	if m.debug {
 		if err := os.MkdirAll(helpers.ConfigDir(), 0700); err != nil {
 			return func() tea.Msg { return tokenRenewedMsg{tokenType: expiredToken, err: err} }
@@ -234,64 +232,36 @@ func authHelperRenewal(m *Model, expiredToken string) tea.Cmd {
 		if err != nil {
 			return func() tea.Msg { return tokenRenewedMsg{tokenType: expiredToken, err: err} }
 		}
-		output = logFile
 	}
 
 	cmd := exec.Command(authHelper, args...)
-	cmd.Stdout = output
-	cmd.Stderr = output
-	if err := cmd.Start(); err != nil {
+	// Nil streams are connected directly to the null device by os/exec. An
+	// io.Discard writer instead creates pipes that surviving node children
+	// can hold open after the helper itself exits.
+	if logFile != nil {
+		cmd.Stdout = logFile
+		cmd.Stderr = logFile
+	}
+	if m.renewal == nil {
+		m.renewal = &renewalOwner{}
+	}
+	process, err := m.renewal.start(cmd, renewalTimeout(expiredToken))
+	if err != nil {
 		if logFile != nil {
 			logFile.Close()
 		}
 		return func() tea.Msg { return tokenRenewedMsg{tokenType: expiredToken, err: err} }
 	}
-	m.renewalProc = cmd.Process
 
 	return func() tea.Msg {
-		waitDone := make(chan error, 1)
-		go func() {
-			waitDone <- cmd.Wait()
-		}()
-
-		timeout := renewalTimeout(expiredToken)
-		if timeout == 0 {
-			err := <-waitDone
-			if logFile != nil {
-				logFile.Close()
-			}
-			return tokenRenewedMsg{tokenType: expiredToken, err: err}
-		}
-
-		timer := time.NewTimer(timeout)
-		defer timer.Stop()
-		select {
-		case err := <-waitDone:
-			if logFile != nil {
-				logFile.Close()
-			}
-			return tokenRenewedMsg{tokenType: expiredToken, err: err}
-		case <-timer.C:
-			helpers.SignalAuthProcess(cmd.Process)
-			select {
-			case <-waitDone:
-			case <-time.After(5 * time.Second):
-				_ = cmd.Process.Kill()
-				<-waitDone
-			}
-			helpers.KillZombieBrowser()
-			if logFile != nil {
-				logFile.Close()
-			}
-			timeoutErr := fmt.Errorf("token renewal timed out after %s", timeout)
-			if m.debug {
-				timeoutErr = fmt.Errorf("token renewal timed out after %s (see %s)", timeout, logPath)
-			}
-			return tokenRenewedMsg{
-				tokenType: expiredToken,
-				err:       timeoutErr,
+		err := process.Wait()
+		if logFile != nil {
+			logFile.Close()
+			if err != nil {
+				err = fmt.Errorf("%w (see %s)", err, logPath)
 			}
 		}
+		return tokenRenewedMsg{tokenType: expiredToken, err: err}
 	}
 }
 
@@ -537,13 +507,13 @@ func pollNotificationsCmd(client *graph.Client) tea.Cmd {
 	}
 }
 
-func loadAssignmentsCmd(client *graph.Client) tea.Cmd {
+func loadAssignmentsCmd(client *graph.Client, afterRenewal bool, generation uint64) tea.Cmd {
 	return func() tea.Msg {
 		items, err := client.FetchAssignments()
 		if err != nil {
-			return assignmentsErrMsg{err}
+			return assignmentsErrMsg{err: err, afterRenewal: afterRenewal, generation: generation}
 		}
-		return assignmentsMsg{items}
+		return assignmentsMsg{items: items, afterRenewal: afterRenewal, generation: generation}
 	}
 }
 

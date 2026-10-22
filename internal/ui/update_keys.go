@@ -3,7 +3,6 @@ package ui
 import (
 	"fmt"
 	"github.com/agmonetti/lazyteams/internal/graph"
-	"github.com/agmonetti/lazyteams/internal/helpers"
 	"github.com/agmonetti/lazyteams/internal/teams"
 	"github.com/agmonetti/lazyteams/internal/ui/components/directorypicker"
 	"strings"
@@ -70,10 +69,7 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case "q", "ctrl+c":
-		if m.renewalProc != nil {
-			helpers.SignalAuthProcess(m.renewalProc)
-			m.renewalProc = nil
-		}
+		m.Close()
 		return m, tea.Quit
 
 	case "?":
@@ -418,7 +414,7 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if !m.assignLoaded {
 			m.loading = true
 			m.selectedAssign = 0
-			cmds = append(cmds, loadAssignmentsCmd(m.client))
+			cmds = append(cmds, loadAssignmentsCmd(m.client, false, m.assignGeneration))
 		}
 
 	case "esc":

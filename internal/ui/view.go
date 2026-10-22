@@ -1943,10 +1943,24 @@ func filteredAssignments(m Model) []graph.Assignment {
 }
 
 func renderAssignList(m Model) string {
+	if m.eduRenewalPending {
+		return helpStyle.Render("Validating renewed EDU token with Assignments...")
+	}
+	if m.tokenRenewing && m.tokenRenewingType == "edu" {
+		return helpStyle.Render("Renewing EDU token for Assignments...")
+	}
 	if m.assignErr != nil {
 		var b strings.Builder
 		b.WriteString(titleStyle.Render("Assignments Error") + "\n\n")
-		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Render(m.assignErr.Error()) + "\n\n")
+		errorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
+		if m.width > 0 {
+			width := (m.width-5)/3 - 4
+			if m.mobileMode {
+				width = m.width - 6
+			}
+			errorStyle = errorStyle.Width(max(1, width))
+		}
+		b.WriteString(errorStyle.Render(m.assignErr.Error()) + "\n\n")
 		return b.String()
 	}
 

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -23,16 +22,18 @@ import (
 )
 
 type tokens struct {
-	mu               sync.Mutex
-	graphToken       string
-	webToken         string
-	notifToken       string
-	eduToken         string
-	eduRequestSeen   bool
-	cookie           string
-	spacesToken      string
-	fabricToken      string
-	intentionalClose bool
+	mu                    sync.Mutex
+	graphToken            string
+	webToken              string
+	notifToken            string
+	eduToken              string
+	eduRequestSeen        bool
+	eduValidationRequired bool
+	eduValidated          bool
+	cookie                string
+	spacesToken           string
+	fabricToken           string
+	intentionalClose      bool
 }
 
 var globalSpin *spinner
@@ -139,7 +140,7 @@ func registerFullInterceptor(ctx playwright.BrowserContext, captured *tokens) {
 		captured.mu.Unlock()
 
 		// Capture Bearer tokens
-		if strings.Contains(url, "assignments.edu.cloud.microsoft") {
+		if isAssignmentsURL(url) {
 			captured.mu.Lock()
 			firstEduRequest := !captured.eduRequestSeen
 			captured.eduRequestSeen = true
@@ -188,12 +189,9 @@ func registerFullInterceptor(ctx playwright.BrowserContext, captured *tokens) {
 				notifyTokenCaptured("TEAMS_WEB_TOKEN")
 			}
 
-		// EDU_TOKEN
-		case strings.Contains(aud, "8f348934") && captured.eduToken == "":
-			captured.eduToken = token
-			notifyTokenCaptured("EDU_TOKEN")
-
-		case strings.Contains(url, "assignments.edu.cloud.microsoft") && captured.eduToken == "":
+		// EDU_TOKEN must be usable now; old MSAL entries can survive for weeks.
+		case (strings.Contains(aud, "8f348934") || isAssignmentsURL(url)) &&
+			captured.eduToken == "" && freshEduToken(token, time.Now()):
 			captured.eduToken = token
 			notifyTokenCaptured("EDU_TOKEN")
 
@@ -243,6 +241,10 @@ func printTokenStatus(t *tokens) {
 }
 
 func main() {
+	os.Exit(run())
+}
+
+func run() (exitCode int) {
 	args := os.Args[1:]
 	for _, arg := range args {
 		if arg == "--version" || arg == "-v" {
@@ -265,6 +267,10 @@ OPTIONS:
   --headless         Force headless mode
   --clear-session    Delete browser session
   --clear-tokens     Delete saved tokens
+
+EDU renewal saves only an unexpired token accepted by the Assignments API.
+Use --show when interactive login is required. Failed EDU renewals close the
+browser and exit nonzero without replacing the saved EDU token.
 `)
 			return
 		}
@@ -277,9 +283,6 @@ OPTIONS:
 
 	initConsole()
 
-	// Kill any stale browser holding our profile from a previous crashed run,
-	// so launching a fresh Playwright session can never fail on a locked profile.
-	helpers.KillZombieBrowser()
 	fmt.Println()
 	fmt.Println("╔════════════════════════════════════════════╗")
 	fmt.Println("║          lazyteams — Auth Helper           ║")
@@ -324,7 +327,7 @@ OPTIONS:
 			fmt.Println("  Next run will require login.")
 		}
 		if !clearTokens {
-			os.Exit(0)
+			return 0
 		}
 	}
 
@@ -336,7 +339,7 @@ OPTIONS:
 		} else {
 			fmt.Println("  " + symOK + "  Tokens cleared.")
 		}
-		os.Exit(0)
+		return 0
 	}
 
 	firstRun := !sessionExists(sessionDir)
@@ -385,7 +388,7 @@ OPTIONS:
 			Browsers: []string{"firefox"},
 		}); err != nil {
 			fmt.Printf("Error installing browser: %v\n", err)
-			os.Exit(1)
+			return 1
 		}
 	} else {
 		// Install silently without output
@@ -400,13 +403,17 @@ OPTIONS:
 	pw, err := playwright.Run()
 	if err != nil {
 		fmt.Printf("Error starting Playwright: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
-	defer pw.Stop()
+	var stopOnce sync.Once
+	stopDriver := func() {
+		stopOnce.Do(func() { _ = pw.Stop() })
+	}
+	defer stopDriver()
+	captured := &tokens{eduValidationRequired: renewOnly == "edu"}
 
-	// Ensure the browser is torn down if the TUI is killed (Ctrl+C / q) while
-	// a background renewal is running — otherwise Firefox is left orphaned and
-	// blocks the next launch with "Firefox is already running".
+	// One signal owner saves partial captures and stops the driver before exit.
+	// Competing handlers previously let os.Exit bypass browser/driver cleanup.
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 	signalStop := make(chan struct{})
@@ -414,7 +421,17 @@ OPTIONS:
 		select {
 		case <-sigChan:
 			fmt.Println("\n  · Interrupted — closing browser...")
-			pw.Stop()
+			captured.markIntentionalClose()
+			stopDriver()
+			captured.mu.Lock()
+			incomplete := captured.graphToken == "" || captured.webToken == "" || captured.cookie == ""
+			captured.mu.Unlock()
+			if renewOnly == "" && incomplete {
+				_ = os.RemoveAll(sessionDir)
+			}
+			if err := saveTokens(captured, configDir); err != nil {
+				fmt.Printf("Error saving tokens: %v\n", err)
+			}
 			os.Exit(1)
 		case <-signalStop:
 		}
@@ -436,11 +453,12 @@ OPTIONS:
 	)
 	if err != nil {
 		fmt.Printf("Error launching browser: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
-	defer context.Close()
-
-	captured := &tokens{}
+	defer func() {
+		captured.markIntentionalClose()
+		_ = context.Close()
+	}()
 
 	// Signal that the browser was closed unexpectedly
 	browserClosed := make(chan struct{}, 1)
@@ -464,32 +482,6 @@ OPTIONS:
 		}
 	})
 
-	// Catch Ctrl+C to save tokens before exiting
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
-	go func() {
-		<-sigCh
-		fmt.Println("\n\n[!] Interrupted by user. Saving captured tokens...")
-
-		// If capture was incomplete, clear the browser session
-		// so the next run forces re-login
-		captured.mu.Lock()
-		incomplete := captured.graphToken == "" || captured.webToken == "" || captured.cookie == ""
-		captured.mu.Unlock()
-
-		if renewOnly == "" && incomplete {
-			fmt.Println("  ⚠ Incomplete session — clearing browser session to force re-login next run.")
-			os.RemoveAll(sessionDir)
-		}
-
-		if err := saveTokens(captured, configDir); err != nil {
-			fmt.Printf("Error saving tokens: %v\n", err)
-		} else {
-			fmt.Println("Tokens saved.")
-		}
-		os.Exit(1)
-	}()
-
 	registerFullInterceptor(context, captured)
 
 	// Use the page that the persistent context already opened
@@ -501,7 +493,7 @@ OPTIONS:
 		page, err = context.NewPage()
 		if err != nil {
 			fmt.Printf("Error creating page: %v\n", err)
-			os.Exit(1)
+			return 1
 		}
 	}
 
@@ -518,6 +510,13 @@ OPTIONS:
 	case "edu":
 		fmt.Println("→ Renewing EDU token...")
 		renewalErr = renewEdu(page, context, captured, showBrowser)
+		captured.markIntentionalClose()
+		_ = context.Close()
+		if renewalErr != nil {
+			captured.mu.Lock()
+			captured.eduToken = ""
+			captured.mu.Unlock()
+		}
 
 	case "fabric":
 		fmt.Println("→ Renewing FABRIC token...")
@@ -616,21 +615,17 @@ OPTIONS:
 
 	if err := saveTokens(captured, configDir); err != nil {
 		fmt.Printf("Error saving tokens: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
 	if renewalErr != nil {
 		fmt.Printf("Renewal failed: %v\n", renewalErr)
-		if showBrowser {
-			waitBeforeClosingBrowser()
-		}
-		context.Close()
-		pw.Stop()
-		os.Exit(1)
+		return 1
 	}
 
 	fmt.Println()
 	fmt.Println("→ Session saved. Next time no login is required.")
 	fmt.Println("→ You can now run: ./lazyteams")
+	return 0
 }
 
 func sessionExists(dir string) bool {
@@ -670,7 +665,7 @@ func saveTokens(t *tokens, configDir string) error {
 	if t.notifToken != "" {
 		existing["TEAMS_NOTIF_TOKEN"] = t.notifToken
 	}
-	if t.eduToken != "" {
+	if t.eduToken != "" && (!t.eduValidationRequired || t.eduValidated) {
 		existing["EDU_TOKEN"] = t.eduToken
 	}
 	if t.cookie != "" {
@@ -788,7 +783,10 @@ func renewWebNotif(page playwright.Page, ctx playwright.BrowserContext, captured
 // renewEdu navigates Teams to trigger EDU token request.
 func renewEdu(page playwright.Page, ctx playwright.BrowserContext, captured *tokens, showBrowser bool) error {
 	_, err := page.Goto("https://teams.microsoft.com/v2/",
-		playwright.PageGotoOptions{Timeout: playwright.Float(60000)},
+		playwright.PageGotoOptions{
+			Timeout:   playwright.Float(60000),
+			WaitUntil: playwright.WaitUntilStateDomcontentloaded,
+		},
 	)
 	if err != nil {
 		return fmt.Errorf("navigate to Teams: %w", err)
@@ -810,17 +808,11 @@ func renewEdu(page playwright.Page, ctx playwright.BrowserContext, captured *tok
 	logPages("EDU pages before click", ctx.Pages())
 	logTeamsDOM(page)
 
-	selectors := []string{
-		`[role="navigation"] span:text-is("Assignments")`,
-		`[data-tid="app-bar-edu-assignments"]`,
-		`span:text-is("Assignments") >> nth=0`,
-	}
-
-	clicked, clickErrors := clickAssignments(page, selectors, 30*time.Second)
+	clicked, clickErrors := clickAssignments(page, assignmentsSelectors, 30*time.Second)
 
 	assignmentsPageFound := false
 	for _, candidate := range ctx.Pages() {
-		if strings.Contains(candidate.URL(), "assignments.edu.cloud.microsoft") {
+		if pageHasAssignments(candidate) {
 			assignmentsPageFound = true
 			break
 		}
@@ -831,17 +823,21 @@ func renewEdu(page playwright.Page, ctx playwright.BrowserContext, captured *tok
 	hasEdu := captured.eduToken != ""
 	captured.mu.Unlock()
 	if hasEdu {
-		return nil
+		return validateEduCapture(captured)
 	}
 	if !clicked && !assignmentsPageFound {
 		logTeamsDOM(page)
 		return fmt.Errorf("could not click Assignments: %s", strings.Join(clickErrors, "; "))
 	}
 
-	// Try JS extraction on every page because Teams may open Assignments in a new tab.
-	deadline := time.Now().Add(10 * time.Second)
+	// Assignments can open a tab or an embedded, cross-origin frame. Wait for
+	// its fresh request/cache entry, not the first (possibly expired) MSAL entry.
+	deadline := time.Now().Add(30 * time.Second)
 	jsErrorLogged := false
 	for time.Now().Before(deadline) {
+		if page.IsClosed() {
+			return fmt.Errorf("browser closed before EDU token capture")
+		}
 		for _, candidate := range ctx.Pages() {
 			if err := tryExtractEduTokenFromJS(candidate, captured); err != nil && !jsErrorLogged {
 				debugPrintf("  ⚠ EDU JS extraction failed on %s: %v\n", candidate.URL(), err)
@@ -852,7 +848,7 @@ func renewEdu(page playwright.Page, ctx playwright.BrowserContext, captured *tok
 		hasEdu = captured.eduToken != ""
 		captured.mu.Unlock()
 		if hasEdu {
-			return nil
+			return validateEduCapture(captured)
 		}
 		time.Sleep(500 * time.Millisecond)
 	}
@@ -906,6 +902,9 @@ func logPages(label string, pages []playwright.Page) {
 func waitForTeamsShell(page playwright.Page, timeout time.Duration) {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
+		if page.IsClosed() {
+			return
+		}
 		navigationCount, _ := page.Locator(`[role="navigation"]`).Count()
 		if navigationCount > 0 {
 			return
@@ -920,8 +919,12 @@ func clickAssignments(page playwright.Page, selectors []string, timeout time.Dur
 	var clickErrors []string
 	for time.Now().Before(deadline) {
 		for _, sel := range selectors {
+			remaining := time.Until(deadline)
+			if remaining <= 0 || page.IsClosed() {
+				return false, clickErrors
+			}
 			err := page.Locator(sel).First().Click(playwright.LocatorClickOptions{
-				Timeout: playwright.Float(1500),
+				Timeout: playwright.Float(float64(min(remaining, 1500*time.Millisecond)) / float64(time.Millisecond)),
 			})
 			if err == nil {
 				debugPrintf("→ Clicked Assignments sidebar (%s)\n", sel)
@@ -937,6 +940,9 @@ func clickAssignments(page playwright.Page, selectors []string, timeout time.Dur
 }
 
 func logTeamsDOM(page playwright.Page) {
+	if !debugMode {
+		return
+	}
 	snapshot, err := page.Locator("body").AriaSnapshot()
 	if err != nil {
 		debugPrintf("  ⚠ Could not capture Teams accessibility tree: %v\n", err)
@@ -947,11 +953,6 @@ func logTeamsDOM(page playwright.Page) {
 		snapshot = snapshot[:maxSnapshotLength] + "..."
 	}
 	debugPrintf("→ Teams accessibility tree:\n%s\n", snapshot)
-}
-
-func waitBeforeClosingBrowser() {
-	fmt.Println("Press Enter to close the browser...")
-	_, _ = bufio.NewReader(os.Stdin).ReadString('\n')
 }
 
 // fullRenewal runs the full capture flow (all 5 tokens).
@@ -1393,12 +1394,7 @@ func captureLoop(page playwright.Page, ctx playwright.BrowserContext, pw *playwr
 			)
 			time.Sleep(3 * time.Second)
 
-			eduSelectors := []string{
-				`[role="navigation"] span:text-is("Assignments")`,
-				`[data-tid="app-bar-edu-assignments"]`,
-				`span:text-is("Assignments") >> nth=0`,
-			}
-			clickAssignments(page, eduSelectors, 15*time.Second)
+			clickAssignments(page, assignmentsSelectors, 15*time.Second)
 			time.Sleep(3 * time.Second)
 
 			// Extract from every page because Teams may open Assignments in a new tab.
@@ -1548,57 +1544,34 @@ func tryExtractGraphTokenViaGraphExplorer(page playwright.Page, captured *tokens
 	}
 }
 
-// tryExtractEduTokenFromJS attempts to extract the EDU_TOKEN from
-// Teams' localStorage/sessionStorage (MSAL cache for Assignments).
+// tryExtractEduTokenFromJS reads all MSAL entries in every frame; an expired
+// entry in the Teams shell must not mask a fresh one in Assignments.
 func tryExtractEduTokenFromJS(page playwright.Page, captured *tokens) error {
-	scripts := []string{
-		`(function() {
-			for (let k of Object.keys(localStorage)) {
-				if (k.includes('accesstoken') && k.includes('8f348934')) {
-					try {
-						let v = JSON.parse(localStorage[k]);
-						if (v.secret) return v.secret;
-					} catch(e) {}
-				}
-			}
-			return '';
-		})()`,
-		`(function() {
-			for (let k of Object.keys(sessionStorage)) {
-				if (k.includes('accesstoken') && k.includes('8f348934')) {
-					try {
-						let v = JSON.parse(sessionStorage[k]);
-						if (v.secret) return v.secret;
-					} catch(e) {}
-				}
-			}
-			return '';
-		})()`,
-	}
-
 	var lastErr error
-	failedEvaluations := 0
-	for _, script := range scripts {
-		result, err := page.Evaluate(script)
+	succeeded := false
+	for _, frame := range page.Frames() {
+		result, err := frame.Evaluate(eduStorageScript)
 		if err != nil {
 			lastErr = err
-			failedEvaluations++
 			continue
 		}
-		if token, ok := result.(string); ok && len(token) > 100 {
-			aud := extractAudFromJWT(token)
-			if strings.Contains(aud, "8f348934") {
-				captured.mu.Lock()
-				if captured.eduToken == "" {
-					captured.eduToken = token
-					notifyTokenCaptured("EDU_TOKEN")
-				}
-				captured.mu.Unlock()
-				return nil
+		succeeded = true
+		values, _ := result.([]interface{})
+		for _, value := range values {
+			token, ok := value.(string)
+			if !ok || !freshEduToken(token, time.Now()) {
+				continue
 			}
+			captured.mu.Lock()
+			if captured.eduToken == "" {
+				captured.eduToken = token
+				notifyTokenCaptured("EDU_TOKEN")
+			}
+			captured.mu.Unlock()
+			return nil
 		}
 	}
-	if failedEvaluations == len(scripts) && lastErr != nil {
+	if !succeeded && lastErr != nil {
 		return fmt.Errorf("all browser storage evaluations failed: %w", lastErr)
 	}
 	return nil

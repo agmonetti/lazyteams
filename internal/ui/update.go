@@ -19,6 +19,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 	var cmd tea.Cmd
 
+	// Ctrl+C must shut down owned helpers even while a popup or editor has
+	// captured normal key handling.
+	if key, ok := msg.(tea.KeyMsg); ok && key.Type == tea.KeyCtrlC {
+		m.Close()
+		return m, tea.Quit
+	}
+
 	// Insert mode — intercepts first
 	if m.isTyping {
 		newModel, keyCmd, consumed := m.handleInsertMode(msg)
@@ -190,7 +197,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, renewalSpinnerTickCmd()
 
 	case tokenRenewedMsg:
-		m.renewalProc = nil
 		finishTokenRenewal(&m, msg.tokenType)
 		m.tokenRenewing = false
 		m.tokenRenewingType = ""
@@ -200,8 +206,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if !containsString(m.tokenRenewFailures, msg.tokenType) {
 				m.tokenRenewFailures = append(m.tokenRenewFailures, msg.tokenType)
 			}
+			if msg.tokenType == "edu" {
+				m.eduRenewalPending = false
+				m.assignLoaded = true
+				m.assignErr = fmt.Errorf("EDU token renewal failed: %w", msg.err)
+			}
 		} else {
-			m.tokenRenewFailures = removeString(m.tokenRenewFailures, msg.tokenType)
+			if msg.tokenType == "edu" {
+				m.eduRenewalPending = true
+				m.assignLoaded = false
+				m.assignErr = nil
+			} else {
+				m.tokenRenewFailures = removeString(m.tokenRenewFailures, msg.tokenType)
+			}
 			cmds = append(cmds, reloadTokensCmd(m.client, msg.tokenType))
 		}
 		if next := startNextTokenRenewal(&m); next != nil {
@@ -221,10 +238,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if !containsString(m.tokenRenewFailures, msg.tokenType) {
 				m.tokenRenewFailures = append(m.tokenRenewFailures, msg.tokenType)
 			}
-		} else {
-			m.tokenRenewFailures = removeString(m.tokenRenewFailures, msg.tokenType)
 			if msg.tokenType == "edu" {
-				cmds = append(cmds, loadAssignmentsCmd(m.client))
+				m.eduRenewalPending = false
+				m.assignLoaded = true
+				m.assignErr = fmt.Errorf("Cannot reload renewed EDU token: %w", msg.err)
+			}
+		} else {
+			if msg.tokenType != "edu" {
+				m.tokenRenewFailures = removeString(m.tokenRenewFailures, msg.tokenType)
+			} else {
+				cmds = append(cmds, loadAssignmentsCmd(m.client, true, m.assignGeneration))
 			}
 		}
 		// The renewal queue is drained and nothing is renewing: the fresh
@@ -607,19 +630,40 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case assignmentsMsg:
+		if msg.generation != m.assignGeneration || (m.eduRenewalPending && !msg.afterRenewal) {
+			return m, nil
+		}
 		m.assignments = msg.items
 		m.assignLoaded = true
 		m.assignErr = nil
+		if msg.afterRenewal {
+			m.eduRenewalPending = false
+			m.tokenRenewFailures = removeString(m.tokenRenewFailures, "edu")
+			if len(m.tokenRenewFailures) == 0 {
+				m.tokenRenewErr = ""
+			}
+		}
 		return m, nil
 
 	case assignmentsErrMsg:
-		if is401(msg.err) {
-			cmd := queueTokenRenewal(&m, "edu")
-			m.assignLoaded = true
-			return m, cmd
+		if msg.generation != m.assignGeneration || (m.eduRenewalPending && !msg.afterRenewal) {
+			return m, nil
 		}
 		m.assignErr = msg.err
 		m.assignLoaded = true
+		if msg.afterRenewal {
+			// A helper exit code is not proof that Assignments accepts EDU.
+			// Preserve the actual API failure and stop an endless renew loop.
+			m.eduRenewalPending = false
+			m.tokenRenewErr = msg.err.Error()
+			if !containsString(m.tokenRenewFailures, "edu") {
+				m.tokenRenewFailures = append(m.tokenRenewFailures, "edu")
+			}
+			return m, nil
+		}
+		if is401(msg.err) {
+			return m, queueTokenRenewal(&m, "edu")
+		}
 		return m, nil
 
 	case assignmentDetailMsg:
@@ -1229,6 +1273,9 @@ func startNextTokenRenewal(m *Model) tea.Cmd {
 	m.tokenRenewing = true
 	m.tokenRenewingType = m.tokenRenewalQueue[0]
 	m.tokenRenewalFrame = 0
+	if m.tokenRenewingType == "edu" {
+		m.assignGeneration++
+	}
 	cmds := []tea.Cmd{authHelperRenewal(m, m.tokenRenewingType)}
 	if !m.tokenRenewalSpinnerActive {
 		m.tokenRenewalSpinnerActive = true
@@ -1277,8 +1324,8 @@ func reloadSuccessfulDataCmds(m *Model) []tea.Cmd {
 	if !containsString(m.tokenRenewFailures, "notif") {
 		cmds = append(cmds, loadNotificationsCmd(m.client))
 	}
-	if !containsString(m.tokenRenewFailures, "edu") {
-		cmds = append(cmds, loadAssignmentsCmd(m.client))
+	if !containsString(m.tokenRenewFailures, "edu") && !m.eduRenewalPending {
+		cmds = append(cmds, loadAssignmentsCmd(m.client, false, m.assignGeneration))
 	}
 	return cmds
 }

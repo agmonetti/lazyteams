@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"os"
 	"time"
 
 	"github.com/agmonetti/lazyteams/internal/graph"
@@ -66,7 +65,9 @@ type pollNotificationsMsg struct {
 }
 
 type assignmentsMsg struct {
-	items []graph.Assignment
+	items        []graph.Assignment
+	afterRenewal bool
+	generation   uint64
 }
 
 type assignmentDetailMsg struct {
@@ -78,7 +79,9 @@ type assignmentDetailMsg struct {
 }
 
 type assignmentsErrMsg struct {
-	err error
+	err          error
+	afterRenewal bool
+	generation   uint64
 }
 
 type assignmentUploadDoneMsg struct {
@@ -264,7 +267,8 @@ type Model struct {
 	tokenRenewalFrame         int
 	tokenRenewalSpinnerActive bool
 	debug                     bool
-	renewalProc               *os.Process // running lazyteams-auth child, killed on quit
+	renewal                   *renewalOwner
+	eduRenewalPending         bool // helper succeeded; Assignments must still accept the token
 
 	// User
 	userName string
@@ -313,6 +317,7 @@ type Model struct {
 	assignFileCursor int
 	assignErr        error
 	assignFilter     ActivityFilter
+	assignGeneration uint64 // discard responses issued before the latest EDU renewal
 
 	// DM polling
 	chatUnread            map[string]bool   // chatID → has unread messages
@@ -482,6 +487,7 @@ func New(client *graph.Client, userName string, debug bool) Model {
 		channelToTeam:           make(map[string]string),
 		userName:                userName,
 		debug:                   debug,
+		renewal:                 &renewalOwner{},
 		presenceOptions:         []string{"Available", "Busy", "DoNotDisturb", "BeRightBack", "Away", "Reset (Automatic)"},
 		reactionOptions:         []string{"like", "heart", "laugh", "surprised", "sad", "angry"},
 	}

@@ -65,6 +65,32 @@ Why are there two binaries (`lazyteams` and `lazyteams-auth`)?
 > [!NOTE]
 > Token renewals for Teams Web, Notifications, and EDU run quietly in headless mode. Renewals for Microsoft Graph and Fabric channels briefly open a visible browser window when required by Microsoft. Full token lifecycle details are covered in the [documentation](https://lazyteams.agmonetti.workers.dev).
 
+### EDU renewal and Assignments
+
+EDU renewal accepts only an unexpired token for the Assignments audience, checks
+all browser frames and MSAL cache entries, and verifies the candidate against the
+Assignments API before saving it. The TUI reloads the saved credentials and fetches
+Assignments before treating the renewal as successful. A failed request is shown
+as an Assignments error, not an empty assignment list or an endless renewal loop.
+
+Background EDU renewal has a **180-second deadline**, measured from helper startup.
+The supervisor bounds inherited output-pipe waits and stops its own helper/Node
+process group on Unix (a Job Object on Windows); it does not kill other browser
+sessions by name or profile. Normal exit and interruption also close Playwright.
+
+For diagnosis, run `./lazyteams --debug` and inspect
+`~/.config/lazyteams/auth-helper.log`. To renew directly:
+
+```bash
+./lazyteams-auth --renew edu --headless --debug
+# If the saved Microsoft session requires interactive login:
+./lazyteams-auth --renew edu --show
+```
+
+A “captured” message alone is not proof of access: renewal must finish, the
+Assignments API must accept the token, and workspace `4` must load successfully.
+Do not share `tokens.env`, browser profiles, or unredacted diagnostic logs.
+
 ---
 
 ## Quick Start
