@@ -1,6 +1,6 @@
 module github.com/agmonetti/lazyteams
 
-go 1.26.6
+go 1.26.10
 
 require (
 	github.com/charmbracelet/bubbles v1.0.0
@@ -9,7 +9,7 @@ require (
 	github.com/charmbracelet/lipgloss v1.1.1-0.20250404203927-76690c660834
 	github.com/mattn/go-runewidth v0.0.27
 	github.com/mxschmitt/playwright-go v0.6100.0
-	golang.org/x/sys v0.47.0
+	golang.org/x/sys v0.49.0
 )
 
 require (
@@ -43,7 +43,7 @@ require (
 	github.com/yuin/goldmark v1.8.5 // indirect
 	github.com/yuin/goldmark-emoji v1.0.6 // indirect
 	go.mongodb.org/mongo-driver v1.17.9 // indirect
-	golang.org/x/net v0.57.0 // indirect
-	golang.org/x/term v0.45.0 // indirect
-	golang.org/x/text v0.41.0 // indirect
+	golang.org/x/net v0.61.0 // indirect
+	golang.org/x/term v0.47.0 // indirect
+	golang.org/x/text v0.43.0 // indirect
 )
