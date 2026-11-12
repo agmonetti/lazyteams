@@ -39,16 +39,6 @@ func TestGraphSignInPopupThatCompletesByItselfStaysHeadless(t *testing.T) {
 			graphMicrosoftOrigin = server.URL + "/ms"
 			graphSignInSettleTimeout = 3e9
 			t.Cleanup(func() { graphMicrosoftOrigin, graphSignInSettleTimeout = oldOrigin, oldSettle })
-			home := t.TempDir()
-			t.Setenv("HOME", home)
-			accPath := filepath.Join(home, ".config", "lazyteams", "graph-account")
-			if err := os.MkdirAll(filepath.Dir(accPath), 0700); err != nil {
-				t.Fatal(err)
-			}
-			if err := os.WriteFile(accPath, []byte("fixture@example.test\n"), 0600); err != nil {
-				t.Fatal(err)
-			}
-
 			pw, err := playwright.Run()
 			if err != nil {
 				t.Fatal(err)
@@ -59,6 +49,16 @@ func TestGraphSignInPopupThatCompletesByItselfStaysHeadless(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer browser.Close()
+
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+			accPath := filepath.Join(home, ".config", "lazyteams", "graph-account")
+			if err := os.MkdirAll(filepath.Dir(accPath), 0700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(accPath, []byte("fixture@example.test\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
 			p, err := browser.NewPage()
 			if err != nil {
 				t.Fatal(err)

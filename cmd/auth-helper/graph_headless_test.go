@@ -16,6 +16,25 @@ import (
 	playwright "github.com/mxschmitt/playwright-go"
 )
 
+func init() {
+	if os.Getenv("PLAYWRIGHT_DRIVER_PATH") == "" {
+		if cache, err := os.UserCacheDir(); err == nil {
+			driver := filepath.Join(cache, "ms-playwright-go", "1.61.1")
+			if info, err := os.Stat(driver); err == nil && info.IsDir() {
+				_ = os.Setenv("PLAYWRIGHT_DRIVER_PATH", driver)
+			}
+		}
+	}
+	if os.Getenv("PLAYWRIGHT_BROWSERS_PATH") == "" {
+		if cache, err := os.UserCacheDir(); err == nil {
+			browsers := filepath.Join(cache, "ms-playwright")
+			if info, err := os.Stat(browsers); err == nil && info.IsDir() {
+				_ = os.Setenv("PLAYWRIGHT_BROWSERS_PATH", browsers)
+			}
+		}
+	}
+}
+
 func TestGraphAccountPrivate(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	path := filepath.Join(os.Getenv("HOME"), ".config", "lazyteams", "graph-account")
@@ -205,16 +224,6 @@ func TestTryGraphHeadlessSignInAutomatesTwoClicksWithoutChangingCandidate(t *tes
 	graphMicrosoftOrigin = server.URL + "/ms"
 	t.Cleanup(func() { graphMicrosoftOrigin = oldOrigin })
 
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	accPath := filepath.Join(home, ".config", "lazyteams", "graph-account")
-	if err := os.MkdirAll(filepath.Dir(accPath), 0700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(accPath, []byte("fixture@example.test\n"), 0600); err != nil {
-		t.Fatal(err)
-	}
-
 	pw, err := playwright.Run()
 	if err != nil {
 		t.Fatal(err)
@@ -225,6 +234,16 @@ func TestTryGraphHeadlessSignInAutomatesTwoClicksWithoutChangingCandidate(t *tes
 		t.Fatal(err)
 	}
 	defer browser.Close()
+
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	accPath := filepath.Join(home, ".config", "lazyteams", "graph-account")
+	if err := os.MkdirAll(filepath.Dir(accPath), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(accPath, []byte("fixture@example.test\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
 	page, err := browser.NewPage()
 	if err != nil {
 		t.Fatal(err)

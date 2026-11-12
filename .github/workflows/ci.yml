@@ -39,6 +39,9 @@ jobs:
             exit 1
           fi
 
+      - name: Install Playwright driver
+        run: go run github.com/mxschmitt/playwright-go/cmd/playwright install --with-deps firefox
+
       - name: Run tests
         run: go test ./...
 
