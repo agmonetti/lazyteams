@@ -42,6 +42,8 @@ type updateCheckMsg struct{ latest string }
 // updateBannerExpiredMsg hides the update notice after its display window.
 type updateBannerExpiredMsg struct{}
 
+type updateInstallMsg struct{ err error }
+
 type authEventMsg struct {
 	event auth.AuthEvent
 	err   error

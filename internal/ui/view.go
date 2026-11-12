@@ -124,6 +124,9 @@ func (m Model) View() string {
 	if m.err != nil {
 		return fmt.Sprintf("\n[!] Error: %v\n\nPress 'q' to quit.\n", m.err)
 	}
+	if m.updateStage != "" && m.width > 0 && m.height > 0 {
+		return m.updateScreen()
+	}
 
 	if m.teamsLoaded && len(m.teams) == 0 && m.capabilities[CapabilityGraph] == CapabilityReady {
 		return "\nNo teams found. This account may not have Teams Enterprise or may not belong to any team.\n\nPress 'q' to quit.\n"
@@ -1492,11 +1495,49 @@ func (m Model) updateBannerActive() bool {
 	return m.latestVersion != "" && time.Now().Before(m.updateBannerUntil)
 }
 
+func (m Model) updateShortcutAvailable() bool {
+	return !(!m.focusLeft && (m.workspace == WorkspaceAssignments ||
+		m.workspace == WorkspaceDMs ||
+		(m.workspace == WorkspaceTeams && m.viewMode == ModeFiles)))
+}
+
 func (m Model) footerText() string {
-	if m.updateBannerActive() {
-		return lipgloss.NewStyle().Foreground(colorYellow).Render("New version " + m.latestVersion + " available")
+	footer := m.footerTextInner()
+	if m.latestVersion != "" {
+		hintText := "[u] Update " + m.latestVersion
+		if !m.updateShortcutAvailable() {
+			hintText = "Update " + m.latestVersion + " (switch panel, then u)"
+		}
+		hint := lipgloss.NewStyle().Foreground(colorYellow).Render(hintText)
+		if m.updateBannerActive() {
+			return hint
+		}
+		return hint + "  " + footer
 	}
-	return m.footerTextInner()
+	return footer
+}
+
+func (m Model) updateScreen() string {
+	title := titleStyle.Render("Update LazyTeams")
+	var body string
+	switch m.updateStage {
+	case "confirm":
+		body = fmt.Sprintf("Install release %s for both lazyteams and lazyteams-auth?\n\n[y/Enter] Install  [n/Esc] Cancel", m.latestVersion)
+	case "installing":
+		body = "Downloading, verifying SHA-256 and installing both executables…\n\nPlease wait."
+	case "done":
+		if m.updateRestarted {
+			body = "Both executables were updated. The new release is running.\n\n[Enter/Esc] Return"
+		} else {
+			body = "Both executables were updated.\nRestart LazyTeams to use the new release.\n\n[Enter/Esc] Return"
+		}
+	case "error":
+		body = "Update failed; previous installation retained if rollback succeeded:\n" + m.updateErr.Error() + "\n\n[Enter/Esc] Return"
+	}
+	content := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).
+		BorderForeground(colorBorder).Padding(1, 2).Width(min(76, max(24, m.width-8))).
+		Render(title + "\n\n" + body)
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, content)
 }
 
 func (m Model) footerTextInner() string {

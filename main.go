@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -14,6 +15,12 @@ import (
 )
 
 func main() {
+	handled, updateResult := version.ConsumeUpdateResult(os.Args[1:])
+	if handled && updateResult != nil {
+		fmt.Fprintf(os.Stderr, "Update failed: %v\n", updateResult)
+		os.Exit(1)
+	}
+
 	// Handle --help, --version, --update and --debug flags
 	debugMode := false
 	doUpdate := false
@@ -91,6 +98,9 @@ NOTES:
 	userName := auth.ParseUserNameFromToken(credentials.Graph.Token)
 
 	model := ui.New(graphClient, userName, debugMode)
+	if handled {
+		model = model.WithUpdateResult(nil)
+	}
 	defer model.Close()
 	p := tea.NewProgram(
 		model,
@@ -123,7 +133,11 @@ func runUpdate() int {
 		fmt.Printf("Cannot determine current binary path: %v\n", err)
 		return 1
 	}
-	authExe := version.AuthHelperSiblingPath(selfExe)
+	authExe, err := version.ResolveAuthHelperPath(selfExe)
+	if err != nil {
+		fmt.Printf("Cannot locate verified auth-helper: %v\n", err)
+		return 1
+	}
 
 	confirm := func(prompt string) bool {
 		fmt.Printf("%s [y/N] ", prompt)
@@ -137,6 +151,11 @@ func runUpdate() int {
 	}
 
 	updated, err := info.UpdateCmd(version.Version, selfExe, authExe, confirm, progress)
+	if errors.Is(err, version.ErrUpdatePending) {
+		// A temporary Windows updater reports the result after this process
+		// exits and restarts the application with that result.
+		return 0
+	}
 	if err != nil {
 		fmt.Printf("Update failed: %v\n", err)
 		return 1

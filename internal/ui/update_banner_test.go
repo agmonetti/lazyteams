@@ -48,8 +48,8 @@ func TestUpdateBannerActive(t *testing.T) {
 func TestFooterTextBannerWhileActive(t *testing.T) {
 	m := Model{latestVersion: "v9.9.9", updateBannerUntil: time.Now().Add(time.Minute)}
 	got := m.footerText()
-	if !strings.Contains(got, "New version v9.9.9 available") {
-		t.Errorf("footerText() = %q, want update notice", got)
+	if !strings.Contains(got, "[u] Update v9.9.9") {
+		t.Errorf("footerText() = %q, want actionable update hint", got)
 	}
 	if strings.Contains(got, "Help") {
 		t.Errorf("footerText() = %q, contextual hints must be hidden while the banner is active", got)
@@ -59,11 +59,15 @@ func TestFooterTextBannerWhileActive(t *testing.T) {
 func TestFooterTextNormalAfterExpiry(t *testing.T) {
 	m := Model{latestVersion: "v9.9.9", updateBannerUntil: time.Now().Add(-time.Second)}
 	got := m.footerText()
-	if strings.Contains(got, "New version") {
-		t.Errorf("footerText() = %q, update notice must not appear after expiry", got)
+	if !strings.Contains(got, "[u] Update v9.9.9") || !strings.Contains(got, "Help") {
+		t.Errorf("footerText() = %q, want both update hint and contextual hints", got)
 	}
-	if !strings.Contains(got, "Help") {
-		t.Errorf("footerText() = %q, contextual hints must return after expiry", got)
+}
+func TestUpdateHintDoesNotClaimUploadShortcut(t *testing.T) {
+	m := Model{latestVersion: "v9.9.9", workspace: WorkspaceDMs, focusLeft: false}
+	got := m.footerText()
+	if strings.Contains(got, "[u] Update") || !strings.Contains(got, "switch panel, then u") {
+		t.Errorf("footerText() = %q, must not advertise an occupied upload key", got)
 	}
 }
 
@@ -109,7 +113,7 @@ func TestUpdateBannerExpiredMsgClears(t *testing.T) {
 	if !got.updateBannerUntil.IsZero() {
 		t.Error("updateBannerUntil must be cleared after expiry message")
 	}
-	if strings.Contains(got.footerText(), "New version") {
-		t.Error("footerText() must not show the update notice after expiry message")
+	if !strings.Contains(got.footerText(), "[u] Update v9.9.9") {
+		t.Error("footerText() must retain the update hint after expiry")
 	}
 }

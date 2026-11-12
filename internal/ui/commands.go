@@ -65,6 +65,38 @@ func updateBannerExpireCmd() tea.Cmd {
 	})
 }
 
+// installUpdateCmd re-reads release metadata after confirmation, so the
+// selected tag cannot silently change between the startup check and install.
+func installUpdateCmd(tag string) tea.Cmd {
+	return func() tea.Msg { return updateInstallMsg{err: runUIUpdate(tag)} }
+}
+
+var runUIUpdate = func(tag string) error {
+	info, err := version.LatestReleaseInfo(version.GithubReleasesURL)
+	if err != nil {
+		return err
+	}
+	if info.TagName != tag {
+		return fmt.Errorf("latest release changed from %s to %s; restart LazyTeams to check again", tag, info.TagName)
+	}
+	selfExe, err := version.ExecutablePath()
+	if err != nil {
+		return err
+	}
+	authExe, err := version.ResolveAuthHelperPath(selfExe)
+	if err != nil {
+		return err
+	}
+	updated, err := info.UpdateCmd(version.Version, selfExe, authExe, nil, nil)
+	if err != nil {
+		return err
+	}
+	if !updated {
+		return fmt.Errorf("release %s was not installed", tag)
+	}
+	return nil
+}
+
 func reloadChannelsAfterDelayCmd() tea.Cmd {
 	return tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
 		return delayedReloadChannelsMsg{}
@@ -246,11 +278,11 @@ func renewalSpinnerTickCmd() tea.Cmd {
 }
 
 var authHelperExecutable = func() (string, error) {
-	exe, err := os.Executable()
+	selfExe, err := version.ExecutablePath()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(filepath.Dir(exe), "lazyteams-auth"), nil
+	return version.ResolveAuthHelperPath(selfExe)
 }
 
 func authHelperBatch(m *Model, jobs []string) tea.Cmd {
@@ -461,11 +493,10 @@ func authHelperRenewalArgs(expiredToken string) []string {
 }
 
 func authHelperRenewal(m *Model, expiredToken string) tea.Cmd {
-	exe, err := os.Executable()
+	authHelper, err := authHelperExecutable()
 	if err != nil {
 		return func() tea.Msg { return tokenRenewedMsg{tokenType: expiredToken, err: err} }
 	}
-	authHelper := filepath.Join(filepath.Dir(exe), "lazyteams-auth")
 
 	args := authHelperRenewalArgs(expiredToken)
 	if m.debug {

@@ -207,6 +207,11 @@ func (m Model) handleMainSwitch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.dirPicker, _ = m.dirPicker.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
 			return m, nil
 		}
+		if m.latestVersion != "" {
+			m.updateErr = nil
+			m.updateStage = "confirm"
+			return m, nil
+		}
 
 	case "s":
 		if m.workspace == WorkspaceAssignments && !m.focusLeft {

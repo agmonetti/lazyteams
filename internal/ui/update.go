@@ -22,8 +22,34 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Ctrl+C must shut down owned helpers even while a popup or editor has
 	// captured normal key handling.
 	if key, ok := msg.(tea.KeyMsg); ok && key.Type == tea.KeyCtrlC {
+		if m.updateStage == "installing" {
+			// Do not terminate the process midway through the paired commit.
+			return m, nil
+		}
 		m.Close()
 		return m, tea.Quit
+	}
+
+	// Update confirmation and installation take precedence over typing and
+	// workspace keys; no other command can start a second install.
+	if m.updateStage != "" {
+		if key, ok := msg.(tea.KeyMsg); ok {
+			switch m.updateStage {
+			case "confirm":
+				switch key.String() {
+				case "y", "enter":
+					m.updateStage = "installing"
+					return m, installUpdateCmd(m.latestVersion)
+				case "n", "esc":
+					m.updateStage = ""
+				}
+			case "done", "error":
+				if key.String() == "enter" || key.String() == "esc" {
+					m.updateStage = ""
+				}
+			}
+			return m, nil
+		}
 	}
 
 	// Insert mode — intercepts first
@@ -186,6 +212,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case updateBannerExpiredMsg:
 		m.updateBannerUntil = time.Time{}
+		return m, nil
+	case updateInstallMsg:
+		if errors.Is(msg.err, version.ErrUpdatePending) {
+			// On Windows the temporary updater must wait for this executable
+			// to exit. Its result is displayed after it restarts the app.
+			m.Close()
+			return m, tea.Quit
+		}
+		if msg.err != nil {
+			m.updateStage = "error"
+			m.updateErr = msg.err
+		} else {
+			m.updateStage = "done"
+			m.updateErr = nil
+			m.latestVersion = ""
+			m.updateBannerUntil = time.Time{}
+		}
 		return m, nil
 
 	case renewalTimerMsg:

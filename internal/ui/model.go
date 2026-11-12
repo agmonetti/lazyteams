@@ -398,6 +398,10 @@ type Model struct {
 	// updateBannerUntil bounds how long the update notice is shown as the
 	// exclusive footer content. Zero means no banner is displayed.
 	updateBannerUntil time.Time
+	// Update UI state: confirmation, installation, success or failure.
+	updateStage     string
+	updateErr       error
+	updateRestarted bool
 
 	// Assignments / Tasks
 	assignments      []graph.Assignment
@@ -612,6 +616,18 @@ func New(client *graph.Client, userName string, debug bool) Model {
 		reactionOptions:          []string{"like", "heart", "laugh", "surprised", "sad", "angry"},
 	}
 	loadPrefsIntoModel(&m, prefs)
+	return m
+}
+
+// WithUpdateResult shows the completed Windows handoff on the next launch.
+func (m Model) WithUpdateResult(err error) Model {
+	m.updateErr = err
+	if err != nil {
+		m.updateStage = "error"
+	} else {
+		m.updateStage = "done"
+		m.updateRestarted = true
+	}
 	return m
 }
 
