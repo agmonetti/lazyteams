@@ -150,15 +150,40 @@ Press <kbd>?</kbd> anywhere inside the application to open the interactive keybo
 
 ## Self-Updating
 
-Keep `lazyteams` up to date with a single command:
+When a newer GitHub release is available, the footer shows **[u] Update**. Press
+<kbd>u</kbd> from a workspace panel, confirm, and wait for the result. In upload
+panels, <kbd>u</kbd> still uploads; switch to the left panel first to update.
+The CLI alternative is `./lazyteams --update`.
+
+The updater downloads **both** `lazyteams` and `lazyteams-auth` from one release,
+checks each against that release's `SHA256SUMS` and embedded build version, and
+refuses to replace files whose identity or ownership cannot be verified. Both
+installed binaries must have the same current version. It follows symlinks to
+the verified installation targets without replacing the links, checks write
+access in both target directories, and restores the original TUI if installing
+the helper fails. It never modifies tokens, browser sessions or preferences.
+Restart the TUI after a successful update on Unix; on Windows it exits for the
+paired replacement and relaunches with the result. If an installation is
+read-only or managed by a package manager, update it through that manager.
+
+To exercise the updater without publishing a release or touching installed
+binaries, run the focused local-release and rollback tests:
 
 ```bash
-./lazyteams --update
+go test ./internal/version ./internal/ui -run 'Test(Paired|Update|ConsumeUpdateResult)' -count=1
 ```
 
-This checks GitHub Releases for new versions, verifies the SHA-256 checksums, and safely replaces both the TUI and the auth helper binaries.
+For an isolated candidate, build both executables into a temporary directory
+with the **same** version:
 
----
+```bash
+mkdir -p /tmp/lazyteams-candidate
+go build -ldflags '-X github.com/agmonetti/lazyteams/internal/version.Version=v0.1.6' -o /tmp/lazyteams-candidate/lazyteams .
+go build -ldflags '-X github.com/agmonetti/lazyteams/internal/version.Version=v0.1.6' -o /tmp/lazyteams-candidate/lazyteams-auth ./cmd/auth-helper
+```
+
+Never run `--update` on a stable installation for a dry run.
+
 
 ## Documentation
 
