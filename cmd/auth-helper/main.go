@@ -2367,6 +2367,27 @@ func (s *spinner) Stop(doneMsg string) {
 // still in flight, playwright's coreBundle.js throws an uncaught "Assertion
 // error" that kills the Node driver process and makes the auth-helper crash on
 // the next browser action. We replace those asserts with early returns.
+// patchDriverBundle makes the Playwright driver tolerate two Firefox events it
+// otherwise dies on, taking the whole capture with it: a websocket event for an
+// unknown request, and a navigation commit for a frame it never registered
+// (Teams embeds short-lived frames; the driver crashed with "Cannot read
+// properties of undefined (reading '_getChildFrames')").
+func patchDriverBundle(bundle string) string {
+	for _, fix := range [][2]string{
+		{
+			"const request2 = this._webSocketRequests.get(event.requestId);\n        assert(request2);\n        const response2 = this._webSocketResponses.get(event.requestId);\n        assert(response2);",
+			"const request2 = this._webSocketRequests.get(event.requestId);\n        const response2 = this._webSocketResponses.get(event.requestId);\n        if (!request2 || !response2)\n          return;",
+		},
+		{
+			"const frame = this._frames.get(frameId);\n        this.removeChildFramesRecursively(frame);\n        this._clearWebSockets(frame);",
+			"const frame = this._frames.get(frameId);\n        if (!frame)\n          return;\n        this.removeChildFramesRecursively(frame);\n        this._clearWebSockets(frame);",
+		},
+	} {
+		bundle = strings.Replace(bundle, fix[0], fix[1], 1)
+	}
+	return bundle
+}
+
 func patchWebSocketAsserts() {
 	// Driver lives at <cache>/ms-playwright-go/<version>/package/lib/coreBundle.js
 	var base string
@@ -2390,14 +2411,10 @@ func patchWebSocketAsserts() {
 		return
 	}
 	orig := string(data)
-	patched := strings.Replace(orig,
-		"const request2 = this._webSocketRequests.get(event.requestId);\n        assert(request2);\n        const response2 = this._webSocketResponses.get(event.requestId);\n        assert(response2);",
-		"const request2 = this._webSocketRequests.get(event.requestId);\n        const response2 = this._webSocketResponses.get(event.requestId);\n        if (!request2 || !response2)\n          return;",
-		1,
-	)
+	patched := patchDriverBundle(orig)
 	if patched != orig {
 		if err := os.WriteFile(bundlePath, []byte(patched), 0o644); err == nil {
-			fmt.Println("  · Patched playwright websocket asserts.")
+			fmt.Println("  · Patched playwright driver.")
 		}
 	}
 }
