@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"encoding/base64"
+	"encoding/json"
 	"io"
 	"net/http"
 	"strings"
@@ -163,6 +165,90 @@ func TestStartupLegacySnapshotRenewsGraph(t *testing.T) {
 	if !m.tokenRenewing || m.tokenRenewingType != CapabilityGraph {
 		t.Fatalf("renewal state = %v/%q, want graph renewing", m.tokenRenewing, m.tokenRenewingType)
 	}
+}
+
+// TestGraphReloadRefreshesProfileName covers the recovery of an unreadable
+// startup token: the displayed name is parsed once from the credential, so a
+// successful Graph renewal must refresh it instead of showing "Me" forever.
+func TestGraphReloadRefreshesProfileName(t *testing.T) {
+	client := graph.NewClient(&auth.CredentialSet{
+		Generation: 2,
+		Graph:      auth.Credential{Token: unsignedTokenNamed(t, "Ada Lovelace")},
+	})
+	m := New(client, "", false)
+
+	updated, _ := m.Update(tokensReloadedMsg{tokenType: CapabilityGraph})
+	m = updated.(Model)
+
+	if m.userName != "Ada Lovelace" {
+		t.Fatalf("userName = %q after Graph reload, want %q", m.userName, "Ada Lovelace")
+	}
+}
+
+// TestMeMsgRefreshesSelfPresence covers the recovered profile: presence is
+// keyed by self ID, so applying the profile must poll it immediately instead
+// of leaving the status bar on "Offline" until the next presence tick.
+func TestMeMsgRefreshesSelfPresence(t *testing.T) {
+	client := graph.NewClient(&auth.CredentialSet{
+		Graph: auth.Credential{Token: "graph-token"},
+	})
+	client.HTTPClient = &http.Client{Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		body := `{"availability":"Available"}`
+		if strings.Contains(req.URL.Path, "/me") {
+			body = `{"id":"user-42"}`
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(body)),
+			Header:     make(http.Header),
+			Request:    req,
+		}, nil
+	})}
+	m := New(client, "", false)
+
+	updated, cmd := m.Update(meMsg{id: "user-42"})
+	m = updated.(Model)
+
+	presences := collectPresenceResults(t, cmd)
+	updated, _ = m.Update(presenceTickResultMsg{presences: presences})
+	m = updated.(Model)
+	if m.presence["user-42"] != "Available" {
+		t.Fatalf("presence = %q after profile load, want Available", m.presence["user-42"])
+	}
+}
+
+func collectPresenceResults(t *testing.T, cmd tea.Cmd) map[string]string {
+	t.Helper()
+	presences := make(map[string]string)
+	var walk func(tea.Cmd)
+	walk = func(c tea.Cmd) {
+		if c == nil {
+			return
+		}
+		msg := c()
+		if batch, ok := msg.(tea.BatchMsg); ok {
+			for _, sub := range batch {
+				walk(sub)
+			}
+			return
+		}
+		if result, ok := msg.(presenceTickResultMsg); ok {
+			for id, availability := range result.presences {
+				presences[id] = availability
+			}
+		}
+	}
+	walk(cmd)
+	return presences
+}
+
+func unsignedTokenNamed(t *testing.T, name string) string {
+	t.Helper()
+	payload, err := json.Marshal(map[string]string{"name": name})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return "eyJhbGciOiJub25lIn0." + base64.RawURLEncoding.EncodeToString(payload) + "."
 }
 
 // TestStartupValidGraphDoesNotRenew keeps the complementary invariant: a live

@@ -3,6 +3,7 @@ package ui
 import (
 	"errors"
 	"fmt"
+	"github.com/agmonetti/lazyteams/internal/auth"
 	"github.com/agmonetti/lazyteams/internal/graph"
 	"github.com/agmonetti/lazyteams/internal/teams"
 	"github.com/agmonetti/lazyteams/internal/ui/components/directorypicker"
@@ -402,6 +403,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmds...)
 
 	case tokensReloadedMsg:
+		if msg.err == nil {
+			m.applyCredentialUserName()
+		}
 		if m.renewalBatch && m.batchReadyProvider != "" {
 			provider := m.batchReadyProvider
 			m.batchReadyProvider = ""
@@ -726,6 +730,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.selfID = msg.id
 		m.client.SelfID = msg.id
 		var cmds []tea.Cmd
+		// Presence is keyed by user ID: once the profile is known, poll it
+		// immediately instead of waiting for the next presence tick.
+		if msg.id != "" {
+			cmds = append(cmds, pollPresenceCmd(m.client, []string{msg.id}))
+		}
 		for _, ch := range m.chats {
 			cmds = append(cmds, checkUnreadCmd(m.client, ch))
 		}
@@ -1631,6 +1640,18 @@ func removeString(values []string, target string) []string {
 		}
 	}
 	return result
+}
+
+// applyCredentialUserName refreshes the display name from the current Graph
+// credential. The name is read once at startup, so a renewal that replaced an
+// unreadable token would otherwise leave the status bar showing "Me" forever.
+func (m *Model) applyCredentialUserName() {
+	if m.client == nil {
+		return
+	}
+	if name := auth.ParseUserNameFromToken(m.client.Credentials().Graph.Token); name != "" {
+		m.userName = name
+	}
 }
 
 func reloadProviderDataCmds(m *Model, provider string) []tea.Cmd {
