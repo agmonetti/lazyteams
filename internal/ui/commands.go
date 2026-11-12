@@ -109,6 +109,14 @@ var runUIUpdate = func(tag string) error {
 	return nil
 }
 
+var updateRestartDelay = 1200 * time.Millisecond
+
+func scheduleRestartCmd() tea.Cmd {
+	return tea.Tick(updateRestartDelay, func(time.Time) tea.Msg {
+		return updateRestartMsg{}
+	})
+}
+
 func reloadChannelsAfterDelayCmd() tea.Cmd {
 	return tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
 		return delayedReloadChannelsMsg{}

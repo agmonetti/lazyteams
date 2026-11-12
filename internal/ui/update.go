@@ -44,7 +44,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				case "n", "esc":
 					m.updateStage = ""
 				}
-			case "done", "error":
+			case "done":
+				return m, nil
+			case "error":
 				if key.String() == "enter" || key.String() == "esc" {
 					m.updateStage = ""
 				}
@@ -228,21 +230,30 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if errors.Is(msg.err, version.ErrUpdatePending) {
 			// On Windows the temporary updater must wait for this executable
 			// to exit. Its result is displayed after it restarts the app.
-			m.Close()
-			return m, tea.Quit
-		}
-		if msg.err != nil {
-			m.updateStage = "error"
-			m.updateErr = msg.err
-		} else {
 			m.updateStage = "done"
 			m.updateErr = nil
 			m.latestVersion = ""
 			m.updateBannerUntil = time.Time{}
-			m.Close()
-			return m, tea.Quit
+			m.pendingRestart = false
+			return m, scheduleRestartCmd()
 		}
-		return m, nil
+		if msg.err != nil {
+			m.updateStage = "error"
+			m.updateErr = msg.err
+			m.pendingRestart = false
+			return m, nil
+		}
+		m.updateStage = "done"
+		m.updateErr = nil
+		m.latestVersion = ""
+		m.updateBannerUntil = time.Time{}
+		m.pendingRestart = true
+		return m, scheduleRestartCmd()
+
+	case updateRestartMsg:
+		m.Close()
+		m.shouldRestart = m.pendingRestart
+		return m, tea.Quit
 
 	case renewalTimerMsg:
 		if !m.timerMatches(msg) {

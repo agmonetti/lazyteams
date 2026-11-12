@@ -1533,7 +1533,7 @@ func (m Model) updateScreen() string {
 		if m.updateRestarted {
 			body = "Both executables were updated. The new release is running.\n\n[Enter/Esc] Return"
 		} else {
-			body = "Both executables were updated.\nRestart LazyTeams to use the new release.\n\n[Enter/Esc] Return"
+			body = "Both executables were updated successfully.\n\nRestarting LazyTeams…"
 		}
 	case "error":
 		body = "Update failed; previous installation retained if rollback succeeded:\n" + m.updateErr.Error() + "\n\n[Enter/Esc] Return"

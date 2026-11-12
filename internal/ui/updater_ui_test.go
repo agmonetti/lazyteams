@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/agmonetti/lazyteams/internal/version"
 
@@ -39,10 +40,18 @@ func TestUpdateKeyConfirmsAndReportsResult(t *testing.T) {
 		t.Fatal("Ctrl+C must not interrupt a paired installation")
 	}
 	result := cmd()
-	updated, quitCmd := m.Update(result)
+	updated, scheduleCmd := m.Update(result)
 	m = updated.(Model)
-	if called != 1 || m.updateStage != "done" || m.latestVersion != "" || quitCmd == nil {
-		t.Fatalf("unexpected completion: stage=%q calls=%d cmd=%v", m.updateStage, called, quitCmd)
+	if called != 1 || m.updateStage != "done" || m.latestVersion != "" || scheduleCmd == nil {
+		t.Fatalf("unexpected completion: stage=%q calls=%d cmd=%v", m.updateStage, called, scheduleCmd)
+	}
+	if !strings.Contains(m.View(), "Restarting LazyTeams") {
+		t.Fatalf("expected restarting notice, view = %q", m.View())
+	}
+	updated, quitCmd := m.Update(updateRestartMsg{})
+	m = updated.(Model)
+	if !m.ShouldRestart() || quitCmd == nil {
+		t.Fatalf("expected restart request and quit command: shouldRestart=%v quitCmd=%v", m.ShouldRestart(), quitCmd)
 	}
 	if _, ok := quitCmd().(tea.QuitMsg); !ok {
 		t.Fatalf("update completion command = %T, want QuitMsg", quitCmd())
@@ -72,27 +81,55 @@ func TestUpdateCancelAndFailureKeepHint(t *testing.T) {
 	}
 }
 
-func TestUpdateSuccessClosesResourcesAndReturnsQuit(t *testing.T) {
-	renewal := &renewalOwner{}
-	m := Model{latestVersion: "v1.2.3", updateStage: "installing", renewal: renewal}
+func TestUpdateSuccessShowsBriefSuccessAndRestarts(t *testing.T) {
+	origDelay := updateRestartDelay
+	updateRestartDelay = 5 * time.Millisecond
+	t.Cleanup(func() { updateRestartDelay = origDelay })
 
+	renewal := &renewalOwner{}
+	m := Model{latestVersion: "v1.2.3", updateStage: "installing", renewal: renewal, width: 90, height: 25}
+
+	// 1. Successful installation transitions to "done", displays success + restart notice, and schedules restart
 	updated, cmd := m.Update(updateInstallMsg{err: nil})
 	got := updated.(Model)
 	if got.updateStage != "done" || got.latestVersion != "" {
 		t.Fatalf("expected done state, got stage=%q version=%q", got.updateStage, got.latestVersion)
 	}
-	if cmd == nil {
-		t.Fatal("expected quit command on successful update, got nil")
+	if !strings.Contains(got.View(), "Both executables were updated successfully") || !strings.Contains(got.View(), "Restarting LazyTeams") {
+		t.Fatalf("view does not show success and restart notice: %q", got.View())
 	}
-	if _, ok := cmd().(tea.QuitMsg); !ok {
-		t.Fatalf("command = %T, want tea.QuitMsg", cmd())
+	if cmd == nil {
+		t.Fatal("expected schedule restart command on successful update, got nil")
+	}
+
+	// 2. Keystrokes while in "done" state are ignored (cannot interrupt or dismiss restart)
+	ignored, keyCmd := got.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if ignored.(Model).updateStage != "done" || keyCmd != nil {
+		t.Fatalf("keystrokes must be ignored in done state: stage=%q cmd=%v", ignored.(Model).updateStage, keyCmd)
+	}
+
+	// 3. When restart timer fires, resources are closed, restart is requested, and tea.Quit is returned
+	msg := cmd()
+	if _, ok := msg.(updateRestartMsg); !ok {
+		t.Fatalf("schedule command produced %T, want updateRestartMsg", msg)
+	}
+	quitModel, quitCmd := got.Update(msg)
+	final := quitModel.(Model)
+	if !final.ShouldRestart() {
+		t.Fatal("expected ShouldRestart() = true")
+	}
+	if quitCmd == nil {
+		t.Fatal("expected quit command, got nil")
+	}
+	if _, ok := quitCmd().(tea.QuitMsg); !ok {
+		t.Fatalf("command = %T, want tea.QuitMsg", quitCmd())
 	}
 
 	renewal.mu.Lock()
 	closed := renewal.closed
 	renewal.mu.Unlock()
 	if !closed {
-		t.Fatal("resources were not closed on successful update quit")
+		t.Fatal("resources were not closed before restart")
 	}
 }
 
@@ -131,18 +168,25 @@ func TestUpdateErrorsAndCancellationDoNotQuit(t *testing.T) {
 	}
 }
 
-func TestPendingUpdateQuitsWithoutClaimingSuccess(t *testing.T) {
-	m := Model{updateStage: "installing", latestVersion: "v9.9.9"}
+func TestPendingWindowsUpdateShowsNoticeAndQuits(t *testing.T) {
+	m := Model{updateStage: "installing", latestVersion: "v9.9.9", width: 90, height: 25}
 	updated, cmd := m.Update(updateInstallMsg{err: version.ErrUpdatePending})
 	got := updated.(Model)
-	if got.updateStage != "installing" || got.latestVersion != "v9.9.9" || cmd == nil {
-		t.Fatal("pending Windows update must exit for the stager, not claim success")
+	if got.updateStage != "done" || cmd == nil {
+		t.Fatalf("pending Windows update must transition to done and schedule quit: stage=%q cmd=%v", got.updateStage, cmd)
 	}
-	if _, ok := cmd().(tea.QuitMsg); !ok {
-		t.Fatalf("pending update command = %T, want QuitMsg", cmd())
+	if !strings.Contains(got.View(), "Both executables were updated successfully") {
+		t.Fatalf("expected success view, got %q", got.View())
 	}
-	restarted := Model{width: 90, height: 25}.WithUpdateResult(nil)
-	if !strings.Contains(restarted.View(), "new release is running") {
-		t.Fatal("post-restart confirmation missing")
+	quitModel, quitCmd := got.Update(updateRestartMsg{})
+	final := quitModel.(Model)
+	if final.ShouldRestart() {
+		t.Fatal("Windows pending update relies on detached updater, must not set ShouldRestart")
+	}
+	if quitCmd == nil {
+		t.Fatal("expected quit command for Windows stager")
+	}
+	if _, ok := quitCmd().(tea.QuitMsg); !ok {
+		t.Fatalf("quit command = %T, want tea.QuitMsg", quitCmd())
 	}
 }

@@ -406,6 +406,8 @@ type Model struct {
 	updateStage     string
 	updateErr       error
 	updateRestarted bool
+	pendingRestart  bool
+	shouldRestart   bool
 
 	// Assignments / Tasks
 	assignments      []graph.Assignment
@@ -632,6 +634,18 @@ func (m Model) WithUpdateResult(err error) Model {
 		m.updateStage = "done"
 		m.updateRestarted = true
 	}
+	return m
+}
+
+// ShouldRestart reports whether the application should re-execute itself
+// after cleanly shutting down the TUI to run an updated binary.
+func (m Model) ShouldRestart() bool {
+	return m.shouldRestart
+}
+
+// WithRestart sets whether the model requests a process restart upon exit.
+func (m Model) WithRestart(restart bool) Model {
+	m.shouldRestart = restart
 	return m
 }
 

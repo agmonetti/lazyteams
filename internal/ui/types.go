@@ -51,6 +51,8 @@ type updateNoticeExpiredMsg struct{}
 
 type updateInstallMsg struct{ err error }
 
+type updateRestartMsg struct{}
+
 type authEventMsg struct {
 	event auth.AuthEvent
 	err   error

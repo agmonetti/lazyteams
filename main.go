@@ -13,6 +13,24 @@ import (
 	"github.com/agmonetti/lazyteams/internal/version"
 	tea "github.com/charmbracelet/bubbletea"
 )
+var runRestart = version.Restart
+
+func handleProgramExit(m tea.Model, err error) error {
+	if err != nil {
+		return err
+	}
+	if model, ok := m.(ui.Model); ok && model.ShouldRestart() {
+		selfExe, err := version.ExecutablePath()
+		if err != nil {
+			return fmt.Errorf("cannot determine executable path for restart: %w", err)
+		}
+		args := make([]string, 0, len(os.Args))
+		args = append(args, selfExe)
+		args = append(args, os.Args[1:]...)
+		return runRestart(selfExe, args)
+	}
+	return nil
+}
 
 func main() {
 	handled, updateResult := version.ConsumeUpdateResult(os.Args[1:])
@@ -107,7 +125,8 @@ NOTES:
 		tea.WithAltScreen(),
 		tea.WithMouseCellMotion(),
 	)
-	if _, err := p.Run(); err != nil {
+	finalModel, err := p.Run()
+	if err := handleProgramExit(finalModel, err); err != nil {
 		model.Close()
 		fmt.Printf("Fatal TUI error: %v\n", err)
 		os.Exit(1)
