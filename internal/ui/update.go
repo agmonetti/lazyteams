@@ -267,7 +267,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.tokenType == "batch" {
 			m.renewalBatch = false
 			m.batchProcess = nil
-			if m.batchRequestedProviders["edu"] && !m.batchPublishedProviders["edu"] && m.assignErr == nil {
+			eduUnresolved := !m.batchPublishedProviders["edu"] || (m.eduRenewalPending && m.batchStreamErr != nil)
+			if m.batchRequestedProviders["edu"] && eduUnresolved && m.assignErr == nil {
 				// The batch ended without a usable EDU credential: surface it
 				// instead of leaving Assignments waiting on a discarded load.
 				m.eduRenewalPending = false
@@ -283,7 +284,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// error must never guess one cause for every requested provider.
 				m.tokenRenewErr = msg.err.Error()
 			}
-			m.tokenRenewalQueue = nil
+			// Providers queued while this batch ran still need their renewal.
+			if m.batchJobs == nil {
+				m.tokenRenewalQueue = nil
+			}
+			for _, job := range m.batchJobs {
+				finishTokenRenewal(&m, job)
+			}
+			m.batchJobs = nil
+			if next := startNextTokenRenewal(&m); next != nil {
+				return m, next
+			}
 			// Each successful provider was reloaded when its credential_ready
 			// event arrived. Never replay unrelated providers at batch end.
 			if renewal := scheduleNextRenewal(&m, time.Now()); renewal != nil {
@@ -1509,6 +1520,7 @@ func startNextTokenRenewal(m *Model) tea.Cmd {
 	var renewalCmd tea.Cmd
 	if batchEligible(m.tokenRenewalQueue) {
 		jobs := append([]string(nil), m.tokenRenewalQueue...)
+		m.batchJobs = jobs
 		renewalCmd = startBatchRenewal(m, jobs)
 	} else {
 		renewalCmd = authHelperRenewal(m, m.tokenRenewingType)

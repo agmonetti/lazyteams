@@ -327,3 +327,31 @@ func TestAssignmentsResponsesBeforeRenewalCannotOverwriteItsResult(t *testing.T)
 		t.Fatal("stale error overwrote the current Assignments result")
 	}
 }
+
+func TestBatchEndRenewsProvidersQueuedMeanwhile(t *testing.T) {
+	old := startBatchRenewal
+	t.Cleanup(func() { startBatchRenewal = old })
+	var started [][]string
+	startBatchRenewal = func(_ *Model, jobs []string) tea.Cmd {
+		started = append(started, append([]string(nil), jobs...))
+		return func() tea.Msg { return nil }
+	}
+	m := Model{tokenRenewalQueue: []string{"web"}}
+	if cmd := startNextTokenRenewal(&m); cmd == nil {
+		t.Fatal("expected first batch")
+	}
+	// Graph expires while the web batch is still running.
+	enqueueTokenRenewal(&m, "graph")
+	if cmd := startNextTokenRenewal(&m); cmd != nil {
+		t.Fatal("second helper started while one is running")
+	}
+	updated, cmd := m.Update(tokenRenewedMsg{tokenType: "batch"})
+	m = updated.(Model)
+	if cmd == nil || len(started) != 2 || !sameStrings(started[1], []string{"graph"}) {
+		t.Fatalf("batches = %v, want [web] then [graph]", started)
+	}
+	updated, _ = m.Update(tokenRenewedMsg{tokenType: "batch"})
+	if m = updated.(Model); m.tokenRenewing || len(m.tokenRenewalQueue) != 0 {
+		t.Fatalf("renewal still pending: renewing=%v queue=%v", m.tokenRenewing, m.tokenRenewalQueue)
+	}
+}

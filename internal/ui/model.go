@@ -344,6 +344,7 @@ type Model struct {
 	renewal                   *renewalOwner
 	eduRenewalPending         bool // helper succeeded; Assignments must still accept the token
 	renewalBatch              bool
+	batchJobs                 []string             // queue entries owned by the running batch
 	batchProcess              *helpers.AuthProcess // owned by renewal; stopped on stream errors
 	batchID                   string
 	batchStarted              bool

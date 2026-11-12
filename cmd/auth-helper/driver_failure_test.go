@@ -86,3 +86,41 @@ func TestFullRenewalStopsOnDriverFailure(t *testing.T) {
 		}
 	}
 }
+
+func TestFullRenewalAsksForSignInWhenSessionIsStale(t *testing.T) {
+	oldGoto, oldCapture, oldSleep, oldGraph, oldPost, oldRelogin := fullRenewalGoto, fullRenewalCapture, fullRenewalSleep, fullRenewalGraph, fullRenewalPostGraph, fullRenewalRelogin
+	t.Cleanup(func() {
+		fullRenewalGoto, fullRenewalCapture, fullRenewalSleep, fullRenewalGraph, fullRenewalPostGraph, fullRenewalRelogin = oldGoto, oldCapture, oldSleep, oldGraph, oldPost, oldRelogin
+	})
+	fullRenewalGoto = func(playwright.Page) error { return nil }
+	fullRenewalSleep = func(time.Duration) {}
+	fullRenewalCapture = func(playwright.Page, playwright.BrowserContext, *playwright.Playwright, string, *tokens, <-chan struct{}) string {
+		return captureStale
+	}
+	fullRenewalPostGraph = func(*playwright.Playwright, playwright.Page, playwright.BrowserContext, *tokens, string) error {
+		return nil
+	}
+	for _, tc := range []struct {
+		relogin   string
+		wantGraph bool
+		wantErr   bool
+	}{
+		{relogin: captureOK, wantGraph: true},
+		{relogin: captureStale, wantErr: true},
+		{relogin: captureClosed},
+	} {
+		relogins, graphs := 0, 0
+		fullRenewalRelogin = func(_ *playwright.Playwright, page playwright.Page, ctx playwright.BrowserContext, _ *tokens, _ string) (playwright.Page, playwright.BrowserContext, string, error) {
+			relogins++
+			return page, ctx, tc.relogin, nil
+		}
+		fullRenewalGraph = func(_ *playwright.Playwright, page playwright.Page, ctx playwright.BrowserContext, _ *tokens, _, _ string) (playwright.Page, playwright.BrowserContext, error) {
+			graphs++
+			return page, ctx, nil
+		}
+		_, _, err := fullRenewal(nil, nil, nil, &tokens{}, "", false, make(chan struct{}), "")
+		if relogins != 1 || (graphs == 1) != tc.wantGraph || (err != nil) != tc.wantErr {
+			t.Fatalf("relogin=%q: relogins=%d graphs=%d err=%v", tc.relogin, relogins, graphs, err)
+		}
+	}
+}

@@ -1235,7 +1235,16 @@ func runBatchJobSequence(raw string, capture func() auth.TokenValues, runJob fun
 			}
 			continue
 		}
-		missing := batchJobMissingProviders(job, previous, capture())
+		// A credential intercepted earlier in this run and persisted by this
+		// job's checkpoint is captured, even though it did not change during it.
+		current := capture()
+		for provider, field := range map[string]*string{"graph": &previous.Graph, "web": &previous.Web, "notif": &previous.Notif, "edu": &previous.EDU} {
+			token := map[string]string{"graph": current.Graph, "web": current.Web, "notif": current.Notif, "edu": current.EDU}[provider]
+			if changed && token != "" && last[provider] == token {
+				*field = ""
+			}
+		}
+		missing := batchJobMissingProviders(job, previous, current)
 		if !changed || len(missing) > 0 {
 			if firstErr == nil {
 				firstErr = fmt.Errorf("batch job %s did not capture all requested credentials", job)
@@ -1720,6 +1729,27 @@ func fullRenewal(pw *playwright.Playwright, page playwright.Page, ctx playwright
 	if captureResult == captureClosed {
 		return page, ctx, nil
 	}
+	if captureResult == captureStale {
+		// The profile is kept: only the Microsoft sign-in expired. Ask for it
+		// in a visible window instead of continuing without Teams credentials.
+		captured.mu.Lock()
+		visible := captured.browserVisible
+		captured.mu.Unlock()
+		if visible {
+			return page, ctx, errors.New("Teams sign-in was not completed")
+		}
+		var err error
+		page, ctx, captureResult, err = fullRenewalRelogin(pw, page, ctx, captured, sessionDir)
+		if err != nil {
+			return page, ctx, err
+		}
+		if captureResult == captureClosed {
+			return page, ctx, nil
+		}
+		if captureResult == captureStale {
+			return page, ctx, errors.New("Teams sign-in was not completed")
+		}
+	}
 	if captureResult == captureDisconnected {
 		return page, ctx, fmt.Errorf("Teams capture stopped: %w", playwright.ErrTargetClosed)
 	}
@@ -1744,6 +1774,68 @@ func fullRenewal(pw *playwright.Playwright, page playwright.Page, ctx playwright
 		return page, ctx, err
 	}
 	return page, ctx, nil
+}
+
+var fullRenewalRelogin = reopenForLogin
+
+// reopenForLogin replaces a headless context whose Microsoft session expired
+// with a visible one on the same persistent profile, waits for the user to
+// sign in, and repeats the Teams capture there.
+func reopenForLogin(pw *playwright.Playwright, page playwright.Page, ctx playwright.BrowserContext, captured *tokens, sessionDir string) (playwright.Page, playwright.BrowserContext, string, error) {
+	if globalSpin != nil {
+		globalSpin.SetLabel("Session expired — opening browser for sign-in...")
+	}
+	fmt.Println()
+	fmt.Println("→ Session may have expired — opening browser for re-login...")
+	fmt.Println()
+
+	captured.markIntentionalClose()
+	if err := runBatchContextClose(ctx); err != nil {
+		return page, ctx, "", err
+	}
+	visible, err := openRunPersistentContext(pw, sessionDir, false)
+	if err != nil {
+		return page, ctx, "", fmt.Errorf("session expired and the browser could not be opened for sign-in: %w", err)
+	}
+	ctx = visible
+	activeContexts.add(ctx)
+	captured.mu.Lock()
+	captured.browserVisible = true
+	captured.mu.Unlock()
+	if pages := runBatchContextPages(ctx); len(pages) > 0 {
+		page = pages[0]
+	} else if page, err = runBatchContextNewPage(ctx); err != nil {
+		return page, ctx, "", fmt.Errorf("session expired and no page could be opened for sign-in: %w", err)
+	}
+	runBatchRegisterInterceptor(ctx, captured)
+	_ = page.SetViewportSize(1280, 800)
+	if _, err := page.Goto("https://teams.microsoft.com", playwright.PageGotoOptions{Timeout: playwright.Float(90000)}); fatalPlaywrightError(err) {
+		return page, ctx, "", err
+	}
+	if globalSpin != nil {
+		globalSpin.SetLabel("Waiting for you to sign in...")
+	}
+	// Teams is loaded once a web or spaces token shows up.
+	deadline := time.Now().Add(5 * time.Minute)
+	for {
+		captured.mu.Lock()
+		signedIn := captured.webToken != "" || captured.spacesToken != ""
+		captured.mu.Unlock()
+		if signedIn {
+			break
+		}
+		if page.IsClosed() || activeContexts.isClosing() {
+			fmt.Println("\n  · Browser closed — stopping capture.")
+			return page, ctx, captureClosed, nil
+		}
+		if time.Now().After(deadline) {
+			return page, ctx, captureStale, nil
+		}
+		time.Sleep(1 * time.Second)
+	}
+	// This context has no close handler, so the capture loop gets a channel
+	// that never fires; a closed window surfaces as a driver error instead.
+	return page, ctx, fullRenewalCapture(page, ctx, pw, sessionDir, captured, make(chan struct{})), nil
 }
 
 func fatalPlaywrightError(err error) bool {

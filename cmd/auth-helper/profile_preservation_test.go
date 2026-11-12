@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/agmonetti/lazyteams/internal/auth"
 	"github.com/mxschmitt/playwright-go"
 )
 
@@ -104,5 +105,27 @@ func TestRunKeepsProfileUnlessUserCancelsFirstLogin(t *testing.T) {
 				t.Fatalf("profile kept = %v, want %v", got, tc.wantProfile)
 			}
 		})
+	}
+}
+
+// An EDU token intercepted while an earlier job loaded Teams is still a
+// successful EDU renewal once the edu job validates and persists it.
+func TestBatchAcceptsCredentialInterceptedBeforeItsJob(t *testing.T) {
+	values := auth.TokenValues{}
+	err := runBatchJobSequence("web,edu", func() auth.TokenValues { return values }, func(job string) error {
+		if job == "web_notif" {
+			values.Web, values.Notif, values.EDU = "web", "notif", "edu"
+		}
+		return nil
+	}, func(job string, current auth.TokenValues, last map[string]string) (bool, error) {
+		if job == "edu" {
+			last["edu"] = current.EDU
+		} else {
+			last["web"], last["notif"] = current.Web, current.Notif
+		}
+		return true, nil
+	}, func() string { return "" })
+	if err != nil {
+		t.Fatalf("batch failed although every credential was persisted: %v", err)
 	}
 }
