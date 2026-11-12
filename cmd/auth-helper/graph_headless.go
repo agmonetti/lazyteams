@@ -57,6 +57,8 @@ func graphChallenge(p playwright.Page) bool {
 
 var graphMicrosoftOrigin = "https://login.microsoftonline.com"
 
+var graphSignInSettleTimeout = 10 * time.Second
+
 func graphMicrosoftPage(raw, origin string) bool {
 	u, err := url.Parse(raw)
 	o, e := url.Parse(origin)
@@ -119,6 +121,41 @@ func hasGraphCandidate(captured *tokens) bool {
 	return captured.graphCandidate != nil
 }
 
+// graphSignInCompleted reports whether sign-in finished without the account
+// card: with a live Microsoft session the popup signs in by itself and closes.
+// Completion means a Graph candidate was observed, or no Microsoft window is
+// left and Graph Explorer no longer offers "Sign in". A window that stays open
+// (challenge, MFA, consent, unknown UI) still requires interaction.
+func graphSignInCompleted(page playwright.Page, signIn playwright.Locator, captured *tokens) bool {
+	deadline := time.Now().Add(graphSignInSettleTimeout)
+	for {
+		if hasGraphCandidate(captured) {
+			return true // the candidate is still validated before it is persisted
+		}
+		if page.IsClosed() {
+			return false
+		}
+		pending := false
+		for _, p := range page.Context().Pages() {
+			if !p.IsClosed() && graphMicrosoftPage(p.URL(), graphMicrosoftOrigin) {
+				if graphChallenge(p) {
+					return false
+				}
+				pending = true
+			}
+		}
+		if !pending {
+			if n, err := signIn.Count(); err == nil && n == 0 {
+				return true
+			}
+		}
+		if time.Now().After(deadline) {
+			return false
+		}
+		time.Sleep(150 * time.Millisecond)
+	}
+}
+
 func tryGraphHeadlessSignIn(page playwright.Page, captured *tokens) string {
 	button := page.Locator(`button[aria-label="Sign in"], button[aria-label="Sign in to Graph Explorer"]`)
 	deadline := time.Now().Add(6 * time.Second)
@@ -135,10 +172,7 @@ func tryGraphHeadlessSignIn(page playwright.Page, captured *tokens) string {
 			if err := button.Click(playwright.LocatorClickOptions{Timeout: playwright.Float(3000)}); err != nil {
 				return "interaction_required"
 			}
-			if !graphSelectAccount(page, account, graphMicrosoftOrigin) {
-				if hasGraphCandidate(captured) {
-					return "" // sign-in completed without a selector; the candidate is still validated
-				}
+			if !graphSelectAccount(page, account, graphMicrosoftOrigin) && !graphSignInCompleted(page, button, captured) {
 				return "interaction_required"
 			}
 			return ""

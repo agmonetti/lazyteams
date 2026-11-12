@@ -2140,8 +2140,8 @@ func tryExtractGraphTokenViaGraphExplorer(page playwright.Page, captured *tokens
 			}
 		}
 	} else {
-		fmt.Println("→ First run detected. Waiting for you to sign in to Graph Explorer.")
-		fmt.Println("  Once signed in, click 'Run query' to capture the token.")
+		fmt.Println("→ Graph Explorer is open in a visible window. Sign in if it asks you to;")
+		fmt.Println("  if no token is captured, click 'Run query'.")
 		fmt.Println("  The helper will detect it automatically.")
 	}
 
