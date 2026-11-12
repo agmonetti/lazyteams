@@ -13,6 +13,7 @@ import (
 	"github.com/agmonetti/lazyteams/internal/version"
 	tea "github.com/charmbracelet/bubbletea"
 )
+
 var runRestart = version.Restart
 
 func handleProgramExit(m tea.Model, err error) error {
