@@ -1941,14 +1941,12 @@ func captureLoop(page playwright.Page, ctx playwright.BrowserContext, pw *playwr
 			)
 			time.Sleep(3 * time.Second)
 
-			clickAssignments(page, assignmentsSelectors, 15*time.Second)
-			time.Sleep(3 * time.Second)
-
-			// Extract from every page because Teams may open Assignments in a new tab.
-			for _, candidate := range ctx.Pages() {
-				if err := tryExtractEduTokenFromJS(candidate, captured); err != nil {
-					debugPrintf("  ⚠ EDU token JS extraction failed on %s: %v\n", candidate.URL(), err)
-				}
+			if clicked, _ := clickAssignments(page, assignmentsSelectors, 15*time.Second); clicked {
+				// Assignments requests its token some seconds after the click.
+				// Stay on the page for it, as --renew edu does: the next pass
+				// reloads Teams and would abort that request.
+				globalSpin.SetLabel("Waiting for Assignments to issue EDU_TOKEN...")
+				waitForEduCapture(ctx.Pages, captured, min(30*time.Second, time.Until(deadline)))
 			}
 		}
 
@@ -2158,6 +2156,30 @@ func tryExtractGraphTokenViaGraphExplorer(page playwright.Page, captured *tokens
 		)
 	}
 	return nil
+}
+
+// waitForEduCapture polls every page (Assignments may open in a tab or an
+// embedded frame) until a fresh EDU token is captured, by the request
+// interceptor or from storage, or the timeout expires.
+func waitForEduCapture(pages func() []playwright.Page, captured *tokens, timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	for {
+		for _, candidate := range pages() {
+			if err := tryExtractEduTokenFromJS(candidate, captured); err != nil {
+				debugPrintf("  ⚠ EDU token JS extraction failed on %s: %v\n", candidate.URL(), err)
+			}
+		}
+		captured.mu.Lock()
+		hasEdu := captured.eduToken != ""
+		captured.mu.Unlock()
+		if hasEdu {
+			return true
+		}
+		if !time.Now().Before(deadline) {
+			return false
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
 }
 
 // tryExtractEduTokenFromJS reads all MSAL entries in every frame; an expired

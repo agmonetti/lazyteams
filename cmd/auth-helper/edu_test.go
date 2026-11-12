@@ -201,3 +201,34 @@ func TestSaveTokensDoesNotPersistUnvalidatedEduRenewal(t *testing.T) {
 		t.Fatal("validated EDU was not persisted")
 	}
 }
+
+type eduLateFrame struct {
+	playwright.Frame
+	polls, readyAt int
+	token          string
+}
+
+func (f *eduLateFrame) Evaluate(string, ...interface{}) (interface{}, error) {
+	f.polls++
+	if f.polls < f.readyAt {
+		return []interface{}{}, nil
+	}
+	return []interface{}{f.token}, nil
+}
+
+// Assignments issues its token a few seconds after the click; the full capture
+// must keep polling instead of checking once and reloading Teams.
+func TestWaitForEduCaptureKeepsPollingUntilTokenArrives(t *testing.T) {
+	fresh := eduJWTForTest(t, eduAudienceForTest, time.Now().Unix()+3600, 0)
+	frame := &eduLateFrame{readyAt: 3, token: fresh}
+	pages := func() []playwright.Page { return []playwright.Page{&eduTestPage{frames: []playwright.Frame{frame}}} }
+	captured := &tokens{}
+	if !waitForEduCapture(pages, captured, 5*time.Second) || captured.eduToken != fresh {
+		t.Fatalf("late EDU token not captured after %d polls", frame.polls)
+	}
+	never := &eduLateFrame{readyAt: 1 << 30}
+	pages = func() []playwright.Page { return []playwright.Page{&eduTestPage{frames: []playwright.Frame{never}}} }
+	if waitForEduCapture(pages, &tokens{}, 600*time.Millisecond) {
+		t.Fatal("reported a capture that never happened")
+	}
+}
