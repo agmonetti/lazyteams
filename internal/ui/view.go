@@ -96,19 +96,6 @@ func renderInfoContent(m *Model) string {
 	return content
 }
 
-func (m Model) capabilityStatus() string {
-	order := []string{CapabilityGraph, CapabilityWeb, CapabilityNotif, CapabilityEDU}
-	var parts []string
-	for _, capability := range order {
-		state := m.capabilities[capability]
-		if state == "" {
-			state = CapabilityUnknown
-		}
-		parts = append(parts, capability+":"+string(state))
-	}
-	return strings.Join(parts, "  ")
-}
-
 func renderPendingImages(pending []PendingImage) string {
 	if len(pending) == 0 {
 		return ""
@@ -511,9 +498,9 @@ func (m Model) View() string {
 
 	// Loading state: only show "Loading..." on the splash
 	if m.loading && m.focusLeft && m.workspace != WorkspaceActivity && m.workspace != WorkspaceAssignments {
-		statusLine := lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Render(sanitizeName(m.capabilityStatus()))
+		downloadLine := ""
 		if m.downloadStatus != "" {
-			statusLine += "\n" + lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Render(sanitizeName(m.downloadStatus))
+			downloadLine = lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Render(sanitizeName(m.downloadStatus))
 		}
 		logoLine := ""
 		if rightInnerWidth >= asciiLogoWidth && rightInnerHeight >= 20 {
@@ -529,7 +516,7 @@ func (m Model) View() string {
 			"",
 			splashHintStyle.Render("Loading..."),
 			"",
-			statusLine,
+			downloadLine,
 		)
 		if m.ready {
 			rightContent = lipgloss.Place(rightInnerWidth, rightInnerHeight, lipgloss.Center, lipgloss.Center, splashContent)
@@ -538,9 +525,9 @@ func (m Model) View() string {
 		}
 	} else if m.focusLeft && m.loadedConvID == "" && m.workspace != WorkspaceActivity && m.workspace != WorkspaceAssignments {
 		// === SPLASH SCREEN ===
-		statusLine := lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Render(sanitizeName(m.capabilityStatus()))
+		downloadLine := ""
 		if m.downloadStatus != "" {
-			statusLine += "\n" + lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Render(sanitizeName(m.downloadStatus))
+			downloadLine = lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Render(sanitizeName(m.downloadStatus))
 		}
 		logoLine := ""
 		if rightInnerWidth >= asciiLogoWidth && rightInnerHeight >= 20 {
@@ -554,7 +541,7 @@ func (m Model) View() string {
 			"",
 			splashHintStyle.Render("[↑/↓] Navigate teams  ·  [Enter] Open channel"),
 			"",
-			statusLine,
+			downloadLine,
 		)
 		if m.ready {
 			rightContent = lipgloss.Place(rightInnerWidth, rightInnerHeight, lipgloss.Center, lipgloss.Center, splashContent)
