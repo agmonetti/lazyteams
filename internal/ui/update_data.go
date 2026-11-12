@@ -380,7 +380,8 @@ func (m Model) handlePollChatsMsg(msg pollChatsMsg) (tea.Model, tea.Cmd) {
 	if msg.err != nil {
 		m.chatErr = msg.err
 		if is401(msg.err) {
-			return m, queueTokenRenewal(&m, "web")
+			// The chat list comes from Graph, not from the Teams Web token.
+			return m, queueTokenRenewal(&m, CapabilityGraph)
 		}
 		return m, nil
 	}

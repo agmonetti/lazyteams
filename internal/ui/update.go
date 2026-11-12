@@ -466,6 +466,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case teamsErrMsg:
 		m.setCapabilityError(CapabilityGraph, msg.err)
 		m.loading = false
+		if is401(msg.err) {
+			return m, queueTokenRenewal(&m, CapabilityGraph)
+		}
 		return m, nil
 
 	case channelsErrMsg:
@@ -732,6 +735,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.setCapabilityError(CapabilityGraph, msg.err)
 		// Don't block the app: without selfID, 1:1 chats will simply
 		// show all participants instead of excluding me.
+		if is401(msg.err) {
+			return m, queueTokenRenewal(&m, CapabilityGraph)
+		}
 		return m, nil
 
 	case chatsErrMsg:
@@ -740,7 +746,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.chatErr = msg.err
 		m.setCapabilityError(CapabilityGraph, msg.err)
 		if is401(msg.err) {
-			cmd := queueTokenRenewal(&m, "web")
+			// GetChats uses the Graph credential, so a 401 here renews Graph.
+			cmd := queueTokenRenewal(&m, CapabilityGraph)
 			m.loading = false
 			return m, cmd
 		}
