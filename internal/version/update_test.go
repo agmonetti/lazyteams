@@ -232,3 +232,70 @@ func TestAllowedDownloadHost(t *testing.T) {
 		}
 	}
 }
+
+// TestLatestReleaseInfoRateLimitFallbackKeepsChecksums verifies that metadata
+// obtained through the gh fallback still supports asset downloads and SHA-256
+// verification.
+func TestLatestReleaseInfoRateLimitFallbackKeepsChecksums(t *testing.T) {
+	const tag = "v0.1.5"
+	tuiName := "lazyteams-linux-amd64"
+	authName := "lazyteams-auth-linux-amd64"
+	contents := map[string]string{
+		tuiName:  "binary-a",
+		authName: "binary-b",
+	}
+	sums := fmt.Sprintf("%s  %s\n%s  %s\n",
+		sha256Hex(contents[tuiName]), tuiName,
+		sha256Hex(contents[authName]), authName)
+
+	var srv *httptest.Server
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch filepath.Base(r.URL.Path) {
+		case "latest":
+			w.WriteHeader(http.StatusForbidden)
+			fmt.Fprint(w, `{"message":"API rate limit exceeded"}`)
+		case "SHA256SUMS":
+			fmt.Fprint(w, sums)
+		default:
+			if content, ok := contents[filepath.Base(r.URL.Path)]; ok {
+				fmt.Fprint(w, content)
+				return
+			}
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+
+	original := ghLatestReleaseJSON
+	t.Cleanup(func() { ghLatestReleaseJSON = original })
+	ghLatestReleaseJSON = func(string) ([]byte, error) {
+		return []byte(fmt.Sprintf(`{"tag_name":%q,"assets":[`+
+			`{"name":%q,"browser_download_url":%q},`+
+			`{"name":%q,"browser_download_url":%q},`+
+			`{"name":"SHA256SUMS","browser_download_url":%q}]}`,
+			tag,
+			tuiName, srv.URL+"/releases/download/"+tag+"/"+tuiName,
+			authName, srv.URL+"/releases/download/"+tag+"/"+authName,
+			srv.URL+"/releases/download/"+tag+"/SHA256SUMS",
+		)), nil
+	}
+
+	info, err := LatestReleaseInfo(srv.URL + "/latest")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.TagName != tag {
+		t.Errorf("TagName = %q, want %q", info.TagName, tag)
+	}
+	if !info.hasChecksumAsset {
+		t.Fatal("fallback metadata lost the SHA256SUMS asset")
+	}
+
+	dest := filepath.Join(t.TempDir(), tuiName)
+	if err := DownloadFile(srv.URL+"/releases/download/"+tag+"/"+tuiName, dest, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := info.VerifyFileSHA256(dest, tuiName); err != nil {
+		t.Errorf("VerifyFileSHA256() after fallback: %v", err)
+	}
+}

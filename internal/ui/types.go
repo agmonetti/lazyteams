@@ -36,11 +36,18 @@ type navigateToThreadMsg struct {
 type markNotifReadMsg struct{ err error }
 
 // updateCheckMsg carries the result of the GitHub release check. latest is
-// empty when no update is available or the check failed silently.
-type updateCheckMsg struct{ latest string }
+// empty when no update is available or the check failed silently. notice is
+// set when the anonymous check was rate-limited and the gh fallback failed.
+type updateCheckMsg struct {
+	latest string
+	notice string
+}
 
 // updateBannerExpiredMsg hides the update notice after its display window.
 type updateBannerExpiredMsg struct{}
+
+// updateNoticeExpiredMsg hides the quiet rate-limit notice.
+type updateNoticeExpiredMsg struct{}
 
 type updateInstallMsg struct{ err error }
 

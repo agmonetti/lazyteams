@@ -120,23 +120,7 @@ func (r ReleaseInfo) Digests() map[string]string {
 // LatestReleaseInfo obtains one release and its published SHA256SUMS.
 // Binary downloads are restricted to assets explicitly listed in that release.
 func LatestReleaseInfo(apiURL string) (ReleaseInfo, error) {
-	req, err := http.NewRequest(http.MethodGet, apiURL, nil)
-	if err != nil {
-		return ReleaseInfo{}, err
-	}
-	// GitHub's API rejects requests without a User-Agent header.
-	req.Header.Set("User-Agent", "lazyteams")
-
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return ReleaseInfo{}, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return ReleaseInfo{}, fmt.Errorf("github releases: status %d", resp.StatusCode)
-	}
-	body, err := io.ReadAll(resp.Body)
+	body, err := fetchLatestReleaseJSON(apiURL)
 	if err != nil {
 		return ReleaseInfo{}, err
 	}

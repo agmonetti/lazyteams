@@ -117,3 +117,30 @@ func TestUpdateBannerExpiredMsgClears(t *testing.T) {
 		t.Error("footerText() must retain the update hint after expiry")
 	}
 }
+
+func TestUpdateCheckRateLimitNoticeIsQuietAndExpires(t *testing.T) {
+	m := Model{}
+	updated, cmd := m.Update(updateCheckMsg{notice: "Update check unavailable: GitHub rate limit"})
+	got := updated.(Model)
+	if !got.updateNoticeActive() {
+		t.Fatal("rate-limit notice was not armed")
+	}
+	if cmd == nil {
+		t.Error("expected a command to expire the rate-limit notice")
+	}
+	if got.updateStage != "" || got.latestVersion != "" {
+		t.Errorf("rate-limit notice must not open a modal or claim an update: stage=%q latest=%q", got.updateStage, got.latestVersion)
+	}
+	if !strings.Contains(got.footerText(), "GitHub rate limit") {
+		t.Errorf("footerText() = %q, want the quiet rate-limit notice", got.footerText())
+	}
+
+	updated, _ = got.Update(updateNoticeExpiredMsg{})
+	got = updated.(Model)
+	if got.updateNoticeActive() {
+		t.Error("rate-limit notice did not expire")
+	}
+	if strings.Contains(got.footerText(), "rate limit") {
+		t.Errorf("footerText() = %q after expiry, want notice removed", got.footerText())
+	}
+}

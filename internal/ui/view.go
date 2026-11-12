@@ -1482,6 +1482,10 @@ func (m Model) updateBannerActive() bool {
 	return m.latestVersion != "" && time.Now().Before(m.updateBannerUntil)
 }
 
+func (m Model) updateNoticeActive() bool {
+	return m.updateNotice != "" && time.Now().Before(m.updateNoticeUntil)
+}
+
 func (m Model) updateShortcutAvailable() bool {
 	return !(!m.focusLeft && (m.workspace == WorkspaceAssignments ||
 		m.workspace == WorkspaceDMs ||
@@ -1490,6 +1494,10 @@ func (m Model) updateShortcutAvailable() bool {
 
 func (m Model) footerText() string {
 	footer := m.footerTextInner()
+	notice := ""
+	if m.updateNoticeActive() {
+		notice = lipgloss.NewStyle().Foreground(colorMuted).Render(m.updateNotice)
+	}
 	if m.latestVersion != "" {
 		hintText := "[u] Update " + m.latestVersion
 		if !m.updateShortcutAvailable() {
@@ -1497,9 +1505,18 @@ func (m Model) footerText() string {
 		}
 		hint := lipgloss.NewStyle().Foreground(colorYellow).Render(hintText)
 		if m.updateBannerActive() {
+			if notice != "" {
+				return hint + "  " + notice
+			}
 			return hint
 		}
+		if notice != "" {
+			return notice + "  " + hint + "  " + footer
+		}
 		return hint + "  " + footer
+	}
+	if notice != "" {
+		return notice + "  " + footer
 	}
 	return footer
 }

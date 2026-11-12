@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/agmonetti/lazyteams/internal/auth"
 	"github.com/agmonetti/lazyteams/internal/graph"
@@ -45,16 +46,27 @@ const maxSelfRetries = 30
 const updateBannerDuration = 60 * time.Second
 
 // checkUpdateCmd queries the GitHub releases API once and reports the latest
-// tag. Any failure is swallowed and reported as an empty update so a missing
-// network or rate limit never disturbs the UI.
+// tag. Ordinary failures are swallowed so a missing network never disturbs the
+// UI. A rate limit whose gh fallback also failed produces a quiet notice.
 func checkUpdateCmd() tea.Cmd {
 	return func() tea.Msg {
 		tag, err := version.LatestRelease(version.GithubReleasesURL)
 		if err != nil {
+			if errors.Is(err, version.ErrRateLimited) {
+				return updateCheckMsg{notice: "Update check unavailable: GitHub rate limit"}
+			}
 			return updateCheckMsg{}
 		}
 		return updateCheckMsg{latest: tag}
 	}
+}
+
+// updateNoticeExpireCmd hides the quiet rate-limit notice after the same
+// window used by the update banner.
+func updateNoticeExpireCmd() tea.Cmd {
+	return tea.Tick(updateBannerDuration, func(time.Time) tea.Msg {
+		return updateNoticeExpiredMsg{}
+	})
 }
 
 // updateBannerExpireCmd fires once after updateBannerDuration so the update

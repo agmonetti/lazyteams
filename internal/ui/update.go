@@ -203,6 +203,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, startNextTokenRenewal(&m)
 
 	case updateCheckMsg:
+		if msg.notice != "" {
+			m.updateNotice = msg.notice
+			m.updateNoticeUntil = time.Now().Add(updateBannerDuration)
+			return m, updateNoticeExpireCmd()
+		}
+		m.updateNotice = ""
+		m.updateNoticeUntil = time.Time{}
 		if msg.latest != "" && version.Compare(version.Version, msg.latest) < 0 {
 			m.latestVersion = msg.latest
 			m.updateBannerUntil = time.Now().Add(updateBannerDuration)
@@ -212,6 +219,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case updateBannerExpiredMsg:
 		m.updateBannerUntil = time.Time{}
+		return m, nil
+	case updateNoticeExpiredMsg:
+		m.updateNoticeUntil = time.Time{}
 		return m, nil
 	case updateInstallMsg:
 		if errors.Is(msg.err, version.ErrUpdatePending) {

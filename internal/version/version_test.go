@@ -1,6 +1,7 @@
 package version
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -72,4 +73,90 @@ func TestLatestRelease(t *testing.T) {
 			t.Error("LatestRelease() expected error on invalid JSON")
 		}
 	})
+}
+
+func TestLatestReleasePublicAPISucceedsWithoutFallback(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintln(w, `{"tag_name":"v1.2.3"}`)
+	}))
+	defer ts.Close()
+
+	original := ghLatestReleaseJSON
+	t.Cleanup(func() { ghLatestReleaseJSON = original })
+	called := 0
+	ghLatestReleaseJSON = func(string) ([]byte, error) {
+		called++
+		return nil, errors.New("fallback must not run")
+	}
+
+	tag, err := LatestRelease(ts.URL)
+	if err != nil {
+		t.Fatalf("LatestRelease() error: %v", err)
+	}
+	if tag != "v1.2.3" {
+		t.Errorf("LatestRelease() = %q, want v1.2.3", tag)
+	}
+	if called != 0 {
+		t.Errorf("gh fallback called %d times on a successful public check", called)
+	}
+}
+
+func TestLatestReleaseRateLimitUsesGHFallback(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		fmt.Fprint(w, `{"message":"API rate limit exceeded"}`)
+	}))
+	defer ts.Close()
+
+	original := ghLatestReleaseJSON
+	t.Cleanup(func() { ghLatestReleaseJSON = original })
+	ghLatestReleaseJSON = func(string) ([]byte, error) {
+		return []byte(`{"tag_name":"v0.1.5"}`), nil
+	}
+
+	tag, err := LatestRelease(ts.URL)
+	if err != nil {
+		t.Fatalf("LatestRelease() error: %v", err)
+	}
+	if tag != "v0.1.5" {
+		t.Errorf("LatestRelease() = %q, want v0.1.5", tag)
+	}
+}
+
+func TestLatestReleaseRateLimitWithoutFallback(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	defer ts.Close()
+
+	original := ghLatestReleaseJSON
+	t.Cleanup(func() { ghLatestReleaseJSON = original })
+	ghLatestReleaseJSON = func(string) ([]byte, error) {
+		return nil, errors.New("gh not found")
+	}
+
+	_, err := LatestRelease(ts.URL)
+	if !errors.Is(err, ErrRateLimited) {
+		t.Fatalf("LatestRelease() error = %v, want ErrRateLimited", err)
+	}
+}
+
+func TestGHAPIPath(t *testing.T) {
+	got, err := ghAPIPath(GithubReleasesURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "repos/agmonetti/lazyteams/releases/latest"; got != want {
+		t.Errorf("ghAPIPath() = %q, want %q", got, want)
+	}
+
+	for _, raw := range []string{
+		"http://api.github.com/repos/o/r/releases/latest",
+		"https://example.com/repos/o/r/releases/latest",
+		"https://api.github.com/repos/o/r/tags",
+	} {
+		if _, err := ghAPIPath(raw); err == nil {
+			t.Errorf("ghAPIPath(%q) expected error", raw)
+		}
+	}
 }

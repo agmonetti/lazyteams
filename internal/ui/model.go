@@ -398,6 +398,10 @@ type Model struct {
 	// updateBannerUntil bounds how long the update notice is shown as the
 	// exclusive footer content. Zero means no banner is displayed.
 	updateBannerUntil time.Time
+	// updateNotice is a quiet footer message used when the release check
+	// cannot run, for example because GitHub rate-limited anonymous requests.
+	updateNotice      string
+	updateNoticeUntil time.Time
 	// Update UI state: confirmation, installation, success or failure.
 	updateStage     string
 	updateErr       error
