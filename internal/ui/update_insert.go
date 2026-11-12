@@ -104,8 +104,9 @@ func (m Model) handleInsertMode(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 			v := m.input.Value()
 
 			if (v != "" || len(m.pendingImages) > 0) && m.activeConversationID() != "" {
-				pending := m.pendingImages
+				pending := append([]PendingImage(nil), m.pendingImages...)
 				replyTo := m.replyToMsg
+				m.failedDraft = &messageDraft{text: v, images: pending, replyTo: replyTo}
 
 				m.input.Reset()
 				m.pendingImages = nil

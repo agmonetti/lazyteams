@@ -35,7 +35,8 @@ type Assignment struct {
 }
 
 func (c *Client) FetchAssignments() ([]Assignment, error) {
-	if c.EduToken == "" {
+	credentials := c.Credentials()
+	if credentials.EDU.Token == "" {
 		return nil, fmt.Errorf("EDU_TOKEN not configured")
 	}
 
@@ -48,17 +49,17 @@ func (c *Client) FetchAssignments() ([]Assignment, error) {
 		return nil, fmt.Errorf("error creating request: %w", err)
 	}
 
-	req.Header.Set("Authorization", "Bearer "+c.EduToken)
+	req.Header.Set("Authorization", "Bearer "+credentials.EDU.Token)
 	req.Header.Set("Accept", "application/json, text/plain, */*")
 	req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64; rv:138.0) Gecko/20100101 Firefox/138.0")
 	req.Header.Set("Origin", "https://teams.microsoft.com")
 	req.Header.Set("Referer", "https://teams.microsoft.com/")
 	req.Header.Set("X-Ms-Client-Type", "web")
 	req.Header.Set("X-Ms-ClientType", "web")
-	if c.EduCookie != "" {
-		req.Header.Set("Cookie", c.EduCookie)
-	} else if c.Cookie != "" {
-		req.Header.Set("Cookie", c.Cookie)
+	if credentials.EDUCookie.Token != "" {
+		req.Header.Set("Cookie", credentials.EDUCookie.Token)
+	} else if credentials.Cookie.Token != "" {
+		req.Header.Set("Cookie", credentials.Cookie.Token)
 	}
 
 	resp, err := c.HTTPClient.Do(req)
@@ -192,8 +193,8 @@ func (c *Client) FetchAssignments() ([]Assignment, error) {
 
 	return assignments, nil
 }
-
 func (c *Client) FetchAssignmentFiles(classID, assignmentID string) (refFiles, myFiles []AssignmentFile, resourcesFolderUrl string, err error) {
+	credentials := c.Credentials()
 	url := fmt.Sprintf(
 		"https://assignments.edu.cloud.microsoft/api/v1.0/edu/classes/%s/assignments/%s/submissions?$expand=resources($expand=dependentResources),submittedResources($expand=dependentResources),outcomes&$top=1000",
 		classID, assignmentID,
@@ -204,17 +205,17 @@ func (c *Client) FetchAssignmentFiles(classID, assignmentID string) (refFiles, m
 		return nil, nil, "", err
 	}
 
-	req.Header.Set("Authorization", "Bearer "+c.EduToken)
+	req.Header.Set("Authorization", "Bearer "+credentials.EDU.Token)
 	req.Header.Set("Accept", "application/json, text/plain, */*")
 	req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64; rv:138.0) Gecko/20100101 Firefox/138.0")
 	req.Header.Set("Origin", "https://teams.microsoft.com")
 	req.Header.Set("Referer", "https://teams.microsoft.com/")
 	req.Header.Set("X-Ms-Client-Type", "web")
 	req.Header.Set("X-Ms-ClientType", "web")
-	if c.EduCookie != "" {
-		req.Header.Set("Cookie", c.EduCookie)
-	} else if c.Cookie != "" {
-		req.Header.Set("Cookie", c.Cookie)
+	if credentials.EDUCookie.Token != "" {
+		req.Header.Set("Cookie", credentials.EDUCookie.Token)
+	} else if credentials.Cookie.Token != "" {
+		req.Header.Set("Cookie", credentials.Cookie.Token)
 	}
 
 	resp, err := c.HTTPClient.Do(req)
@@ -284,6 +285,7 @@ func (c *Client) FetchAssignmentFiles(classID, assignmentID string) (refFiles, m
 
 // RegisterAssignmentResource registers an uploaded file as a submission resource.
 func (c *Client) RegisterAssignmentResource(classID, assignmentID, submissionID, fileURL, displayName string) error {
+	credentials := c.Credentials()
 	endpoint := fmt.Sprintf(
 		"https://assignments.edu.cloud.microsoft/api/v1.0/edu/classes/%s/assignments/%s/submissions/%s/resources",
 		classID, assignmentID, submissionID,
@@ -297,7 +299,7 @@ func (c *Client) RegisterAssignmentResource(classID, assignmentID, submissionID,
 	}
 	data, _ := json.Marshal(body)
 	req, _ := http.NewRequest("POST", endpoint, bytes.NewReader(data))
-	req.Header.Set("Authorization", "Bearer "+c.EduToken)
+	req.Header.Set("Authorization", "Bearer "+credentials.EDU.Token)
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
@@ -313,12 +315,13 @@ func (c *Client) RegisterAssignmentResource(classID, assignmentID, submissionID,
 
 // SubmitAssignment submits a student's work for an assignment.
 func (c *Client) SubmitAssignment(classID, assignmentID, submissionID string) error {
+	credentials := c.Credentials()
 	endpoint := fmt.Sprintf(
 		"https://assignments.edu.cloud.microsoft/api/v1.0/edu/classes/%s/assignments/%s/submissions/%s/submit",
 		classID, assignmentID, submissionID,
 	)
 	req, _ := http.NewRequest("POST", endpoint, nil)
-	req.Header.Set("Authorization", "Bearer "+c.EduToken)
+	req.Header.Set("Authorization", "Bearer "+credentials.EDU.Token)
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
@@ -334,12 +337,13 @@ func (c *Client) SubmitAssignment(classID, assignmentID, submissionID string) er
 
 // UndoSubmitAssignment reverses a student's submission.
 func (c *Client) UndoSubmitAssignment(classID, assignmentID, submissionID string) error {
+	credentials := c.Credentials()
 	endpoint := fmt.Sprintf(
 		"https://assignments.edu.cloud.microsoft/api/v1.0/edu/classes/%s/assignments/%s/submissions/%s/undoSubmit",
 		classID, assignmentID, submissionID,
 	)
 	req, _ := http.NewRequest("POST", endpoint, nil)
-	req.Header.Set("Authorization", "Bearer "+c.EduToken)
+	req.Header.Set("Authorization", "Bearer "+credentials.EDU.Token)
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
@@ -355,12 +359,13 @@ func (c *Client) UndoSubmitAssignment(classID, assignmentID, submissionID string
 
 // RemoveAssignmentResource deletes a resource from a submission.
 func (c *Client) RemoveAssignmentResource(classID, assignmentID, submissionID, resourceID string) error {
+	credentials := c.Credentials()
 	endpoint := fmt.Sprintf(
 		"https://assignments.edu.cloud.microsoft/api/v1.0/edu/classes/%s/assignments/%s/submissions/%s/resources/%s",
 		classID, assignmentID, submissionID, resourceID,
 	)
 	req, _ := http.NewRequest("DELETE", endpoint, nil)
-	req.Header.Set("Authorization", "Bearer "+c.EduToken)
+	req.Header.Set("Authorization", "Bearer "+credentials.EDU.Token)
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
 		return err

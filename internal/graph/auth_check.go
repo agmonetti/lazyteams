@@ -13,19 +13,22 @@ type TokenCheckResult struct {
 // CheckAllTokens validates all tokens in parallel using lightweight requests.
 // Returns a list of expired token types.
 func (c *Client) CheckAllTokens() []string {
+	credentials := c.Credentials()
 	checks := []struct {
 		tokenType string
 		check     func() bool
 	}{
-		{"graph", func() bool { return c.checkEndpoint("https://graph.microsoft.com/v1.0/me", c.GraphToken) }},
+		{"graph", func() bool {
+			return c.checkEndpoint("https://graph.microsoft.com/v1.0/me", credentials.Graph.Token)
+		}},
 		{"web", func() bool {
-			return c.checkEndpoint("https://teams.microsoft.com/api/chatsvc/amer/v1/users/ME/properties", c.WebToken)
+			return c.checkEndpoint("https://teams.microsoft.com/api/chatsvc/amer/v1/users/ME/properties", credentials.Web.Token)
 		}},
 		{"notif", func() bool {
-			return c.checkEndpoint("https://teams.microsoft.com/api/chatsvc/amer/v1/users/ME/conversations/48:notifications/messages?startTime=0&pageSize=1&view=msnp24Equivalent&targetType=Passport", c.NotifToken)
+			return c.checkEndpoint("https://teams.microsoft.com/api/chatsvc/amer/v1/users/ME/conversations/48:notifications/messages?startTime=0&pageSize=1&view=msnp24Equivalent&targetType=Passport", credentials.Notif.Token)
 		}},
 		{"edu", func() bool {
-			return c.checkEndpoint("https://assignments.edu.cloud.microsoft/api/v1.0/edu/me/work?$top=1", c.EduToken)
+			return c.checkEndpoint("https://assignments.edu.cloud.microsoft/api/v1.0/edu/me/work?$top=1", credentials.EDU.Token)
 		}},
 	}
 

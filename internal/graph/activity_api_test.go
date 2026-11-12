@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/agmonetti/lazyteams/internal/auth"
 )
 
 type activityPageTransport struct {
@@ -74,10 +76,8 @@ func TestFetchNotificationsFollowsPagesAndKeepsReadActivity(t *testing.T) {
 			]
 		}`,
 	}}
-	client := &Client{
-		NotifToken: "notif-token",
-		HTTPClient: &http.Client{Transport: transport},
-	}
+	client := NewClient(&auth.CredentialSet{Notif: auth.Credential{Token: "notif-token"}})
+	client.HTTPClient = &http.Client{Transport: transport}
 
 	items, err := client.FetchNotifications()
 	if err != nil {
@@ -109,10 +109,8 @@ func TestFetchNotificationsRejectsUntrustedBackwardLink(t *testing.T) {
 	transport := &activityPageTransport{pages: map[string]string{
 		"first": `{"messages": [], "_metadata": {"backwardLink": "https://evil.example/notifications"}}`,
 	}}
-	client := &Client{
-		NotifToken: "notif-token",
-		HTTPClient: &http.Client{Transport: transport},
-	}
+	client := NewClient(&auth.CredentialSet{Notif: auth.Credential{Token: "notif-token"}})
+	client.HTTPClient = &http.Client{Transport: transport}
 
 	if _, err := client.FetchNotifications(); err == nil {
 		t.Fatal("FetchNotifications() accepted an untrusted backward link")

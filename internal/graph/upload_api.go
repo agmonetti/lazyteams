@@ -47,6 +47,7 @@ func (c *Client) UploadFileToOneDrive(filePath string) (DriveItem, error) {
 }
 
 func (c *Client) uploadFile(endpoint, filePath string) (DriveItem, error) {
+	credentials := c.Credentials()
 	f, err := os.Open(filePath)
 	if err != nil {
 		return DriveItem{}, fmt.Errorf("cannot open file: %w", err)
@@ -71,7 +72,7 @@ func (c *Client) uploadFile(endpoint, filePath string) (DriveItem, error) {
 	if err != nil {
 		return DriveItem{}, err
 	}
-	req.Header.Set("Authorization", "Bearer "+c.GraphToken)
+	req.Header.Set("Authorization", "Bearer "+credentials.Graph.Token)
 	req.Header.Set("Content-Type", "application/octet-stream")
 
 	resp, err := c.HTTPClient.Do(req)
@@ -111,12 +112,13 @@ func (c *Client) UploadFileToSubmissionFolder(resourcesFolderUrl, filePath strin
 }
 
 func (c *Client) uploadLargeFile(endpoint string, data []byte) (DriveItem, error) {
+	credentials := c.Credentials()
 	sessionURL := baseURL + strings.Replace(endpoint, ":/content", ":/createUploadSession", 1)
 	req, err := http.NewRequest("POST", sessionURL, strings.NewReader(`{"item":{"@microsoft.graph.conflictBehavior":"rename"}}`))
 	if err != nil {
 		return DriveItem{}, err
 	}
-	req.Header.Set("Authorization", "Bearer "+c.GraphToken)
+	req.Header.Set("Authorization", "Bearer "+credentials.Graph.Token)
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := c.HTTPClient.Do(req)

@@ -6,6 +6,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/agmonetti/lazyteams/internal/auth"
 )
 
 type recordedRequest struct {
@@ -59,10 +61,9 @@ func (t *captureTransport) count() int {
 }
 
 func newPresenceTestClient(tr *captureTransport) *Client {
-	return &Client{
-		GraphToken: "test-token",
-		HTTPClient: &http.Client{Transport: tr},
-	}
+	client := NewClient(&auth.CredentialSet{Graph: auth.Credential{Token: "test-token"}})
+	client.HTTPClient = &http.Client{Transport: tr}
+	return client
 }
 
 func TestSetPresenceSuccess(t *testing.T) {

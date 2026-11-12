@@ -44,6 +44,30 @@ func TestSaveTokensPartialMergeKeepsEscapedValues(t *testing.T) {
 	}
 }
 
+func TestSaveTokensAfterGraphPersistenceDoesNotAdvanceGeneration(t *testing.T) {
+	dir := t.TempDir()
+	if err := auth.PersistCredentialSet(dir, &auth.CredentialSet{
+		Version: 1, Generation: 7, Graph: auth.Credential{Token: "graph-token"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "tokens.env")
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := saveTokens(&tokens{graphToken: "graph-token", graphPersisted: true}, dir); err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(before) {
+		t.Fatal("empty graph save changed the persisted snapshot")
+	}
+}
+
 // readTokensFileForTest parses tokens.env the same way internal/auth's loader does.
 func readTokensFileForTest(t *testing.T, path string) map[string]string {
 	t.Helper()

@@ -1,8 +1,12 @@
 package helpers
 
 import (
+	"errors"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 // setHome points both home variables os.UserHomeDir resolves on Unix ($HOME)
@@ -50,4 +54,68 @@ func TestConfigDir(t *testing.T) {
 	if got := ConfigDir(); got != want {
 		t.Errorf("ConfigDir() = %q, want %q", got, want)
 	}
+}
+
+func TestProfileLockExcludesConcurrentHelper(t *testing.T) {
+	dir := t.TempDir()
+	readyPath := filepath.Join(dir, "ready")
+	cmd := exec.Command(os.Args[0], "-test.run=TestProfileLockChildProcess")
+	cmd.Env = append(os.Environ(),
+		"LAZYTEAMS_PROFILE_LOCK_CHILD=1",
+		"LAZYTEAMS_PROFILE_LOCK_DIR="+dir,
+		"LAZYTEAMS_PROFILE_LOCK_READY="+readyPath,
+	)
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+	}()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(readyPath); err == nil {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if _, err := os.Stat(readyPath); err != nil {
+		t.Fatalf("child did not acquire profile lock: %v", err)
+	}
+
+	second, err := AcquireProfileLock(dir)
+	if !errors.Is(err, ErrProfileInUse) {
+		if err == nil {
+			_ = second.Release()
+		}
+		t.Fatalf("concurrent AcquireProfileLock = %v, want ErrProfileInUse", err)
+	}
+
+	if err := cmd.Process.Kill(); err != nil {
+		t.Fatal(err)
+	}
+	_ = cmd.Wait()
+	third, err := AcquireProfileLock(dir)
+	if err != nil {
+		t.Fatalf("AcquireProfileLock after child termination: %v", err)
+	}
+	if err := third.Release(); err != nil {
+		t.Fatalf("third Release: %v", err)
+	}
+}
+
+func TestProfileLockChildProcess(t *testing.T) {
+	if os.Getenv("LAZYTEAMS_PROFILE_LOCK_CHILD") != "1" {
+		return
+	}
+	lock, err := AcquireProfileLock(os.Getenv("LAZYTEAMS_PROFILE_LOCK_DIR"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lock.Release()
+	if err := os.WriteFile(os.Getenv("LAZYTEAMS_PROFILE_LOCK_READY"), []byte("ready"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(2 * time.Second)
 }

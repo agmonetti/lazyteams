@@ -124,6 +124,7 @@ func parseReactions(properties map[string]interface{}) []Reaction {
 
 // GetMessages fetches messages from a channel using the internal API (ChatSvc)
 func (c *Client) GetMessagesWithLink(teamID, channelID string, pageSize int) ([]Message, string, error) {
+	credentials := c.Credentials()
 	var allMsgs []Message
 	batchSize := pageSize
 	if batchSize > 200 {
@@ -150,7 +151,7 @@ func (c *Client) GetMessagesWithLink(teamID, channelID string, pageSize int) ([]
 			return allMsgs, lastBackwardLink, err
 		}
 
-		req.Header.Set("Authorization", "Bearer "+c.WebToken)
+		req.Header.Set("Authorization", "Bearer "+credentials.Web.Token)
 		req.Header.Set("Accept", "application/json, text/plain, */*")
 		req.Header.Set("behavioroverride", "redirectAs404")
 		req.Header.Set("x-ms-migration", "True")
@@ -347,6 +348,7 @@ func sortMessagesNewestFirst(msgs []Message) {
 
 // GetMessagesFromLink fetches a page of messages using a backwardLink URL directly.
 func (c *Client) GetMessagesFromLink(link string) (MessagePage, error) {
+	credentials := c.Credentials()
 	// The link comes from a server response; never attach the WebToken to a
 	// non-Microsoft host.
 	if err := validateMicrosoftURL(link); err != nil {
@@ -356,7 +358,7 @@ func (c *Client) GetMessagesFromLink(link string) (MessagePage, error) {
 	if err != nil {
 		return MessagePage{}, err
 	}
-	req.Header.Set("Authorization", "Bearer "+c.WebToken)
+	req.Header.Set("Authorization", "Bearer "+credentials.Web.Token)
 	req.Header.Set("Accept", "application/json, text/plain, */*")
 	req.Header.Set("behavioroverride", "redirectAs404")
 	req.Header.Set("x-ms-migration", "True")
@@ -459,6 +461,7 @@ func (c *Client) GetMessagesFromLink(link string) (MessagePage, error) {
 // SendMessage sends a text message to the specified channel using the internal API.
 // If replyTo is non-nil, the message includes a quoted reply blockquote.
 func (c *Client) SendMessage(channelID, content string, mentions []MentionedUser, replyTo *Message) error {
+	credentials := c.Credentials()
 	url := fmt.Sprintf("https://teams.microsoft.com/api/chatsvc/amer/v1/users/ME/conversations/%s/messages", channelID)
 
 	qtdMsgs := "[]"
@@ -522,7 +525,7 @@ func (c *Client) SendMessage(channelID, content string, mentions []MentionedUser
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+c.WebToken)
+	req.Header.Set("Authorization", "Bearer "+credentials.Web.Token)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json, text/plain, */*")
 	req.Header.Set("behavioroverride", "redirectAs404")
@@ -567,6 +570,7 @@ func (c *Client) SendMessageWithInlineImage(
 	dataLen int,
 	replyTo *Message,
 ) error {
+	credentials := c.Credentials()
 	url := fmt.Sprintf("https://teams.microsoft.com/api/chatsvc/amer/v1/users/ME/conversations/%s/messages", channelID)
 
 	htmlContent := buildInlineImageHTML(text, img, dataLen)
@@ -613,7 +617,7 @@ func (c *Client) SendMessageWithInlineImage(
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+c.WebToken)
+	req.Header.Set("Authorization", "Bearer "+credentials.Web.Token)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json, text/plain, */*")
 	req.Header.Set("behavioroverride", "redirectAs404")
@@ -637,6 +641,7 @@ func (c *Client) SendMessageWithInlineImage(
 }
 
 func (c *Client) SendReply(channelID, parentMessageID, content string, mentions []MentionedUser) error {
+	credentials := c.Credentials()
 	url := fmt.Sprintf(
 		"https://teams.microsoft.com/api/chatsvc/amer/v1/users/ME/conversations/%s%%3Bmessageid%%3D%s/messages",
 		channelID, parentMessageID,
@@ -671,7 +676,7 @@ func (c *Client) SendReply(channelID, parentMessageID, content string, mentions 
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+c.WebToken)
+	req.Header.Set("Authorization", "Bearer "+credentials.Web.Token)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json, text/plain, */*")
 	req.Header.Set("behavioroverride", "redirectAs404")
@@ -694,6 +699,7 @@ func (c *Client) SendReply(channelID, parentMessageID, content string, mentions 
 	return nil
 }
 func (c *Client) AddReaction(channelID, messageID, key string) error {
+	credentials := c.Credentials()
 	url := fmt.Sprintf(
 		"https://teams.microsoft.com/api/chatsvc/amer/v1/users/ME/conversations/%s/messages/%s/properties?name=emotions",
 		channelID, messageID,
@@ -712,7 +718,7 @@ func (c *Client) AddReaction(channelID, messageID, key string) error {
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+c.WebToken)
+	req.Header.Set("Authorization", "Bearer "+credentials.Web.Token)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("behavioroverride", "redirectAs404")
 	req.Header.Set("x-ms-migration", "True")
@@ -729,6 +735,7 @@ func (c *Client) AddReaction(channelID, messageID, key string) error {
 }
 
 func (c *Client) RemoveReaction(channelID, messageID, key string) error {
+	credentials := c.Credentials()
 	url := fmt.Sprintf(
 		"https://teams.microsoft.com/api/chatsvc/amer/v1/users/ME/conversations/%s/messages/%s/properties?name=emotions",
 		channelID, messageID,
@@ -746,7 +753,7 @@ func (c *Client) RemoveReaction(channelID, messageID, key string) error {
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+c.WebToken)
+	req.Header.Set("Authorization", "Bearer "+credentials.Web.Token)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("behavioroverride", "redirectAs404")
 	req.Header.Set("x-ms-migration", "True")
@@ -763,12 +770,13 @@ func (c *Client) RemoveReaction(channelID, messageID, key string) error {
 }
 
 func (c *Client) GetMessageReactions(channelID, messageID, selfID string) (map[string]bool, error) {
+	credentials := c.Credentials()
 	url := fmt.Sprintf("https://teams.microsoft.com/api/chatsvc/amer/v1/users/ME/conversations/%s/messages/%s?view=msnp24Equivalent|supportsMessageProperties", channelID, messageID)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Authorization", "Bearer "+c.WebToken)
+	req.Header.Set("Authorization", "Bearer "+credentials.Web.Token)
 	req.Header.Set("behavioroverride", "redirectAs404")
 	req.Header.Set("x-ms-migration", "True")
 	resp, err := c.HTTPClient.Do(req)
@@ -808,6 +816,7 @@ func (c *Client) GetMessageReactions(channelID, messageID, selfID string) (map[s
 }
 
 func (c *Client) MarkConversationAsRead(conversationID string, lastMsg Message) error {
+	credentials := c.Credentials()
 	nowTs := time.Now().UnixMilli()
 	msgID := lastMsg.ID
 	if msgID == "" {
@@ -831,7 +840,7 @@ func (c *Client) MarkConversationAsRead(conversationID string, lastMsg Message) 
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+c.WebToken)
+	req.Header.Set("Authorization", "Bearer "+credentials.Web.Token)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("behavioroverride", "redirectAs404")
 	req.Header.Set("x-ms-migration", "True")
@@ -850,6 +859,7 @@ func (c *Client) MarkConversationAsRead(conversationID string, lastMsg Message) 
 }
 
 func (c *Client) EditMessage(channelID, messageID, content string) error {
+	credentials := c.Credentials()
 	url := fmt.Sprintf("https://teams.microsoft.com/api/chatsvc/amer/v1/users/ME/conversations/%s/messages/%s", channelID, messageID)
 	payload := map[string]interface{}{
 		"content":     fmt.Sprintf("<p>%s</p>", html.EscapeString(content)),
@@ -861,7 +871,7 @@ func (c *Client) EditMessage(channelID, messageID, content string) error {
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+c.WebToken)
+	req.Header.Set("Authorization", "Bearer "+credentials.Web.Token)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("behavioroverride", "redirectAs404")
 	req.Header.Set("x-ms-migration", "True")
@@ -879,12 +889,13 @@ func (c *Client) EditMessage(channelID, messageID, content string) error {
 }
 
 func (c *Client) DeleteMessage(channelID, messageID string) error {
+	credentials := c.Credentials()
 	url := fmt.Sprintf("https://teams.microsoft.com/api/chatsvc/amer/v1/users/ME/conversations/%s/messages/%s?behavior=softDelete", channelID, messageID)
 	req, err := http.NewRequest(http.MethodDelete, url, nil)
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+c.WebToken)
+	req.Header.Set("Authorization", "Bearer "+credentials.Web.Token)
 	req.Header.Set("behavioroverride", "redirectAs404")
 	req.Header.Set("x-ms-migration", "True")
 	req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64; rv:151.0) Gecko/20100101 Firefox/151.0")

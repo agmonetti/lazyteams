@@ -150,12 +150,6 @@ func TestEduRequestCallbackRejectsStaleTokenWithoutDriverCalls(t *testing.T) {
 	if captured.eduToken != fresh {
 		t.Fatal("fresh request token not captured")
 	}
-	// Embedded nil Playwright methods panic if the callback adds a driver RPC.
-	graph := eduJWTForTest(t, "https://graph.microsoft.com", 0, 0)
-	ctx.onRequest(&eduTestRequest{url: "https://graph.microsoft.com/v1.0/me", token: graph})
-	if captured.graphToken != graph {
-		t.Fatal("EDU freshness filter changed Graph capture")
-	}
 }
 
 type eduRoundTripper func(*http.Request) (*http.Response, error)

@@ -188,6 +188,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.updateBannerUntil = time.Time{}
 		return m, nil
 
+	case renewalTimerMsg:
+		if !m.timerMatches(msg) {
+			return m, scheduleNextRenewal(&m, time.Now())
+		}
+		if cmd := queueTokenRenewal(&m, msg.provider); cmd != nil {
+			return m, cmd
+		}
+		return m, scheduleNextRenewal(&m, time.Now())
+
+	case tea.ResumeMsg:
+		// Only network failures are retryable on resume. Permission, interaction,
+		// incompatibility and other terminal outcomes remain blocked.
+		for key := range m.renewalRetryable {
+			delete(m.renewalAttempted, key)
+			delete(m.renewalRetryable, key)
+		}
+		return m, scheduleNextRenewal(&m, time.Now())
+
 	case tokenRenewalTickMsg:
 		if !m.tokenRenewing {
 			m.tokenRenewalSpinnerActive = false
@@ -196,13 +214,100 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.tokenRenewalFrame = (m.tokenRenewalFrame + 1) % len(tokenRenewalSpinnerFrames)
 		return m, renewalSpinnerTickCmd()
 
+	case authEventMsg:
+		if msg.err != nil {
+			m.tokenRenewErr = msg.err.Error()
+			return m, abortBatchStream(&m, msg.err)
+		}
+		if err := validateBatchEvent(&m, msg.event); err != nil {
+			m.tokenRenewErr = err.Error()
+			return m, abortBatchStream(&m, err)
+		}
+		if m.capabilities == nil {
+			m.capabilities = make(map[string]CapabilityState)
+		}
+		if m.batchPublishedProviders == nil {
+			m.batchPublishedProviders = make(map[string]bool)
+		}
+		if msg.event.Event == "credential_ready" {
+			if msg.event.Provider == "edu" {
+				// The helper's word is not enough: Assignments must accept it.
+				m.eduRenewalPending = true
+				m.assignLoaded = false
+				m.assignErr = nil
+			}
+			m.batchReadyProvider = msg.event.Provider
+			m.batchPublishedProviders[msg.event.Provider] = true
+			clearRenewalRetryable(&m, msg.event.Provider, msg.event.Generation)
+			return m, reloadTokensCmd(m.client, msg.event.Provider)
+		}
+		if msg.event.Event == "provider_failed" {
+			if msg.event.Provider == "edu" {
+				m.eduRenewalPending = false
+				m.assignLoaded = true
+				m.assignErr = fmt.Errorf("EDU token renewal failed: %s", msg.event.ErrorCode)
+			}
+			m.setCapability(msg.event.Provider, capabilityStateForError(fmt.Errorf("%s", msg.event.ErrorCode)))
+			recordBatchRenewalOutcome(&m, msg.event.Provider, msg.event.Generation, msg.event.ErrorCode)
+			return m, readBatchEventCmd(&m)
+		}
+		if msg.event.Event == "interaction_required" {
+			m.setCapability(msg.event.Provider, CapabilityInteractionNeeded)
+			clearRenewalRetryable(&m, msg.event.Provider, msg.event.Generation)
+			return m, readBatchEventCmd(&m)
+		}
+		if msg.event.Event == "completed" || msg.event.Event == "cancelled" {
+			// Keep draining stdout through EOF so a late event is rejected rather
+			// than silently discarded, and only then wait for process cleanup.
+			return m, readBatchEventCmd(&m)
+		}
+		return m, readBatchEventCmd(&m)
+
 	case tokenRenewedMsg:
+		if msg.tokenType == "batch" {
+			m.renewalBatch = false
+			m.batchProcess = nil
+			if m.batchRequestedProviders["edu"] && !m.batchPublishedProviders["edu"] && m.assignErr == nil {
+				// The batch ended without a usable EDU credential: surface it
+				// instead of leaving Assignments waiting on a discarded load.
+				m.eduRenewalPending = false
+				m.assignLoaded = true
+				if msg.err != nil {
+					m.assignErr = fmt.Errorf("EDU token renewal failed: %w", msg.err)
+				}
+			}
+			m.tokenRenewing = false
+			m.tokenRenewingType = ""
+			if msg.err != nil {
+				// Per-provider events carry retry semantics. The aggregate process
+				// error must never guess one cause for every requested provider.
+				m.tokenRenewErr = msg.err.Error()
+			}
+			m.tokenRenewalQueue = nil
+			// Each successful provider was reloaded when its credential_ready
+			// event arrived. Never replay unrelated providers at batch end.
+			if renewal := scheduleNextRenewal(&m, time.Now()); renewal != nil {
+				return m, renewal
+			}
+			return m, nil
+		}
 		finishTokenRenewal(&m, msg.tokenType)
 		m.tokenRenewing = false
 		m.tokenRenewingType = ""
 		var cmds []tea.Cmd
 		if msg.err != nil {
 			m.tokenRenewErr = msg.err.Error()
+			key := renewalAttemptKey(msg.tokenType, m.credentialGeneration())
+			if isRetryableRenewalError(msg.err) {
+				if m.renewalRetryable == nil {
+					m.renewalRetryable = make(map[string]bool)
+				}
+				m.renewalRetryable[key] = true
+			}
+			if m.renewalFailureGeneration == nil {
+				m.renewalFailureGeneration = make(map[string]uint64)
+			}
+			m.renewalFailureGeneration[msg.tokenType] = m.credentialGeneration()
 			if !containsString(m.tokenRenewFailures, msg.tokenType) {
 				m.tokenRenewFailures = append(m.tokenRenewFailures, msg.tokenType)
 			}
@@ -219,6 +324,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				m.tokenRenewFailures = removeString(m.tokenRenewFailures, msg.tokenType)
 			}
+			delete(m.renewalFailureGeneration, msg.tokenType)
 			cmds = append(cmds, reloadTokensCmd(m.client, msg.tokenType))
 		}
 		if next := startNextTokenRenewal(&m); next != nil {
@@ -232,9 +338,40 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmds...)
 
 	case tokensReloadedMsg:
+		if m.renewalBatch && m.batchReadyProvider != "" {
+			provider := m.batchReadyProvider
+			m.batchReadyProvider = ""
+			if msg.err != nil {
+				m.tokenRenewErr = msg.err.Error()
+				return m, abortBatchStream(&m, msg.err)
+			}
+			if credentials := m.client.Credentials(); credentials.Generation < m.batchGeneration {
+				err := fmt.Errorf("credential generation regressed: have %d, announced %d", credentials.Generation, m.batchGeneration)
+				m.tokenRenewErr = err.Error()
+				return m, abortBatchStream(&m, err)
+			}
+			m.setCapability(provider, CapabilityReady)
+			cmds := reloadProviderDataCmds(&m, provider)
+			if renewal := scheduleNextRenewal(&m, time.Now()); renewal != nil {
+				cmds = append(cmds, renewal)
+			}
+			cmds = append(cmds, readBatchEventCmd(&m))
+			return m, tea.Batch(cmds...)
+		}
 		var cmds []tea.Cmd
 		if msg.err != nil {
 			m.tokenRenewErr = msg.err.Error()
+			key := renewalAttemptKey(msg.tokenType, m.credentialGeneration())
+			if isRetryableRenewalError(msg.err) {
+				if m.renewalRetryable == nil {
+					m.renewalRetryable = make(map[string]bool)
+				}
+				m.renewalRetryable[key] = true
+			}
+			if m.renewalFailureGeneration == nil {
+				m.renewalFailureGeneration = make(map[string]uint64)
+			}
+			m.renewalFailureGeneration[msg.tokenType] = m.credentialGeneration()
 			if !containsString(m.tokenRenewFailures, msg.tokenType) {
 				m.tokenRenewFailures = append(m.tokenRenewFailures, msg.tokenType)
 			}
@@ -244,6 +381,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.assignErr = fmt.Errorf("Cannot reload renewed EDU token: %w", msg.err)
 			}
 		} else {
+			delete(m.renewalFailureGeneration, msg.tokenType)
 			if msg.tokenType != "edu" {
 				m.tokenRenewFailures = removeString(m.tokenRenewFailures, msg.tokenType)
 			} else {
@@ -256,10 +394,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !m.tokenRenewing && len(m.tokenRenewalQueue) == 0 {
 			cmds = append(cmds, reloadSuccessfulDataCmds(&m)...)
 		}
+		if renewal := scheduleNextRenewal(&m, time.Now()); renewal != nil {
+			cmds = append(cmds, renewal)
+		}
 		return m, tea.Batch(cmds...)
 
+	case teamsErrMsg:
+		m.setCapabilityError(CapabilityGraph, msg.err)
+		m.loading = false
+		return m, nil
+
 	case channelsErrMsg:
-		if msg.teamID == m.teams[m.selectedTeam].ID {
+		m.setCapabilityError(CapabilityGraph, msg.err)
+		if len(m.teams) > 0 && m.selectedTeam < len(m.teams) && msg.teamID == m.teams[m.selectedTeam].ID {
 			m.channelErr = msg.err
 			m.channels = nil
 			m.messages = nil
@@ -268,6 +415,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case messagesErrMsg:
+		m.setCapabilityError(CapabilityWeb, msg.err)
 		var chatsvcErr *graph.ChatSvcError
 		if m.selfID != "" && msg.conversationID == m.prefs.SelfChatIDs[m.selfID] && errors.As(msg.err, &chatsvcErr) && chatsvcErr.StatusCode == 404 {
 			// Direct access to personal notes failed with 404.
@@ -316,6 +464,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case messageSentMsg:
+		m.failedDraft = nil
 		// Message sent successfully. Reload messages for the channel/chat
 		m.messagesBackwardLink = ""
 		m.loadingMore = false
@@ -323,11 +472,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, loadMessagesCmd(m.client, "", m.activeConversationID(), 200)
 
 	case messageSendErrMsg:
-		m.viewport.SetContent(fmt.Sprintf("Error sending message: %v", msg.err))
+		m.restoreFailedDraft()
+		warning := ""
+		if mutationResultUncertain(msg.err) {
+			warning = " Result may be uncertain; verify before manually retrying."
+		}
+		m.viewport.SetContent(fmt.Sprintf("Error sending message: %v.%s\nDraft restored; press Enter to retry manually.", msg.err, warning))
 		m.loading = false
 		return m, nil
 
 	case threadReplySentMsg:
+		m.failedDraft = nil
 		m.isReplyTyping = false
 		m.input.Reset()
 		// Reload messages to get the new reply
@@ -337,8 +492,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, loadMessagesCmd(m.client, "", m.activeConversationID(), 200)
 
 	case threadReplySendErrMsg:
-		m.isReplyTyping = false
-		m.threadViewport.SetContent(fmt.Sprintf("Error sending reply: %v", msg.err))
+		if m.failedDraft == nil {
+			m.failedDraft = &messageDraft{text: m.input.Value(), replyParentID: m.threadParentID, threadReply: true}
+		}
+		m.restoreFailedDraft()
+		m.isReplyTyping = true
+		warning := ""
+		if mutationResultUncertain(msg.err) {
+			warning = " Result may be uncertain; verify before manually retrying."
+		}
+		m.threadViewport.SetContent(fmt.Sprintf("Error sending reply: %v.%s\nDraft restored; press Enter to retry manually.", msg.err, warning))
 		return m, nil
 
 	case editMessageMsg:
@@ -486,6 +649,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleFilesMsg(msg)
 
 	case teamsMsg:
+		m.setCapability(CapabilityGraph, CapabilityReady)
 		return m.handleTeamsMsg(msg)
 
 	case channelsMsg:
@@ -501,6 +665,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmds...)
 
 	case meErrMsg:
+		m.setCapabilityError(CapabilityGraph, msg.err)
 		// Don't block the app: without selfID, 1:1 chats will simply
 		// show all participants instead of excluding me.
 		return m, nil
@@ -509,6 +674,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Chat loading is a recoverable network operation. Keep the TUI alive,
 		// preserve any chats already loaded, and let the next poll retry it.
 		m.chatErr = msg.err
+		m.setCapabilityError(CapabilityGraph, msg.err)
 		if is401(msg.err) {
 			cmd := queueTokenRenewal(&m, "web")
 			m.loading = false
@@ -517,6 +683,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loading = false
 		return m, nil
 	case chatsMsg:
+		m.setCapability(CapabilityGraph, CapabilityReady)
 		return m.handleChatsMsg(msg)
 
 	case selfChatDiscoveredMsg:
@@ -562,6 +729,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case messagesMsg:
+		m.setCapability(CapabilityWeb, CapabilityReady)
 		return m.handleMessagesMsg(msg)
 
 	case tickMsg:
@@ -612,12 +780,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmds...)
 
 	case notificationsMsg:
+		m.setCapability(CapabilityNotif, CapabilityReady)
 		return m.handleNotificationsMsg(msg)
 
 	case pollNotificationsMsg:
+		if msg.err != nil {
+			m.setCapabilityError(CapabilityNotif, msg.err)
+		} else {
+			m.setCapability(CapabilityNotif, CapabilityReady)
+		}
 		return m.handlePollNotificationsMsg(msg)
 
 	case notificationsErrMsg:
+		m.setCapabilityError(CapabilityNotif, msg.err)
 		m.notificationsRefreshing = false
 		if is401(msg.err) {
 			cmd := queueTokenRenewal(&m, "notif")
@@ -633,6 +808,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.generation != m.assignGeneration || (m.eduRenewalPending && !msg.afterRenewal) {
 			return m, nil
 		}
+		m.setCapability(CapabilityEDU, CapabilityReady)
 		m.assignments = msg.items
 		m.assignLoaded = true
 		m.assignErr = nil
@@ -649,6 +825,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.generation != m.assignGeneration || (m.eduRenewalPending && !msg.afterRenewal) {
 			return m, nil
 		}
+		m.setCapabilityError(CapabilityEDU, msg.err)
 		m.assignErr = msg.err
 		m.assignLoaded = true
 		if msg.afterRenewal {
@@ -1254,6 +1431,56 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
+func markRenewalAttempt(m *Model, provider string, generation uint64) {
+	if m.renewalAttempted == nil {
+		m.renewalAttempted = make(map[string]bool)
+	}
+	if m.renewalAttemptGeneration == nil {
+		m.renewalAttemptGeneration = make(map[string]uint64)
+	}
+	m.renewalAttempted[renewalAttemptKey(provider, generation)] = true
+	m.renewalAttemptGeneration[provider] = generation
+}
+
+func renewalOutcomeGeneration(m *Model, provider string, fallback uint64) uint64 {
+	if generation, ok := m.renewalAttemptGeneration[provider]; ok {
+		return generation
+	}
+	return fallback
+}
+
+func clearRenewalRetryable(m *Model, provider string, fallback uint64) {
+	delete(m.renewalRetryable, renewalAttemptKey(provider, renewalOutcomeGeneration(m, provider, fallback)))
+}
+
+func recordBatchRenewalOutcome(m *Model, provider string, fallback uint64, errorCode string) {
+	key := renewalAttemptKey(provider, renewalOutcomeGeneration(m, provider, fallback))
+	if errorCode != "network_unavailable" {
+		delete(m.renewalRetryable, key)
+		return
+	}
+	if m.renewalRetryable == nil {
+		m.renewalRetryable = make(map[string]bool)
+	}
+	m.renewalRetryable[key] = true
+}
+
+func isRetryableRenewalError(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "network") || strings.Contains(message, "timeout") || strings.Contains(message, "connection")
+}
+
+func mutationResultUncertain(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "network") || strings.Contains(message, "timeout") || strings.Contains(message, "connection")
+}
+
 func enqueueTokenRenewal(m *Model, tokenType string) {
 	if tokenType == "" {
 		return
@@ -1266,6 +1493,8 @@ func enqueueTokenRenewal(m *Model, tokenType string) {
 	m.tokenRenewalQueue = append(m.tokenRenewalQueue, tokenType)
 }
 
+var startBatchRenewal = authHelperBatch
+
 func startNextTokenRenewal(m *Model) tea.Cmd {
 	if m.tokenRenewing || len(m.tokenRenewalQueue) == 0 {
 		return nil
@@ -1273,15 +1502,35 @@ func startNextTokenRenewal(m *Model) tea.Cmd {
 	m.tokenRenewing = true
 	m.tokenRenewingType = m.tokenRenewalQueue[0]
 	m.tokenRenewalFrame = 0
-	if m.tokenRenewingType == "edu" {
+	if containsString(m.tokenRenewalQueue, "edu") {
+		// Assignments responses issued before this renewal are stale.
 		m.assignGeneration++
 	}
-	cmds := []tea.Cmd{authHelperRenewal(m, m.tokenRenewingType)}
+	var renewalCmd tea.Cmd
+	if batchEligible(m.tokenRenewalQueue) {
+		jobs := append([]string(nil), m.tokenRenewalQueue...)
+		renewalCmd = startBatchRenewal(m, jobs)
+	} else {
+		renewalCmd = authHelperRenewal(m, m.tokenRenewingType)
+	}
+	cmds := []tea.Cmd{renewalCmd}
 	if !m.tokenRenewalSpinnerActive {
 		m.tokenRenewalSpinnerActive = true
 		cmds = append(cmds, renewalSpinnerTickCmd())
 	}
 	return tea.Batch(cmds...)
+}
+
+func batchEligible(jobs []string) bool {
+	if len(jobs) == 0 {
+		return false
+	}
+	for _, job := range jobs {
+		if job == "fabric" || (job != "graph" && job != "web" && job != "notif" && job != "edu") {
+			return false
+		}
+	}
+	return true
 }
 
 func finishTokenRenewal(m *Model, tokenType string) {
@@ -1312,6 +1561,20 @@ func removeString(values []string, target string) []string {
 	return result
 }
 
+func reloadProviderDataCmds(m *Model, provider string) []tea.Cmd {
+	switch provider {
+	case "graph":
+		return []tea.Cmd{loadTeamsCmd(m.client), loadMeCmd(m.client)}
+	case "web":
+		return []tea.Cmd{loadChatsCmd(m.client)}
+	case "notif":
+		return []tea.Cmd{loadNotificationsCmd(m.client)}
+	case "edu":
+		return []tea.Cmd{loadAssignmentsCmd(m.client, m.eduRenewalPending, m.assignGeneration)}
+	}
+	return nil
+}
+
 func reloadSuccessfulDataCmds(m *Model) []tea.Cmd {
 	var cmds []tea.Cmd
 	if !containsString(m.tokenRenewFailures, "graph") {
@@ -1335,9 +1598,20 @@ func formatDownloadResults(results []string) string {
 }
 
 func queueTokenRenewal(m *Model, tokenType string) tea.Cmd {
-	if tokenType == "" || containsString(m.tokenRenewFailures, tokenType) {
+	if tokenType == "" || m.client == nil {
 		return nil
 	}
+	generation := m.credentialGeneration()
+	if m.renewalFailureGeneration != nil && m.renewalFailureGeneration[tokenType] == generation {
+		return nil
+	}
+	if m.renewalAttempted == nil {
+		m.renewalAttempted = make(map[string]bool)
+	}
+	if m.renewalAttempted[renewalAttemptKey(tokenType, generation)] {
+		return nil
+	}
+	markRenewalAttempt(m, tokenType, generation)
 	if !m.tokenRenewing && len(m.tokenRenewalQueue) == 0 {
 		m.tokenRenewErr = ""
 	}

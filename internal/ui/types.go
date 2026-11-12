@@ -1,6 +1,11 @@
 package ui
 
-import "github.com/agmonetti/lazyteams/internal/graph"
+import (
+	"time"
+
+	"github.com/agmonetti/lazyteams/internal/auth"
+	"github.com/agmonetti/lazyteams/internal/graph"
+)
 
 type tickMsg struct{}
 type presenceTickMsg struct{}
@@ -37,10 +42,22 @@ type updateCheckMsg struct{ latest string }
 // updateBannerExpiredMsg hides the update notice after its display window.
 type updateBannerExpiredMsg struct{}
 
+type authEventMsg struct {
+	event auth.AuthEvent
+	err   error
+}
+
 type tokenRenewedMsg struct {
 	tokenType string
 	err       error
 }
+
+type renewalTimerMsg struct {
+	provider   string
+	generation uint64
+	expiresAt  time.Time
+}
+
 type tokenRenewalTickMsg struct{}
 
 type tokenCheckDoneMsg struct {

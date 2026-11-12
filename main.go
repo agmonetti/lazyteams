@@ -37,7 +37,7 @@ USAGE:
 
 AUTH (run ./lazyteams-auth):
   ./lazyteams-auth                    Full token capture (first run)
-  ./lazyteams-auth --renew graph      Renew MS Graph token (opens browser)
+  ./lazyteams-auth --renew graph      Renew MS Graph token (headless first)
   ./lazyteams-auth --renew fabric     Renew Fabric token (opens browser)
   ./lazyteams-auth --renew web        Renew Teams Web token (headless)
   ./lazyteams-auth --renew edu        Renew EDU/Assignments token (headless)
@@ -81,15 +81,14 @@ NOTES:
 		os.Exit(runUpdate())
 	}
 
-	graphToken, webToken, notifToken, eduToken, cookie, eduCookie, spacesToken, fabricToken, err := auth.GetTokens()
+	credentials, err := auth.LoadCredentialSet()
 	if err != nil {
 		fmt.Println("Authentication error:\n", err)
 		os.Exit(1)
 	}
+	graphClient := graph.NewClient(credentials)
 
-	graphClient := graph.NewClient(graphToken, webToken, notifToken, eduToken, cookie, eduCookie, spacesToken, fabricToken)
-
-	userName := auth.ParseUserNameFromToken(graphToken)
+	userName := auth.ParseUserNameFromToken(credentials.Graph.Token)
 
 	model := ui.New(graphClient, userName, debugMode)
 	defer model.Close()

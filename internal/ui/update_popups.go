@@ -167,6 +167,7 @@ func (m Model) handleThreadView(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
 		case "enter":
 			v := strings.TrimSpace(m.input.Value())
 			if v != "" {
+				m.failedDraft = &messageDraft{text: v, replyParentID: m.threadParentID, threadReply: true}
 				m.input.Reset()
 				m.isReplyTyping = false
 				m.input.Blur()

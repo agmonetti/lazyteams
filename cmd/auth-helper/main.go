@@ -3,7 +3,9 @@ package main
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"os/signal"
@@ -11,6 +13,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -22,22 +25,142 @@ import (
 )
 
 type tokens struct {
-	mu                    sync.Mutex
-	graphToken            string
-	webToken              string
-	notifToken            string
-	eduToken              string
-	eduRequestSeen        bool
+	mu             sync.Mutex
+	graphToken     string
+	webToken       string
+	notifToken     string
+	eduToken       string
+	eduRequestSeen bool
+	// A targeted EDU renewal may only persist a token Assignments accepted.
 	eduValidationRequired bool
 	eduValidated          bool
 	cookie                string
 	spacesToken           string
 	fabricToken           string
 	intentionalClose      bool
+	graphCandidate        *auth.GraphCandidate
+	graphPersisted        bool
+	browserVisible        bool
 }
 
 var globalSpin *spinner
 var debugMode bool
+var eventMode bool
+var eventWriter io.Writer
+var eventBatchID string
+var eventStarted time.Time
+var eventGeneration uint64
+var eventTerminal bool
+var eventWriteErr error
+var graphInteractionEmitted bool
+var eventStateMu sync.Mutex
+
+var persistBatchTokenValues = auth.PersistTokenValues
+var persistGraphCandidate = auth.PersistGraphCandidate
+var runGraphLifecycleRunner = runGraphLifecycle
+var runBatchGraphCapture = tryExtractGraphTokenViaGraphExplorer
+var runBatchGraphOutcome = waitForGraphOutcome
+var runBatchVisibleGraphOutcome = waitForVisibleGraphCandidate
+var runBatchContextClose = func(ctx playwright.BrowserContext) error { return ctx.Close() }
+var runBatchContextPages = func(ctx playwright.BrowserContext) []playwright.Page { return ctx.Pages() }
+var runBatchContextNewPage = func(ctx playwright.BrowserContext) (playwright.Page, error) { return ctx.NewPage() }
+var runBatchRegisterInterceptor = registerFullInterceptor
+
+var (
+	errGraphInteractionRequired = errors.New("graph interaction required")
+	errGraphTimeout             = errors.New("graph acquisition timeout")
+	errGraphNetwork             = errors.New("graph network unavailable")
+	errGraphCancelled           = errors.New("graph acquisition cancelled")
+)
+
+func persistBatchCredential(configDir string, values auth.TokenValues) error {
+	set, err := persistBatchTokenValues(configDir, values)
+	if err != nil {
+		return err
+	}
+	eventStateMu.Lock()
+	eventGeneration = set.Generation
+	eventStateMu.Unlock()
+	return nil
+}
+
+func currentEventWriteErr() error {
+	eventStateMu.Lock()
+	defer eventStateMu.Unlock()
+	return eventWriteErr
+}
+
+func eventIsTerminal() bool {
+	eventStateMu.Lock()
+	defer eventStateMu.Unlock()
+	return eventTerminal
+}
+
+func emitEvent(event, provider, state, errorCode string) error {
+	eventStateMu.Lock()
+	defer eventStateMu.Unlock()
+	if !eventMode || eventWriter == nil || eventTerminal {
+		return nil
+	}
+	err := auth.WriteAuthEvent(eventWriter, auth.AuthEvent{
+		Version: auth.EventVersion, Event: event, BatchID: eventBatchID,
+		Provider: provider, Generation: eventGeneration, State: state,
+		DurationMS: time.Since(eventStarted).Milliseconds(), ErrorCode: errorCode,
+	})
+	if err != nil {
+		eventWriteErr = err
+	}
+	if event == "completed" || event == "cancelled" {
+		eventTerminal = true
+	}
+	return err
+}
+
+type contextRegistry struct {
+	mu       sync.Mutex
+	contexts map[playwright.BrowserContext]struct{}
+	closing  bool
+}
+
+func (r *contextRegistry) add(ctx playwright.BrowserContext) {
+	if ctx == nil {
+		return
+	}
+	r.mu.Lock()
+	if r.contexts == nil {
+		r.contexts = make(map[playwright.BrowserContext]struct{})
+	}
+	r.contexts[ctx] = struct{}{}
+	r.mu.Unlock()
+	ctx.OnClose(func(playwright.BrowserContext) { r.remove(ctx) })
+}
+
+func (r *contextRegistry) remove(ctx playwright.BrowserContext) {
+	r.mu.Lock()
+	delete(r.contexts, ctx)
+	r.mu.Unlock()
+}
+
+func (r *contextRegistry) closeAll() {
+	r.mu.Lock()
+	r.closing = true
+	contexts := make([]playwright.BrowserContext, 0, len(r.contexts))
+	for ctx := range r.contexts {
+		contexts = append(contexts, ctx)
+	}
+	r.mu.Unlock()
+	for _, ctx := range contexts {
+		_ = ctx.Close()
+	}
+}
+
+func (r *contextRegistry) isClosing() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.closing
+}
+
+var activeContexts contextRegistry
 
 // legacyWindowsConsole reports whether output goes to a legacy Windows console
 // (cmd.exe/PowerShell conhost), where Unicode glyphs may render as '?'.
@@ -62,9 +185,10 @@ func debugPrintf(format string, args ...interface{}) {
 
 // captureLoopResult describes what the token capture loop ended with.
 const (
-	captureOK     = "ok"     // all Teams tokens captured (or loop finished)
-	captureStale  = "stale"  // nothing captured headless — session likely expired
-	captureClosed = "closed" // browser was closed by the user
+	captureOK           = "ok"           // all Teams tokens captured (or loop finished)
+	captureStale        = "stale"        // nothing captured headless — session likely expired
+	captureClosed       = "closed"       // browser was closed by the user
+	captureDisconnected = "disconnected" // Playwright can no longer serve requests
 )
 
 func printBox(lines []string) {
@@ -174,8 +298,9 @@ func registerFullInterceptor(ctx playwright.BrowserContext, captured *tokens) {
 		case (strings.Contains(aud, "graph.microsoft.com") || aud == "00000003-0000-0000-c000-000000000000") &&
 			strings.Contains(url, "graph.microsoft.com") &&
 			captured.graphToken == "":
-			captured.graphToken = token
-			notifyTokenCaptured("MS_GRAPH_TOKEN")
+			// Graph candidates are accepted only from the dedicated Graph Explorer
+			// listener, after provenance and permissions validation.
+			_ = token
 
 		// TEAMS_NOTIF_TOKEN and TEAMS_WEB_TOKEN
 		case strings.Contains(aud, "ic3.teams.office.com"):
@@ -199,11 +324,6 @@ func registerFullInterceptor(ctx playwright.BrowserContext, captured *tokens) {
 			captured.spacesToken = token
 			notifyTokenCaptured("TEAMS_SPACES_TOKEN")
 
-		case strings.Contains(url, "fabric/"):
-			if captured.fabricToken == "" {
-				captured.fabricToken = token
-				notifyTokenCaptured("TEAMS_FABRIC_TOKEN")
-			}
 		}
 	})
 }
@@ -244,12 +364,130 @@ func main() {
 	os.Exit(run())
 }
 
-func run() (exitCode int) {
+var launchPersistentContext = func(pw *playwright.Playwright, sessionDir string, headless bool) (playwright.BrowserContext, error) {
+	return pw.Firefox.LaunchPersistentContext(sessionDir, playwright.BrowserTypeLaunchPersistentContextOptions{
+		Headless: playwright.Bool(headless),
+		SlowMo:   playwright.Float(0),
+		Args:     []string{"--no-first-run"},
+	})
+}
+
+func openPersistentContext(pw *playwright.Playwright, sessionDir string, headless bool) (playwright.BrowserContext, error) {
+	return launchPersistentContext(pw, sessionDir, headless)
+}
+
+// runSetupHook is a narrow seam for observing run's public setup path.
+// It must not short-circuit run: production lifecycle and cleanup stay covered.
+var runSetupHook = func() {}
+
+// runOpenPersistentContext keeps the public run path injectable in deterministic
+// tests without duplicating setup or invoking Playwright manually.
+var runOpenPersistentContext = openPersistentContext
+var runBatchJobsStateRunner = runBatchJobsState
+var runPlaywrightInstall = playwright.Install
+var runPlaywrightRun = playwright.Run
+var runPatchWebSocketAsserts = patchWebSocketAsserts
+var runStopPlaywright = func(pw *playwright.Playwright) {
+	if pw != nil {
+		pw.Stop()
+	}
+}
+var runContextPages = func(ctx playwright.BrowserContext) []playwright.Page { return ctx.Pages() }
+var runContextNewPage = func(ctx playwright.BrowserContext) (playwright.Page, error) { return ctx.NewPage() }
+var runPageSetViewport = func(page playwright.Page, width, height int) error {
+	return page.SetViewportSize(width, height)
+}
+var runContextOnClose = func(ctx playwright.BrowserContext, fn func()) {
+	ctx.On("close", func(playwright.BrowserContext) { fn() })
+}
+var runRegisterInterceptor = registerFullInterceptor
+var runManualFabricCapture = manualFabricTokenCapture
+var runSaveTokens = saveTokens
+var runCloseContext = func(ctx playwright.BrowserContext) error {
+	if ctx == nil {
+		return nil
+	}
+	return ctx.Close()
+}
+
+func openRunPersistentContext(pw *playwright.Playwright, sessionDir string, headless bool) (playwright.BrowserContext, error) {
+	return runOpenPersistentContext(pw, sessionDir, headless)
+}
+
+func run() int {
 	args := os.Args[1:]
+	runSetupHook()
+	for _, arg := range args {
+		if arg == "--events" {
+			eventMode = true
+		}
+	}
+	var interrupted atomic.Bool
+	var sigCh chan os.Signal
+	if eventMode {
+		if eventWriter == nil {
+			eventWriter = os.Stdout
+		}
+		os.Stdout = os.Stderr
+		eventBatchID = fmt.Sprintf("%x-%x", time.Now().UnixNano(), os.Getpid())
+		eventStarted = time.Now()
+		eventStateMu.Lock()
+		eventTerminal = false
+		eventWriteErr = nil
+		graphInteractionEmitted = false
+		eventStateMu.Unlock()
+		// Load the baseline before started: its generation is part of the
+		// stream contract and must not be guessed as zero.
+		if current, err := auth.LoadCredentialSet(); err == nil {
+			eventStateMu.Lock()
+			eventGeneration = current.Generation
+			eventStateMu.Unlock()
+		}
+	}
+	// Install the handler before emitting started. A cancellation arriving
+	// immediately after startup must still produce the protocol terminal event.
+	sigCh = make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(sigCh)
+	go func() {
+		<-sigCh
+		interrupted.Store(true)
+		if eventMode && !eventIsTerminal() {
+			_ = emitEvent("cancelled", "batch", "cancelled", "cancelled")
+		}
+		activeContexts.closeAll()
+	}()
+	if eventMode {
+		emitEvent("started", "batch", "running", "")
+	}
+	batchJobsArg := ""
+	for i := 0; i < len(args); i++ {
+		if args[i] == "--renew-batch" && i+1 < len(args) {
+			batchJobsArg = args[i+1]
+		}
+	}
+	if eventMode {
+		// Every event-mode batch has exactly one terminal event, including
+		// failures while setting up the browser or profile lock.
+		defer func() {
+			if batchJobsArg != "" && !eventIsTerminal() {
+				emitEvent("completed", "batch", "partial_failure", "acquisition_failed")
+			}
+		}()
+
+		if batchJobsArg == "" {
+			emitEvent("completed", "batch", "partial_failure", "protocol_error")
+			return 1
+		}
+		if _, err := normalizeBatchJobs(batchJobsArg); err != nil {
+			emitEvent("completed", "batch", "partial_failure", "protocol_error")
+			return 1
+		}
+	}
 	for _, arg := range args {
 		if arg == "--version" || arg == "-v" {
 			fmt.Println(version.Version)
-			return
+			return 0
 		}
 		if arg == "--help" || arg == "-h" {
 			fmt.Print(`lazyteams-auth — Microsoft Teams authentication helper
@@ -268,11 +506,15 @@ OPTIONS:
   --clear-session    Delete browser session
   --clear-tokens     Delete saved tokens
 
+Graph Explorer sign-in is automated only for the account written in
+~/.config/lazyteams/graph-account (one line, file mode 0600). Without that
+file, or on MFA/consent prompts, a visible window waits for you instead.
+
 EDU renewal saves only an unexpired token accepted by the Assignments API.
 Use --show when interactive login is required. Failed EDU renewals close the
 browser and exit nonzero without replacing the saved EDU token.
 `)
-			return
+			return 0
 		}
 	}
 	for _, arg := range args {
@@ -282,7 +524,6 @@ browser and exit nonzero without replacing the saved EDU token.
 	}
 
 	initConsole()
-
 	fmt.Println()
 	fmt.Println("╔════════════════════════════════════════════╗")
 	fmt.Println("║          lazyteams — Auth Helper           ║")
@@ -291,15 +532,33 @@ browser and exit nonzero without replacing the saved EDU token.
 
 	configDir := helpers.ConfigDir()
 	sessionDir := filepath.Join(configDir, "browser-session")
-
-	os.MkdirAll(sessionDir, 0700)
-
+	if interrupted.Load() {
+		return 1
+	}
+	if err := os.MkdirAll(sessionDir, 0700); err != nil {
+		fmt.Printf("Error creating session directory: %v\n", err)
+		return 1
+	}
+	profileLock, err := helpers.AcquireProfileLock(configDir)
+	if err != nil {
+		if errors.Is(err, helpers.ErrProfileInUse) {
+			fmt.Println("profile_in_use: another authentication helper owns the browser session")
+		} else {
+			fmt.Printf("Error acquiring profile ownership: %v\n", err)
+		}
+		return 1
+	}
+	defer profileLock.Release()
+	if interrupted.Load() {
+		return 1
+	}
 	// Parse --renew flag
 	renewOnly := ""
 	showBrowser := false
 	forceHeadless := false
 	clearSession := false
 	clearTokens := false
+	batchJobs := batchJobsArg
 	for i := 0; i < len(args); i++ {
 		if args[i] == "--renew" && i+1 < len(args) {
 			renewOnly = args[i+1]
@@ -316,6 +575,8 @@ browser and exit nonzero without replacing the saved EDU token.
 		if args[i] == "--clear-tokens" {
 			clearTokens = true
 		}
+		// --renew-batch was parsed before acquiring the profile lock so invalid
+		// protocol requests fail without opening Playwright.
 	}
 
 	if clearSession {
@@ -346,7 +607,15 @@ browser and exit nonzero without replacing the saved EDU token.
 	if forceHeadless {
 		showBrowser = false
 	}
-	if firstRun {
+	graphBatch := false
+	if batchJobs != "" {
+		if jobs, err := normalizeBatchJobs(batchJobs); err == nil {
+			for _, job := range jobs {
+				graphBatch = graphBatch || job == "graph"
+			}
+		}
+	}
+	if firstRun && !graphBatch {
 		showBrowser = true
 		fmt.Println("  ● First run — browser will open for login")
 	} else if showBrowser {
@@ -382,9 +651,12 @@ browser and exit nonzero without replacing the saved EDU token.
 		}
 	}
 
+	if interrupted.Load() {
+		return 1
+	}
 	if !browserExists {
 		fmt.Println("→ Downloading browser (one-time only, ~80MB)...")
-		if err := playwright.Install(&playwright.RunOptions{
+		if err := runPlaywrightInstall(&playwright.RunOptions{
 			Browsers: []string{"firefox"},
 		}); err != nil {
 			fmt.Printf("Error installing browser: %v\n", err)
@@ -392,89 +664,62 @@ browser and exit nonzero without replacing the saved EDU token.
 		}
 	} else {
 		// Install silently without output
-		playwright.Install(&playwright.RunOptions{
+		runPlaywrightInstall(&playwright.RunOptions{
 			Browsers: []string{"firefox"},
 			Verbose:  false,
 		})
 	}
 
-	patchWebSocketAsserts()
+	runPatchWebSocketAsserts()
+	if interrupted.Load() {
+		return 1
+	}
 
-	pw, err := playwright.Run()
+	pw, err := runPlaywrightRun()
 	if err != nil {
 		fmt.Printf("Error starting Playwright: %v\n", err)
 		return 1
 	}
-	var stopOnce sync.Once
-	stopDriver := func() {
-		stopOnce.Do(func() { _ = pw.Stop() })
+	defer runStopPlaywright(pw)
+	if interrupted.Load() {
+		return 1
 	}
-	defer stopDriver()
-	captured := &tokens{eduValidationRequired: renewOnly == "edu"}
 
-	// One signal owner saves partial captures and stops the driver before exit.
-	// Competing handlers previously let os.Exit bypass browser/driver cleanup.
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
-	signalStop := make(chan struct{})
-	go func() {
-		select {
-		case <-sigChan:
-			fmt.Println("\n  · Interrupted — closing browser...")
-			captured.markIntentionalClose()
-			stopDriver()
-			captured.mu.Lock()
-			incomplete := captured.graphToken == "" || captured.webToken == "" || captured.cookie == ""
-			captured.mu.Unlock()
-			if renewOnly == "" && incomplete {
-				_ = os.RemoveAll(sessionDir)
-			}
-			if err := saveTokens(captured, configDir); err != nil {
-				fmt.Printf("Error saving tokens: %v\n", err)
-			}
-			os.Exit(1)
-		case <-signalStop:
-		}
-	}()
-	defer func() {
-		close(signalStop)
-		signal.Stop(sigChan)
-	}()
-
-	context, err := pw.Firefox.LaunchPersistentContext(
-		sessionDir,
-		playwright.BrowserTypeLaunchPersistentContextOptions{
-			Headless: playwright.Bool(!showBrowser),
-			SlowMo:   playwright.Float(0),
-			Args: []string{
-				"--no-first-run",
-			},
-		},
-	)
+	context, err := openRunPersistentContext(pw, sessionDir, !showBrowser)
 	if err != nil {
 		fmt.Printf("Error launching browser: %v\n", err)
 		return 1
 	}
+	if context != nil {
+		activeContexts.add(context)
+	}
+	captured := &tokens{
+		browserVisible:        showBrowser,
+		eduValidationRequired: renewOnly == "edu" || batchRequestsEdu(batchJobs),
+	}
+	// The helper's own shutdown is never a user cancellation: mark it so the
+	// close handler below keeps the persistent profile after any failure.
 	defer func() {
 		captured.markIntentionalClose()
-		_ = context.Close()
+		_ = runCloseContext(context)
 	}()
+	if interrupted.Load() {
+		return 1
+	}
 
 	// Signal that the browser was closed unexpectedly
 	browserClosed := make(chan struct{}, 1)
 
-	// Detect unexpected browser close and clear session if capture incomplete
-	// An intentional close (e.g. reopening visible for Graph Explorer) must not
-	// be treated as an unexpected browser close.
-	context.On("close", func() {
+	// The close handler only records that the window went away outside the
+	// helper's control. Whether that was the user abandoning sign-in is decided
+	// once the flow has returned (see userCancelledLogin), never inside the event.
+	var closedExternally atomic.Bool
+	runContextOnClose(context, func() {
 		captured.mu.Lock()
 		intentional := captured.intentionalClose
-		incomplete := captured.graphToken == "" || captured.webToken == "" || captured.cookie == ""
 		captured.mu.Unlock()
-		if renewOnly == "" && !intentional && incomplete {
-			fmt.Println("\n\n[!] Browser closed before login completed. Clearing session...")
-			os.RemoveAll(sessionDir)
-			fmt.Println("  " + symOK + "  Session cleared. Next run will require login.")
+		if !intentional && !activeContexts.isClosing() {
+			closedExternally.Store(true)
 		}
 		select {
 		case browserClosed <- struct{}{}:
@@ -482,116 +727,78 @@ browser and exit nonzero without replacing the saved EDU token.
 		}
 	})
 
-	registerFullInterceptor(context, captured)
+	// The early signal controller above owns ordered browser shutdown.
+	// Returning through main preserves context, Playwright and lock defers.
+	runRegisterInterceptor(context, captured)
 
 	// Use the page that the persistent context already opened
-	pages := context.Pages()
+	pages := runContextPages(context)
 	var page playwright.Page
 	if len(pages) > 0 {
 		page = pages[0]
 	} else {
-		page, err = context.NewPage()
+		page, err = runContextNewPage(context)
 		if err != nil {
 			fmt.Printf("Error creating page: %v\n", err)
 			return 1
 		}
 	}
 
-	if err := page.SetViewportSize(1280, 800); err != nil {
+	if interrupted.Load() {
+		return 1
+	}
+	if err := runPageSetViewport(page, 1280, 800); err != nil {
 		fmt.Printf("Error setting viewport: %v\n", err)
 	}
 
 	var renewalErr error
-	switch renewOnly {
-	case "web", "notif":
+	var batchErr error
+	switch {
+	case batchJobs != "":
+		page, context, batchErr = runBatchJobsStateRunner(pw, sessionDir, batchJobs, page, context, captured, configDir)
+	case renewOnly == "web" || renewOnly == "notif":
 		fmt.Println("→ Renewing WEB + NOTIF tokens...")
 		renewWebNotif(page, context, captured)
 
-	case "edu":
+	case renewOnly == "edu":
 		fmt.Println("→ Renewing EDU token...")
 		renewalErr = renewEdu(page, context, captured, showBrowser)
+		// Release the browser before saving; a rejected capture must not
+		// replace the stored EDU token.
 		captured.markIntentionalClose()
-		_ = context.Close()
+		_ = runCloseContext(context)
 		if renewalErr != nil {
 			captured.mu.Lock()
 			captured.eduToken = ""
 			captured.mu.Unlock()
 		}
 
-	case "fabric":
+	case renewOnly == "fabric":
 		fmt.Println("→ Renewing FABRIC token...")
 		captured.markIntentionalClose()
-		context.Close()
-		manualFabricTokenCapture(pw, sessionDir, captured)
+		if err := runCloseContext(context); err != nil {
+			fmt.Printf("Fabric renewal failed: %v\n", err)
+			return 1
+		}
+		runManualFabricCapture(pw, sessionDir, captured)
+		// Manual capture has no contractual proof of write authorization or the
+		// metadata required by PersistFabricCandidate. Never report success or
+		// route it through generic token persistence.
+		fmt.Println("⚠ Fabric candidate is unverified and was not persisted.")
+		return 1
 
-	case "graph":
+	case renewOnly == "graph":
 		fmt.Println("→ Renewing GRAPH token...")
-		captured.markIntentionalClose()
-		context.Close()
-		visibleCtx, err := pw.Firefox.LaunchPersistentContext(
-			sessionDir,
-			playwright.BrowserTypeLaunchPersistentContextOptions{
-				Headless: playwright.Bool(false),
-				Args:     []string{"--no-first-run"},
-			},
-		)
-		if err != nil {
-			fmt.Printf("  ⚠ Could not open browser: %v\n", err)
-			break
-		}
-		defer visibleCtx.Close()
-
-		visibleCtx.On("request", func(req playwright.Request) {
-			authHeader := ""
-			for k, v := range req.Headers() {
-				if strings.ToLower(k) == "authorization" {
-					authHeader = v
-					break
-				}
-			}
-			if !strings.HasPrefix(authHeader, "Bearer ") {
-				return
-			}
-			token := strings.TrimPrefix(authHeader, "Bearer ")
-			aud := extractAudFromJWT(token)
-			if strings.Contains(aud, "graph.microsoft.com") || aud == "00000003-0000-0000-c000-000000000000" {
-				captured.mu.Lock()
-				if captured.graphToken == "" {
-					captured.graphToken = token
-					notifyTokenCaptured("MS_GRAPH_TOKEN")
-				}
-				captured.mu.Unlock()
-			}
-		})
-
-		pages := visibleCtx.Pages()
-		var visiblePage playwright.Page
-		if len(pages) > 0 {
-			visiblePage = pages[0]
-		} else {
-			visiblePage, _ = visibleCtx.NewPage()
-		}
-		visiblePage.SetViewportSize(1280, 800)
-
-		fmt.Println()
-		fmt.Println("→ Browser opening Graph Explorer.")
-		fmt.Println("  Sign in with your account and the token")
-		fmt.Println("  will be captured automatically.")
-		fmt.Println()
-
-		tryExtractGraphTokenViaGraphExplorer(visiblePage, captured, !firstRun)
-
-		deadline := time.Now().Add(120 * time.Second)
-		for time.Now().Before(deadline) {
-			time.Sleep(500 * time.Millisecond)
-			captured.mu.Lock()
-			has := captured.graphToken != ""
-			captured.mu.Unlock()
-			if has {
-				fmt.Println("  " + symOK + "  Token captured! Browser closes in 3s...")
-				time.Sleep(3 * time.Second)
-				break
-			}
+		page, context, batchErr = dispatchRenewal("graph", func() (playwright.Page, playwright.BrowserContext, error) {
+			err := graphRenewalRunner(func() error {
+				var err error
+				page, context, err = runBatchJobsStateRunner(pw, sessionDir, "graph", page, context, captured, configDir)
+				return err
+			})
+			return page, context, err
+		}, func() (playwright.Page, playwright.BrowserContext, error) { return page, context, nil })
+		if batchErr != nil {
+			fmt.Printf("  ⚠ Graph renewal failed: %v\n", batchErr)
 		}
 
 	default:
@@ -602,7 +809,34 @@ browser and exit nonzero without replacing the saved EDU token.
 		} else {
 			fmt.Println("→ Teams will load automatically.")
 		}
-		fullRenewal(pw, page, context, captured, sessionDir, firstRun, browserClosed)
+		page, context, batchErr = dispatchRenewal(renewOnly, func() (playwright.Page, playwright.BrowserContext, error) {
+			return page, context, nil
+		}, func() (playwright.Page, playwright.BrowserContext, error) {
+			return fullRenewalRunner(pw, page, context, captured, sessionDir, firstRun, browserClosed, configDir)
+		})
+	}
+
+	if eventMode && batchJobs != "" {
+		return finishBatch(batchErr, interrupted.Load())
+	}
+
+	captured.mu.Lock()
+	signedIn := captured.webToken != "" || captured.spacesToken != ""
+	captured.mu.Unlock()
+	if userCancelledLogin(renewOnly == "" && batchJobs == "", firstRun && showBrowser, closedExternally.Load(), signedIn, interrupted.Load() || fatalPlaywrightError(batchErr)) {
+		fmt.Println("\n[!] Browser closed before login completed. Clearing session...")
+		if err := os.RemoveAll(sessionDir); err == nil {
+			fmt.Println("  " + symOK + "  Session cleared. Next run will require login.")
+		}
+	}
+
+	if interrupted.Load() {
+		fmt.Println("\n  · Capture cancelled; preserving existing credentials.")
+		return 1
+	}
+	if batchErr != nil {
+		fmt.Printf("Renewal failed: %v\n", batchErr)
+		return 1
 	}
 
 	fmt.Println()
@@ -613,12 +847,14 @@ browser and exit nonzero without replacing the saved EDU token.
 	}
 	printTokenStatus(captured)
 
-	if err := saveTokens(captured, configDir); err != nil {
+	if err := runSaveTokens(captured, configDir); err != nil {
 		fmt.Printf("Error saving tokens: %v\n", err)
 		return 1
 	}
 	if renewalErr != nil {
 		fmt.Printf("Renewal failed: %v\n", renewalErr)
+		_ = runCloseContext(context)
+		runStopPlaywright(pw)
 		return 1
 	}
 
@@ -628,82 +864,455 @@ browser and exit nonzero without replacing the saved EDU token.
 	return 0
 }
 
+// userCancelledLogin is the only condition that clears the persistent profile
+// besides --clear-session: during a first, visible full capture the user closed
+// the window before Teams sign-in finished. Signals, driver failures, helper
+// shutdown, context swaps and any failure after sign-in keep the profile.
+func userCancelledLogin(fullCapture, firstVisibleLogin, closedExternally, signedIn, interruptedOrFatal bool) bool {
+	return fullCapture && firstVisibleLogin && closedExternally && !signedIn && !interruptedOrFatal
+}
+
+func batchRequestsEdu(raw string) bool {
+	jobs, err := normalizeBatchJobs(raw)
+	if err != nil {
+		return false
+	}
+	for _, job := range jobs {
+		if job == "edu" {
+			return true
+		}
+	}
+	return false
+}
+
 func sessionExists(dir string) bool {
 	entries, err := os.ReadDir(dir)
 	return err == nil && len(entries) > 0
 }
 
-func saveTokens(t *tokens, configDir string) error {
-	t.mu.Lock()
-	defer t.mu.Unlock()
+func normalizeBatchJobs(raw string) ([]string, error) {
+	allowed := map[string]bool{"graph": true, "web_notif": true, "edu": true}
+	seen := map[string]bool{}
+	var jobs []string
+	for _, rawJob := range strings.Split(raw, ",") {
+		job := strings.TrimSpace(rawJob)
+		if job == "web" || job == "notif" {
+			job = "web_notif"
+		}
+		if !allowed[job] {
+			return nil, fmt.Errorf("unsupported batch job")
+		}
+		if !seen[job] {
+			seen[job] = true
+			jobs = append(jobs, job)
+		}
+	}
+	if len(jobs) == 0 {
+		return nil, fmt.Errorf("empty batch")
+	}
+	return jobs, nil
+}
 
-	tokensPath := filepath.Join(configDir, "tokens.env")
+func batchProviders(job string) []string {
+	switch job {
+	case "web_notif":
+		return []string{"web", "notif"}
+	default:
+		return []string{job}
+	}
+}
 
-	// Merge: load existing tokens, overwrite only non-empty values
-	existing := make(map[string]string)
-	if data, err := os.ReadFile(tokensPath); err == nil {
-		for _, line := range strings.Split(string(data), "\n") {
-			line = strings.TrimSpace(line)
-			if strings.HasPrefix(line, "export ") {
-				line = strings.TrimPrefix(line, "export ")
+func batchJobCaptured(job string, before, after auth.TokenValues) bool {
+	return len(batchJobMissingProviders(job, before, after)) == 0
+}
+
+func batchJobMissingProviders(job string, before, after auth.TokenValues) []string {
+	changed := func(old, current string) bool { return current != "" && current != old }
+	var missing []string
+	check := func(provider, old, current string) {
+		if !changed(old, current) {
+			missing = append(missing, provider)
+		}
+	}
+	switch job {
+	case "graph":
+		check("graph", before.Graph, after.Graph)
+	case "web_notif":
+		check("web", before.Web, after.Web)
+		check("notif", before.Notif, after.Notif)
+	case "edu":
+		check("edu", before.EDU, after.EDU)
+	default:
+		return []string{"batch"}
+	}
+	return missing
+}
+
+func persistBatchCheckpoint(configDir, job string, values auth.TokenValues, last map[string]string) (bool, error) {
+	return persistBatchCheckpointWithCandidate(configDir, job, values, last, nil)
+}
+
+func persistBatchCheckpointWithCandidate(configDir, job string, values auth.TokenValues, last map[string]string, candidate *auth.GraphCandidate) (bool, error) {
+	all := map[string]string{"graph": values.Graph, "web": values.Web, "notif": values.Notif, "edu": values.EDU, "cookie": values.Cookie, "spaces": values.Spaces}
+	allowed := map[string]bool{}
+	switch job {
+	case "graph":
+		allowed["graph"] = true
+	case "web_notif":
+		for _, provider := range []string{"web", "notif", "cookie", "spaces"} {
+			allowed[provider] = true
+		}
+	case "edu":
+		allowed["edu"] = true
+	default:
+		return false, fmt.Errorf("unsupported batch job %q", job)
+	}
+	changed := make(map[string]string)
+	for provider, token := range all {
+		if allowed[provider] && token != "" && token != last[provider] {
+			changed[provider] = token
+		}
+	}
+	if len(changed) == 0 {
+		return false, nil
+	}
+	if job == "graph" && candidate != nil && changed["graph"] != "" {
+		if _, err := auth.PersistGraphCandidate(configDir, *candidate); err != nil {
+			return false, err
+		}
+	} else {
+		delta := auth.TokenValues{Graph: changed["graph"], Web: changed["web"], Notif: changed["notif"], EDU: changed["edu"], Cookie: changed["cookie"], Spaces: changed["spaces"]}
+		if err := persistBatchCredential(configDir, delta); err != nil {
+			return false, err
+		}
+	}
+	for provider, token := range changed {
+		last[provider] = token
+		if err := emitEvent("credential_ready", provider, "ready", ""); err != nil {
+			return false, err
+		}
+	}
+	return true, nil
+}
+
+// transitionGraphContext closes the owned context before opening its visible
+// replacement; the profile must never have two contexts at once.
+func transitionGraphContext(closeContext func() error, openVisible func() error) error {
+	if err := closeContext(); err != nil {
+		return err
+	}
+	return openVisible()
+}
+
+// runGraphLifecycle owns the headless→visible transition without depending on Playwright.
+// The callbacks keep the production browser code small and make the contract testable.
+func runGraphLifecycle(timeout time.Duration, headless func() (string, error), visible func() (string, error), persist func() error, interaction func() error, closing func() bool) error {
+	deadline := time.Now().Add(timeout)
+	var lastErr error
+	for time.Now().Before(deadline) {
+		if closing() {
+			return errGraphCancelled
+		}
+		state, err := headless()
+		if err != nil {
+			return err
+		}
+		if state == "interaction_required" {
+			if err := interaction(); err != nil {
+				return err
 			}
-			parts := strings.SplitN(line, "=", 2)
-			if len(parts) == 2 {
-				key := strings.TrimSpace(parts[0])
-				existing[key] = auth.UnquoteValue(parts[1])
+			if closing() {
+				return errGraphCancelled
+			}
+			state, err = visible()
+			if err != nil {
+				return err
+			}
+		}
+		if state == "cancelled" {
+			return errGraphCancelled
+		}
+		if state == "interaction_required" {
+			// The visible flow already had its chance to complete. Do not
+			// reopen the same profile or retry the same candidate forever.
+			return errGraphInteractionRequired
+		}
+		if state == "ready" {
+			if err := persist(); err != nil {
+				if errors.Is(err, auth.ErrIncompatibleCredential) {
+					return err
+				}
+				// Other persistence failures may be transient; reacquire within the deadline.
+				lastErr = err
+				continue
+			}
+			return nil
+		}
+		if state == "timeout" {
+			break
+		}
+		lastErr = errGraphNetwork
+	}
+	if lastErr != nil {
+		return lastErr
+	}
+	return errGraphTimeout
+}
+
+func runBatchJobsState(pw *playwright.Playwright, sessionDir, raw string, page playwright.Page, ctx playwright.BrowserContext, captured *tokens, configDir string) (playwright.Page, playwright.BrowserContext, error) {
+	captureValues := func() auth.TokenValues {
+		captured.mu.Lock()
+		defer captured.mu.Unlock()
+		return auth.TokenValues{Graph: captured.graphToken, Web: captured.webToken, Notif: captured.notifToken, EDU: captured.eduToken, Cookie: captured.cookie, Spaces: captured.spacesToken, Fabric: captured.fabricToken}
+	}
+	err := runBatchJobSequence(raw, captureValues, func(job string) error {
+		switch job {
+		case "graph":
+			err := runGraphLifecycleRunner(2*time.Minute,
+				func() (string, error) {
+					if captured.browserVisible {
+						if err := runBatchGraphCapture(page, captured, false); err != nil {
+							return "", err
+						}
+						if hasGraphCandidate(captured) {
+							return "ready", nil
+						}
+						return "interaction_required", nil
+					}
+					if err := runBatchGraphCapture(page, captured, true); err != nil {
+						if errors.Is(err, errGraphInteractionRequired) {
+							return "interaction_required", nil
+						}
+						return "", err
+					}
+					return runBatchGraphOutcome(page, captured, 2*time.Minute), nil
+				},
+				func() (string, error) {
+					if captured.browserVisible {
+						return runBatchVisibleGraphOutcome(page, captured, 2*time.Minute), nil
+					}
+					captured.markIntentionalClose()
+					var visible playwright.BrowserContext
+					var err error
+					err = transitionGraphContext(func() error { return runBatchContextClose(ctx) }, func() error {
+						visible, err = openRunPersistentContext(pw, sessionDir, false)
+						if err != nil {
+							return errGraphInteractionRequired
+						}
+						ctx = visible
+						activeContexts.add(ctx)
+						pages := runBatchContextPages(ctx)
+						if len(pages) > 0 {
+							page = pages[0]
+						} else {
+							page, err = runBatchContextNewPage(ctx)
+						}
+						if err != nil {
+							return errGraphInteractionRequired
+						}
+						runBatchRegisterInterceptor(ctx, captured)
+						if err := runBatchGraphCapture(page, captured, false); err != nil {
+							return err
+						}
+						return nil
+					})
+					if err != nil {
+						return "", err
+					}
+					return runBatchVisibleGraphOutcome(page, captured, 2*time.Minute), nil
+				},
+				func() error {
+					captured.mu.Lock()
+					candidate := captured.graphCandidate
+					captured.graphCandidate = nil
+					captured.mu.Unlock()
+					if candidate == nil {
+						return errGraphTimeout
+					}
+					set, err := persistGraphCandidate(configDir, *candidate)
+					if err != nil {
+						if errors.Is(err, auth.ErrIncompatibleCredential) {
+							captured.mu.Lock()
+							captured.graphCandidate = nil
+							captured.mu.Unlock()
+						}
+						return err
+					}
+					captured.mu.Lock()
+					captured.graphToken = candidate.Token
+					captured.graphPersisted = true
+					captured.mu.Unlock()
+					eventStateMu.Lock()
+					eventGeneration = set.Generation
+					eventStateMu.Unlock()
+					return nil
+				},
+				func() error {
+					eventStateMu.Lock()
+					graphInteractionEmitted = true
+					eventStateMu.Unlock()
+					return emitEvent("interaction_required", "graph", "interaction_required", "interaction_required")
+				},
+				activeContexts.isClosing,
+			)
+			if err != nil {
+				return err
+			}
+		case "web_notif":
+			renewWebNotif(page, ctx, captured)
+		case "edu":
+			return renewEdu(page, ctx, captured, false)
+		}
+		return nil
+	}, func(job string, values auth.TokenValues, last map[string]string) (bool, error) {
+		if job == "graph" {
+			captured.mu.Lock()
+			persisted := captured.graphPersisted
+			captured.mu.Unlock()
+			if persisted {
+				last["graph"] = values.Graph
+				if err := emitEvent("credential_ready", "graph", "ready", ""); err != nil {
+					return false, err
+				}
+				return true, nil
+			}
+		}
+		return persistBatchCheckpointWithCandidate(configDir, job, values, last, nil)
+	}, func() string { return page.URL() })
+	return page, ctx, err
+}
+
+// runBatchJobSequence is the real batch control loop with browser work and
+// checkpoint persistence injected. Tests use the same loop with deterministic
+// runners, so terminal/error ordering is covered without Playwright.
+func runBatchJobSequence(raw string, capture func() auth.TokenValues, runJob func(string) error, checkpoint func(string, auth.TokenValues, map[string]string) (bool, error), pageURL func() string) error {
+	jobs, err := normalizeBatchJobs(raw)
+	if err != nil {
+		return err
+	}
+	requested := make(map[string]bool, len(jobs))
+	for _, job := range jobs {
+		requested[job] = true
+	}
+	last := map[string]string{}
+	var firstErr error
+	for _, job := range []string{"graph", "web_notif", "edu"} {
+		if !requested[job] {
+			continue
+		}
+		previous := capture()
+		if err := runJob(job); err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			for _, provider := range batchProviders(job) {
+				if job == "graph" && errors.Is(err, errGraphInteractionRequired) {
+					eventStateMu.Lock()
+					emitted := graphInteractionEmitted
+					eventStateMu.Unlock()
+					if !emitted {
+						_ = emitEvent("interaction_required", provider, "interaction_required", "interaction_required")
+					}
+				} else {
+					_ = emitEvent("provider_failed", provider, "unknown", batchErrorCode(err))
+				}
+			}
+			continue
+		}
+		changed, err := checkpoint(job, capture(), last)
+		if err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			errCode := "persistence_failed"
+			if strings.Contains(err.Error(), "stale credential generation") {
+				errCode = "stale_generation"
+			} else if strings.Contains(err.Error(), "incompatible") || strings.Contains(err.Error(), "bootstrap permissions") || strings.Contains(err.Error(), "official HTTPS") || strings.Contains(err.Error(), "Graph Explorer") {
+				errCode = "incompatible_credential"
+			}
+			for _, provider := range batchProviders(job) {
+				emitEvent("provider_failed", provider, "unknown", errCode)
+			}
+			continue
+		}
+		missing := batchJobMissingProviders(job, previous, capture())
+		if !changed || len(missing) > 0 {
+			if firstErr == nil {
+				firstErr = fmt.Errorf("batch job %s did not capture all requested credentials", job)
+			}
+			for _, provider := range missing {
+				if job == "graph" && isLoginURL(pageURL()) {
+					emitEvent("interaction_required", provider, "interaction_required", "interaction_required")
+				} else {
+					emitEvent("provider_failed", provider, "unknown", "acquisition_failed")
+				}
 			}
 		}
 	}
+	return firstErr
+}
 
-	// Apply new values (non-empty wins)
-	if t.graphToken != "" {
-		existing["MS_GRAPH_TOKEN"] = t.graphToken
+func batchErrorCode(err error) string {
+	switch {
+	case errors.Is(err, errGraphTimeout):
+		return "timeout"
+	case errors.Is(err, errGraphNetwork):
+		return "network_unavailable"
+	case errors.Is(err, errGraphCancelled):
+		return "cancelled"
+	case errors.Is(err, auth.ErrStaleGeneration):
+		return "stale_generation"
+	case errors.Is(err, auth.ErrIncompatibleCredential):
+		return "incompatible_credential"
+	default:
+		return "acquisition_failed"
 	}
-	if t.webToken != "" {
-		existing["TEAMS_WEB_TOKEN"] = t.webToken
-	}
-	if t.notifToken != "" {
-		existing["TEAMS_NOTIF_TOKEN"] = t.notifToken
-	}
-	if t.eduToken != "" && (!t.eduValidationRequired || t.eduValidated) {
-		existing["EDU_TOKEN"] = t.eduToken
-	}
-	if t.cookie != "" {
-		existing["TEAMS_COOKIE"] = t.cookie
-	}
-	if t.spacesToken != "" {
-		existing["TEAMS_SPACES_TOKEN"] = t.spacesToken
-	}
-	if t.fabricToken != "" {
-		existing["TEAMS_FABRIC_TOKEN"] = t.fabricToken
-	}
+}
 
-	content := fmt.Sprintf(`# lazyteams tokens — auto-generated on %s
-# Do not edit manually. Run ./lazyteams-auth to renew.
-
-export MS_GRAPH_TOKEN=%s
-export TEAMS_WEB_TOKEN=%s
-export TEAMS_NOTIF_TOKEN=%s
-export EDU_TOKEN=%s
-export TEAMS_COOKIE=%s
-export TEAMS_SPACES_TOKEN=%s
-export TEAMS_FABRIC_TOKEN=%s
-`,
-		time.Now().Format(time.RFC3339),
-		auth.QuoteValue(existing["MS_GRAPH_TOKEN"]),
-		auth.QuoteValue(existing["TEAMS_WEB_TOKEN"]),
-		auth.QuoteValue(existing["TEAMS_NOTIF_TOKEN"]),
-		auth.QuoteValue(existing["EDU_TOKEN"]),
-		auth.QuoteValue(existing["TEAMS_COOKIE"]),
-		auth.QuoteValue(existing["TEAMS_SPACES_TOKEN"]),
-		auth.QuoteValue(existing["TEAMS_FABRIC_TOKEN"]),
-	)
-
-	if err := os.WriteFile(tokensPath, []byte(content), 0600); err != nil {
-		return fmt.Errorf("error writing tokens: %w", err)
+func finishBatch(batchErr error, interrupted bool) int {
+	if eventIsTerminal() {
+		return 1
 	}
+	if interrupted {
+		if err := emitEvent("cancelled", "batch", "cancelled", "cancelled"); err != nil {
+			return 1
+		}
+		return 1
+	}
+	if batchErr != nil {
+		emitEvent("completed", "batch", "partial_failure", batchErrorCode(batchErr))
+		return 1
+	}
+	if currentEventWriteErr() != nil {
+		emitEvent("completed", "batch", "partial_failure", "protocol_error")
+		return 1
+	}
+	if err := emitEvent("completed", "batch", "completed", ""); err != nil || currentEventWriteErr() != nil {
+		return 1
+	}
+	return 0
+}
 
-	fmt.Printf("→ Tokens saved to: %s\n", tokensPath)
+func saveTokens(t *tokens, configDir string) error {
+	t.mu.Lock()
+	values := auth.TokenValues{
+		Graph: t.graphToken, Web: t.webToken, Notif: t.notifToken, EDU: t.eduToken,
+		Cookie: t.cookie, Spaces: t.spacesToken,
+	}
+	if t.eduValidationRequired && !t.eduValidated {
+		values.EDU = ""
+	}
+	// A Graph Explorer candidate is already persisted by the shared Graph path;
+	// do not rewrite it through the legacy browser metadata path.
+	if t.graphPersisted {
+		values.Graph = ""
+	}
+	t.mu.Unlock()
+
+	if _, err := auth.PersistTokenValues(configDir, values); err != nil {
+		return err
+	}
+	fmt.Printf("→ Tokens saved to: %s\n", filepath.Join(configDir, "tokens.env"))
 	return nil
 }
 
@@ -955,8 +1564,91 @@ func logTeamsDOM(page playwright.Page) {
 	debugPrintf("→ Teams accessibility tree:\n%s\n", snapshot)
 }
 
+func graphCaptureNeeded(captured *tokens) bool {
+	captured.mu.Lock()
+	defer captured.mu.Unlock()
+	return captured.graphToken == ""
+}
+
 // fullRenewal runs the full capture flow (all 5 tokens).
-func fullRenewal(pw *playwright.Playwright, page playwright.Page, ctx playwright.BrowserContext, captured *tokens, sessionDir string, firstRun bool, browserClosed <-chan struct{}) {
+func runGraphRenewal(batch func() error) error {
+	return batch()
+}
+
+// These seams keep the CLI dispatch testable without starting Playwright.
+var (
+	graphRenewalRunner = runGraphRenewal
+	fullRenewalRunner  = fullRenewal
+)
+
+func dispatchRenewal(mode string, graph, full func() (playwright.Page, playwright.BrowserContext, error)) (playwright.Page, playwright.BrowserContext, error) {
+	if mode == "graph" {
+		return graph()
+	}
+	return full()
+}
+
+func runFullRenewalFlow(graph, postGraph func() error) error {
+	if err := graph(); err != nil {
+		return err
+	}
+	return postGraph()
+}
+
+func renewGraphIfNeeded(captured *tokens, acquire func() error) error {
+	if !graphCaptureNeeded(captured) {
+		return nil
+	}
+	if err := acquire(); err != nil {
+		return err
+	}
+	captured.mu.Lock()
+	persisted := captured.graphPersisted
+	captured.mu.Unlock()
+	if !persisted {
+		return errGraphTimeout
+	}
+	return nil
+}
+
+var fullRenewalGoto = func(page playwright.Page) error {
+	_, err := page.Goto("https://teams.microsoft.com", playwright.PageGotoOptions{Timeout: playwright.Float(90000)})
+	return err
+}
+
+var fullRenewalCapture = captureLoop
+var fullRenewalSleep = time.Sleep
+
+var fullRenewalGraph = func(pw *playwright.Playwright, page playwright.Page, ctx playwright.BrowserContext, captured *tokens, sessionDir, configDir string) (playwright.Page, playwright.BrowserContext, error) {
+	err := renewGraphIfNeeded(captured, func() error {
+		var err error
+		page, ctx, err = runBatchJobsStateRunner(pw, sessionDir, "graph", page, ctx, captured, configDir)
+		return err
+	})
+	return page, ctx, err
+}
+
+var fullRenewalPostGraph = func(pw *playwright.Playwright, page playwright.Page, ctx playwright.BrowserContext, captured *tokens, sessionDir string) error {
+	fullRenewalSleep(2 * time.Second)
+	cookies, err := ctx.Cookies("https://teams.microsoft.com", "https://ic3.teams.office.com")
+	if err == nil && len(cookies) > 0 {
+		var parts []string
+		for _, c := range cookies {
+			if c.Name != "" && c.Value != "" {
+				parts = append(parts, fmt.Sprintf("%s=%s", c.Name, c.Value))
+			}
+		}
+		captured.mu.Lock()
+		if captured.cookie == "" {
+			captured.cookie = strings.Join(parts, "; ")
+			notifyTokenCaptured("TEAMS_COOKIE")
+		}
+		captured.mu.Unlock()
+	}
+	return nil
+}
+
+func fullRenewal(pw *playwright.Playwright, page playwright.Page, ctx playwright.BrowserContext, captured *tokens, sessionDir string, firstRun bool, browserClosed <-chan struct{}, configDir string) (playwright.Page, playwright.BrowserContext, error) {
 	globalSpin = newSpinner("Connecting to Teams...")
 	globalSpin.Start()
 	defer func() {
@@ -967,11 +1659,10 @@ func fullRenewal(pw *playwright.Playwright, page playwright.Page, ctx playwright
 	}()
 
 	// Open the base URL — no networkidle wait, let the user interact with login
-	_, err := page.Goto("https://teams.microsoft.com",
-		playwright.PageGotoOptions{
-			Timeout: playwright.Float(90000),
-		},
-	)
+	err := fullRenewalGoto(page)
+	if fatalPlaywrightError(err) {
+		return page, ctx, err
+	}
 	if err != nil {
 		fmt.Println("  ⚠ Teams slow to load or auth required, continuing...")
 	}
@@ -998,7 +1689,7 @@ func fullRenewal(pw *playwright.Playwright, page playwright.Page, ctx playwright
 			select {
 			case <-browserClosed:
 				fmt.Println("\n  · Browser closed — stopping capture.")
-				return
+				return page, ctx, nil
 			default:
 			}
 
@@ -1017,7 +1708,7 @@ func fullRenewal(pw *playwright.Playwright, page playwright.Page, ctx playwright
 			}
 		}
 	} else {
-		time.Sleep(5 * time.Second)
+		fullRenewalSleep(5 * time.Second)
 	}
 
 	// Now navigate to /v2/#/teams/ to trigger tokens
@@ -1025,9 +1716,12 @@ func fullRenewal(pw *playwright.Playwright, page playwright.Page, ctx playwright
 		globalSpin.SetLabel("Navigating to Teams to capture tokens...")
 	}
 
-	captureResult := captureLoop(page, ctx, pw, sessionDir, captured, browserClosed)
+	captureResult := fullRenewalCapture(page, ctx, pw, sessionDir, captured, browserClosed)
 	if captureResult == captureClosed {
-		return
+		return page, ctx, nil
+	}
+	if captureResult == captureDisconnected {
+		return page, ctx, fmt.Errorf("Teams capture stopped: %w", playwright.ErrTargetClosed)
 	}
 
 	// TEAMS_NOTIF_TOKEN = TEAMS_WEB_TOKEN
@@ -1038,271 +1732,23 @@ func fullRenewal(pw *playwright.Playwright, page playwright.Page, ctx playwright
 	}
 	captured.mu.Unlock()
 
-	// If nothing was captured headless, the saved session is stale — the
-	// Microsoft login expired even though the browser cookies are alive.
-	// Reopen the browser visibly so the user can sign in again.
-	if captureResult == captureStale {
-		fmt.Println()
-		fmt.Println("→ Session may have expired — opening browser for re-login...")
-		fmt.Println()
-
-		captured.markIntentionalClose()
-		ctx.Close()
-
-		visibleCtx, err := pw.Firefox.LaunchPersistentContext(
-			sessionDir,
-			playwright.BrowserTypeLaunchPersistentContextOptions{
-				Headless: playwright.Bool(false),
-				SlowMo:   playwright.Float(0),
-				Args:     []string{"--no-first-run"},
-			},
-		)
-		if err != nil {
-			fmt.Printf("  ⚠ Could not open browser: %v\n", err)
-		} else {
-			registerFullInterceptor(visibleCtx, captured)
-
-			// Wait for the user to sign in — Teams is loaded once a web/spaces
-			// token shows up.
-			pages := visibleCtx.Pages()
-			var visiblePage playwright.Page
-			if len(pages) > 0 {
-				visiblePage = pages[0]
-			} else {
-				visiblePage, _ = visibleCtx.NewPage()
-			}
-			visiblePage.SetViewportSize(1280, 800)
-
-			visiblePage.Goto("https://teams.microsoft.com",
-				playwright.PageGotoOptions{Timeout: playwright.Float(90000)},
-			)
-			if globalSpin != nil {
-				globalSpin.SetLabel("Waiting for you to sign in...")
-			}
-
-			loginDeadline := time.Now().Add(5 * time.Minute)
-			for time.Now().Before(loginDeadline) {
-				select {
-				case <-browserClosed:
-					fmt.Println("\n  · Browser closed — stopping capture.")
-					visibleCtx.Close()
-					return
-				default:
-				}
-				time.Sleep(1 * time.Second)
-				captured.mu.Lock()
-				hasWeb := captured.webToken != ""
-				hasSpaces := captured.spacesToken != ""
-				captured.mu.Unlock()
-				if hasWeb || hasSpaces {
-					if globalSpin != nil {
-						globalSpin.SetLabel("Teams loaded!")
-					}
-					time.Sleep(2 * time.Second)
-					break
-				}
-			}
-
-			captureResult = captureLoop(visiblePage, visibleCtx, pw, sessionDir, captured, browserClosed)
-			visibleCtx.Close()
-			if captureResult == captureClosed {
-				return
-			}
-		}
-	}
+	// Graph renewal owns its own headless→visible fallback; keep the original
+	// context alive so the shared operation always receives a live page/context.
 
 	// Plan B: Graph Explorer for MS_GRAPH_TOKEN
-	captured.mu.Lock()
-	needsGraphToken := captured.graphToken == ""
-	captured.mu.Unlock()
-
-	if needsGraphToken {
-		if globalSpin != nil {
-			globalSpin.Stop("")
-			globalSpin = nil
-		}
-
-		fmt.Println()
-		printBox([]string{
-			"Action required: MS_GRAPH_TOKEN",
-			"Opening browser — sign in to Graph Explorer",
-		})
-		fmt.Println()
-
-		// Close headless context and reopen visible
-		captured.markIntentionalClose()
-		ctx.Close()
-
-		visibleCtx, err := pw.Firefox.LaunchPersistentContext(
-			sessionDir,
-			playwright.BrowserTypeLaunchPersistentContextOptions{
-				Headless: playwright.Bool(false),
-				SlowMo:   playwright.Float(0),
-				Args:     []string{"--no-first-run"},
-			},
-		)
-		if err != nil {
-			fmt.Printf("  ⚠ Could not open browser: %v\n", err)
-		} else {
-			// Re-register interceptor on new context
-			visibleCtx.On("request", func(req playwright.Request) {
-				authHeader := ""
-				for k, v := range req.Headers() {
-					if strings.ToLower(k) == "authorization" {
-						authHeader = v
-						break
-					}
-				}
-				if !strings.HasPrefix(authHeader, "Bearer ") {
-					return
-				}
-				token := strings.TrimPrefix(authHeader, "Bearer ")
-
-				// 1. Check for Graph Token
-				aud := extractAudFromJWT(token)
-				if strings.Contains(aud, "graph.microsoft.com") || aud == "00000003-0000-0000-c000-000000000000" {
-					captured.mu.Lock()
-					if captured.graphToken == "" {
-						captured.graphToken = token
-						notifyTokenCaptured("MS_GRAPH_TOKEN")
-					}
-					captured.mu.Unlock()
-				}
-
-				// 2. Check for Fabric Token
-				if strings.Contains(req.URL(), "fabric/") {
-					captured.mu.Lock()
-					if captured.fabricToken == "" {
-						captured.fabricToken = token
-						notifyTokenCaptured("TEAMS_FABRIC_TOKEN")
-					}
-					captured.mu.Unlock()
-				}
-			})
-
-			pages := visibleCtx.Pages()
-			var visiblePage playwright.Page
-			if len(pages) > 0 {
-				visiblePage = pages[0]
-			} else {
-				visiblePage, _ = visibleCtx.NewPage()
-			}
-			visiblePage.SetViewportSize(1280, 800)
-
-			// Navigate to Graph Explorer and optionally auto-click Run query
-			tryExtractGraphTokenViaGraphExplorer(visiblePage, captured, !firstRun)
-
-			// Wait for token if not yet captured
-			graphDeadline := time.Now().Add(300 * time.Second)
-			for time.Now().Before(graphDeadline) {
-				time.Sleep(500 * time.Millisecond)
-				captured.mu.Lock()
-				hasGraph := captured.graphToken != ""
-				captured.mu.Unlock()
-				if hasGraph {
-					break
-				}
-			}
-
-			// Do not close visibleCtx — reuse it for fabric token
-			if captured.fabricToken == "" {
-				fmt.Println()
-				printBox([]string{
-					"Action required: TEAMS_FABRIC_TOKEN",
-					"1. Go to any Private or Shared Channel.",
-					"2. Go to the 'Members' tab.",
-					"3. Try to change your own role",
-					"	(e.g., Owner -> Member)",
-					"   (It will fail if you are the only owner",
-					"but the token will be captured instantly!)",
-					"Press [Enter] in this terminal to skip.",
-				})
-
-				globalSpin = newSpinner("Capturing fabric token...")
-				globalSpin.Start()
-
-				// Navigate to Teams in the same browser
-				visiblePage.Goto("https://teams.microsoft.com/v2/",
-					playwright.PageGotoOptions{Timeout: playwright.Float(20000)},
-				)
-
-				// Channel for skip
-				skipCh := make(chan struct{}, 1)
-				go func() {
-					buf := make([]byte, 1)
-					if _, err := os.Stdin.Read(buf); err == nil {
-						close(skipCh)
-					}
-				}()
-
-				// Wait up to 2 minutes
-				deadline := time.Now().Add(120 * time.Second)
-				for time.Now().Before(deadline) {
-					select {
-					case <-skipCh:
-						if globalSpin != nil {
-							globalSpin.Stop("")
-							globalSpin = nil
-						}
-						fmt.Println("\n  · TEAMS_FABRIC_TOKEN — skipped by user")
-						// Force Firefox to flush cookies to disk via page navigation
-						visiblePage.Goto("about:blank", playwright.PageGotoOptions{
-							Timeout: playwright.Float(3000),
-						})
-						time.Sleep(5 * time.Second)
-						visibleCtx.Close()
-						return
-					default:
-					}
-
-					time.Sleep(1 * time.Second)
-					captured.mu.Lock()
-					hasFabric := captured.fabricToken != ""
-					captured.mu.Unlock()
-					if hasFabric {
-						if globalSpin != nil {
-							globalSpin.Stop("")
-							globalSpin = nil
-						}
-						fmt.Println("  " + symOK + "  Token captured! Browser closes in 10s...")
-						time.Sleep(10 * time.Second)
-						break
-					}
-				}
-			}
-
-			if globalSpin != nil {
-				globalSpin.Stop("")
-				globalSpin = nil
-			}
-			visibleCtx.Close()
-			return
-		}
+	page, ctx, err = fullRenewalGraph(pw, page, ctx, captured, sessionDir, configDir)
+	if err == nil {
+		err = fullRenewalPostGraph(pw, page, ctx, captured, sessionDir)
 	}
-
-	// For the normal flow where needsGraphToken is false
-	time.Sleep(2 * time.Second)
-	cookies, err := ctx.Cookies("https://teams.microsoft.com", "https://ic3.teams.office.com")
-	if err == nil && len(cookies) > 0 {
-		var parts []string
-		for _, c := range cookies {
-			if c.Name != "" && c.Value != "" {
-				parts = append(parts, fmt.Sprintf("%s=%s", c.Name, c.Value))
-			}
-		}
-		captured.mu.Lock()
-		if captured.cookie == "" {
-			captured.cookie = strings.Join(parts, "; ")
-			notifyTokenCaptured("TEAMS_COOKIE")
-		}
-		captured.mu.Unlock()
+	if err != nil {
+		return page, ctx, err
 	}
+	return page, ctx, nil
+}
 
-	if captured.fabricToken == "" {
-		captured.markIntentionalClose()
-		ctx.Close()
-		manualFabricTokenCapture(pw, sessionDir, captured)
-	}
+func fatalPlaywrightError(err error) bool {
+	return errors.Is(err, playwright.ErrTargetClosed) || errors.Is(err, io.EOF) ||
+		errors.Is(err, io.ErrClosedPipe) || errors.Is(err, syscall.EPIPE)
 }
 
 // captureLoop navigates Teams and runs the 90-second token capture loop.
@@ -1312,10 +1758,14 @@ func fullRenewal(pw *playwright.Playwright, page playwright.Page, ctx playwright
 //   - captureStale when nothing was captured within 45s (Teams never loaded —
 //     the saved session's Microsoft login expired)
 //   - captureClosed when the browser was closed by the user
+//   - captureDisconnected when a Teams navigation/request loses Playwright
 func captureLoop(page playwright.Page, ctx playwright.BrowserContext, pw *playwright.Playwright, sessionDir string, captured *tokens, browserClosed <-chan struct{}) string {
-	page.Goto("https://teams.microsoft.com/v2/#/teams/", playwright.PageGotoOptions{
+	_, err := page.Goto("https://teams.microsoft.com/v2/#/teams/", playwright.PageGotoOptions{
 		Timeout: playwright.Float(15000),
 	})
+	if fatalPlaywrightError(err) {
+		return captureDisconnected
+	}
 	time.Sleep(5 * time.Second)
 
 	startTime := time.Now()
@@ -1339,11 +1789,10 @@ func captureLoop(page playwright.Page, ctx playwright.BrowserContext, pw *playwr
 		hasNotif := captured.notifToken != ""
 		hasEdu := captured.eduToken != ""
 		hasCookie := captured.cookie != ""
-		hasFabric := captured.fabricToken != ""
 		hasSpaces := captured.spacesToken != ""
 		captured.mu.Unlock()
 
-		if hasGraph && hasWeb && hasNotif && hasEdu && hasCookie && hasSpaces && hasFabric {
+		if hasGraph && hasWeb && hasNotif && hasEdu && hasCookie && hasSpaces {
 			notifyTokenCaptured("All tokens")
 			break
 		}
@@ -1363,15 +1812,18 @@ func captureLoop(page playwright.Page, ctx playwright.BrowserContext, pw *playwr
 		// Step 2 (20s): trigger TEAMS_NOTIF_TOKEN
 		if elapsed > 20*time.Second && !hasNotif {
 			globalSpin.SetLabel("Navigating to Activity to trigger notifications token...")
-			page.Goto("https://teams.microsoft.com/v2/",
+			_, err := page.Goto("https://teams.microsoft.com/v2/",
 				playwright.PageGotoOptions{Timeout: playwright.Float(15000)},
 			)
+			if fatalPlaywrightError(err) {
+				return captureDisconnected
+			}
 			time.Sleep(2 * time.Second)
 			captured.mu.Lock()
 			webTok := captured.webToken
 			captured.mu.Unlock()
 			if webTok != "" {
-				page.Evaluate(`(token) => {
+				_, err := page.Evaluate(`(token) => {
 					fetch("https://teams.microsoft.com/api/chatsvc/amer/v1/users/ME/conversations/48:notifications/messages?startTime=0&pageSize=1&view=msnp24Equivalent&targetType=Passport", {
 						headers: {
 							"Authorization": "Bearer " + token,
@@ -1379,6 +1831,9 @@ func captureLoop(page playwright.Page, ctx playwright.BrowserContext, pw *playwr
 						}
 					})
 				}`, webTok)
+				if fatalPlaywrightError(err) {
+					return captureDisconnected
+				}
 				time.Sleep(2 * time.Second)
 			}
 		}
@@ -1406,12 +1861,6 @@ func captureLoop(page playwright.Page, ctx playwright.BrowserContext, pw *playwr
 		}
 
 		// Step 4 (55s): try to extract EDU_TOKEN from JS
-		// Step 5 (70s): Navigate to private channel to get FabricToken
-		if elapsed > 70*time.Second && !hasFabric && hasGraph {
-			globalSpin.SetLabel("Automating TEAMS_FABRIC_TOKEN capture...")
-			manualFabricTokenCapture(pw, sessionDir, captured)
-		}
-
 		if elapsed > 55*time.Second && !hasEdu {
 			globalSpin.SetLabel("Attempting to extract EDU_TOKEN from JS memory...")
 			if err := tryExtractEduTokenFromJS(page, captured); err != nil {
@@ -1457,18 +1906,128 @@ func extractAudFromJWT(token string) string {
 	return ""
 }
 
+func waitForVisibleGraphCandidate(_ playwright.Page, captured *tokens, timeout time.Duration) string {
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+	deadline := time.NewTimer(timeout)
+	defer deadline.Stop()
+	for {
+		if activeContexts.isClosing() {
+			return "cancelled"
+		}
+		captured.mu.Lock()
+		ready := captured.graphCandidate != nil
+		captured.mu.Unlock()
+		if ready {
+			return "ready"
+		}
+		select {
+		case <-ticker.C:
+		case <-deadline.C:
+			return "timeout"
+		}
+	}
+}
+
+func waitForGraphOutcome(page playwright.Page, captured *tokens, timeout time.Duration) string {
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+	deadline := time.NewTimer(timeout)
+	defer deadline.Stop()
+	for {
+		if activeContexts.isClosing() {
+			return "cancelled"
+		}
+		captured.mu.Lock()
+		ready := captured.graphCandidate != nil
+		captured.mu.Unlock()
+		if ready {
+			return "ready"
+		}
+		if state := graphPageInteractionState(page); state != "" {
+			return state
+		}
+		select {
+		case <-ticker.C:
+		case <-deadline.C:
+			return "timeout"
+		}
+	}
+}
+
+func graphPageInteractionState(page playwright.Page) string {
+	if isLoginURL(page.URL()) {
+		return "interaction_required"
+	}
+	value, err := page.Evaluate(`() => (document.body && document.body.innerText || "").toLowerCase()`)
+	if err != nil {
+		return ""
+	}
+	text, ok := value.(string)
+	if !ok {
+		return ""
+	}
+	for _, marker := range []string{"consent required", "multi-factor authentication", "verify your identity", "pick an account", "select an account"} {
+		if strings.Contains(text, marker) {
+			return "interaction_required"
+		}
+	}
+	return ""
+}
+
 // tryExtractGraphTokenViaGraphExplorer navigates to Graph Explorer and extracts
 // the token with the correct scopes (Chat.ReadBasic, Files.Read, etc.).
-func tryExtractGraphTokenViaGraphExplorer(page playwright.Page, captured *tokens, autoClick bool) {
+func graphRequestCandidate(token, requestURL, pageURL, authHeader string, mainFrame bool) (auth.GraphCandidate, bool) {
+	if !mainFrame || !strings.HasPrefix(authHeader, "Bearer ") {
+		return auth.GraphCandidate{}, false
+	}
+	u, err := url.Parse(requestURL)
+	if err != nil || u.Scheme != "https" || u.Host != "graph.microsoft.com" {
+		return auth.GraphCandidate{}, false
+	}
+	return auth.GraphCandidate{Token: token, RequestURL: requestURL, PageURL: pageURL, ClientID: auth.GraphExplorerClientID}, true
+}
+
+func captureGraphCandidate(captured *tokens, token, requestURL, pageURL string) {
+	candidate := auth.GraphCandidate{Token: token, RequestURL: requestURL, PageURL: pageURL, ClientID: auth.GraphExplorerClientID}
+	captured.mu.Lock()
+	defer captured.mu.Unlock()
+	if captured.graphCandidate == nil {
+		// Keep the untrusted token quarantined until PersistGraphCandidate validates it.
+		captured.graphCandidate = &candidate
+	}
+}
+
+func tryExtractGraphTokenViaGraphExplorer(page playwright.Page, captured *tokens, autoClick bool) error {
+	page.On("request", func(req playwright.Request) {
+		authHeader := ""
+		for key, value := range req.Headers() {
+			if strings.EqualFold(key, "authorization") {
+				authHeader = value
+				break
+			}
+		}
+		requestURL := req.URL()
+		candidate, ok := graphRequestCandidate(strings.TrimPrefix(authHeader, "Bearer "), requestURL, page.URL(), authHeader, req.Frame() == page.MainFrame())
+		if !ok {
+			return
+		}
+		captureGraphCandidate(captured, candidate.Token, candidate.RequestURL, candidate.PageURL)
+	})
 
 	_, err := page.Goto("https://developer.microsoft.com/en-us/graph/graph-explorer",
 		playwright.PageGotoOptions{Timeout: playwright.Float(20000)},
 	)
 	if err != nil {
-		fmt.Println("  ⚠ Timeout loading Graph Explorer, continuing...")
+		return errGraphNetwork
 	}
 
-	time.Sleep(5 * time.Second)
+	if !eventMode {
+		time.Sleep(5 * time.Second)
+	}
+	if tryGraphHeadlessSignIn(page, captured) == "interaction_required" && autoClick {
+		return errGraphInteractionRequired
+	}
 
 	if autoClick {
 		// Click "Run query" to trigger a request to graph.microsoft.com
@@ -1484,7 +2043,9 @@ func tryExtractGraphTokenViaGraphExplorer(page playwright.Page, captured *tokens
 				Timeout: playwright.Float(3000),
 			})
 			if err == nil {
-				time.Sleep(3 * time.Second)
+				if !eventMode {
+					time.Sleep(3 * time.Second)
+				}
 				break
 			}
 		}
@@ -1494,54 +2055,17 @@ func tryExtractGraphTokenViaGraphExplorer(page playwright.Page, captured *tokens
 		fmt.Println("  The helper will detect it automatically.")
 	}
 
-	// Fallback: extract from Graph Explorer's localStorage
-	scripts := []string{
-		`(function() {
-			for (let k of Object.keys(localStorage)) {
-				if (k.includes('accesstoken') && k.includes('graph.microsoft.com')) {
-					try {
-						let v = JSON.parse(localStorage[k]);
-						if (v.secret && v.secret.length > 100) return v.secret;
-					} catch(e) {}
-				}
-			}
-			return '';
-		})()`,
-	}
-
-	for _, script := range scripts {
-		result, err := page.Evaluate(script)
-		if err != nil {
-			continue
-		}
-		if token, ok := result.(string); ok && token != "" && len(token) > 100 {
-			aud := extractAudFromJWT(token)
-			if strings.Contains(aud, "graph.microsoft.com") {
-				captured.mu.Lock()
-				if captured.graphToken == "" {
-					captured.graphToken = token
-					notifyTokenCaptured("MS_GRAPH_TOKEN")
-				}
-				captured.mu.Unlock()
-
-				// Return to Teams afterwards
-				page.Goto("https://teams.microsoft.com/v2/",
-					playwright.PageGotoOptions{Timeout: playwright.Float(15000)},
-				)
-				return
-			}
-		}
-	}
-
-	// Only redirect if token was already captured
+	// Graph tokens are accepted only from the request listener above; browser storage is not an acquisition boundary.
+	// Only redirect if a validated/persistable candidate was observed.
 	captured.mu.Lock()
-	hasToken := captured.graphToken != ""
+	hasToken := captured.graphCandidate != nil
 	captured.mu.Unlock()
 	if hasToken {
-		page.Goto("https://teams.microsoft.com/v2/",
+		_, _ = page.Goto("https://teams.microsoft.com/v2/",
 			playwright.PageGotoOptions{Timeout: playwright.Float(15000)},
 		)
 	}
+	return nil
 }
 
 // tryExtractEduTokenFromJS reads all MSAL entries in every frame; an expired
@@ -1590,7 +2114,8 @@ func manualFabricTokenCapture(pw *playwright.Playwright, sessionDir string, capt
 		"Action required: TEAMS_FABRIC_TOKEN",
 		"1. Go to any Private or Shared Channel.",
 		"2. Go to the 'Members' tab.",
-		"3. Try to change your own role",
+		"3. Warning: this action may reach the server.",
+		"4. Try to change your own role",
 		"	(e.g., Owner -> Member)",
 		"   (It will fail if you are the only owner",
 		"but the token will be captured instantly!)",
@@ -1598,18 +2123,12 @@ func manualFabricTokenCapture(pw *playwright.Playwright, sessionDir string, capt
 	})
 	fmt.Println()
 
-	visibleCtx, err := pw.Firefox.LaunchPersistentContext(
-		sessionDir,
-		playwright.BrowserTypeLaunchPersistentContextOptions{
-			Headless: playwright.Bool(false),
-			SlowMo:   playwright.Float(0),
-			Args:     []string{"--no-first-run"},
-		},
-	)
+	visibleCtx, err := openPersistentContext(pw, sessionDir, false)
 	if err != nil {
 		fmt.Printf("  ⚠ Could not open browser for manual capture: %v\n", err)
 		return
 	}
+	activeContexts.add(visibleCtx)
 	defer visibleCtx.Close()
 
 	visibleCtx.On("request", func(req playwright.Request) {
@@ -1630,7 +2149,7 @@ func manualFabricTokenCapture(pw *playwright.Playwright, sessionDir string, capt
 			if captured.fabricToken == "" {
 				captured.fabricToken = token
 				notifyTokenCaptured("TEAMS_FABRIC_TOKEN")
-				fmt.Println("\n  " + symOK + "  TEAMS_FABRIC_TOKEN manually captured!")
+				fmt.Println("\n  " + symOK + "  Fabric candidate captured (not persisted; write authorization is unverified).")
 			}
 			captured.mu.Unlock()
 		}
@@ -1679,7 +2198,7 @@ func manualFabricTokenCapture(pw *playwright.Playwright, sessionDir string, capt
 				globalSpin.Stop("")
 				globalSpin = nil
 			}
-			fmt.Println("  " + symOK + "  Token captured! Browser closes in 10s...")
+			fmt.Println("  " + symOK + "  Candidate captured but not persisted; browser closes in 10s...")
 			time.Sleep(10 * time.Second) // wait before closing browser
 			return
 		}
@@ -1690,95 +2209,6 @@ func manualFabricTokenCapture(pw *playwright.Playwright, sessionDir string, capt
 		globalSpin.Stop("")
 		globalSpin = nil
 	}
-}
-
-func extractNameFromToken(token string) string {
-	parts := strings.Split(token, ".")
-	if len(parts) < 2 {
-		return ""
-	}
-	payload := parts[1]
-	switch len(payload) % 4 {
-	case 2:
-		payload += "=="
-	case 3:
-		payload += "="
-	}
-	payload = strings.NewReplacer("-", "+", "_", "/").Replace(payload)
-	decoded, err := base64.StdEncoding.DecodeString(payload)
-	if err != nil {
-		return ""
-	}
-	var claims map[string]interface{}
-	if err := json.Unmarshal(decoded, &claims); err != nil {
-		return ""
-	}
-	if name, ok := claims["name"].(string); ok && name != "" {
-		parts := strings.Fields(name)
-		if len(parts) > 0 {
-			return strings.ToLower(parts[0])
-		}
-	}
-	if given, ok := claims["given_name"].(string); ok && given != "" {
-		return strings.ToLower(given)
-	}
-	return ""
-}
-
-// extractTenantIDFromJWT extracts the tenant ID ("tid") claim from a JWT.
-func extractTenantIDFromJWT(token string) string {
-	parts := strings.Split(token, ".")
-	if len(parts) < 2 {
-		return ""
-	}
-	payload := parts[1]
-	switch len(payload) % 4 {
-	case 2:
-		payload += "=="
-	case 3:
-		payload += "="
-	}
-	payload = strings.NewReplacer("-", "+", "_", "/").Replace(payload)
-	decoded, err := base64.StdEncoding.DecodeString(payload)
-	if err != nil {
-		return ""
-	}
-	var claims map[string]interface{}
-	if err := json.Unmarshal(decoded, &claims); err != nil {
-		return ""
-	}
-	if tid, ok := claims["tid"].(string); ok {
-		return tid
-	}
-	return ""
-}
-
-// extractOIDFromJWT extracts the object ID ("oid") claim from a JWT.
-func extractOIDFromJWT(token string) string {
-	parts := strings.Split(token, ".")
-	if len(parts) < 2 {
-		return ""
-	}
-	payload := parts[1]
-	switch len(payload) % 4 {
-	case 2:
-		payload += "=="
-	case 3:
-		payload += "="
-	}
-	payload = strings.NewReplacer("-", "+", "_", "/").Replace(payload)
-	decoded, err := base64.StdEncoding.DecodeString(payload)
-	if err != nil {
-		return ""
-	}
-	var claims map[string]interface{}
-	if err := json.Unmarshal(decoded, &claims); err != nil {
-		return ""
-	}
-	if oid, ok := claims["oid"].(string); ok {
-		return oid
-	}
-	return ""
 }
 
 type spinner struct {

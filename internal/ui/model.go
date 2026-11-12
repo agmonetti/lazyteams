@@ -1,9 +1,12 @@
 package ui
 
 import (
+	"bufio"
+	"strings"
 	"time"
 
 	"github.com/agmonetti/lazyteams/internal/graph"
+	"github.com/agmonetti/lazyteams/internal/helpers"
 	"github.com/agmonetti/lazyteams/internal/ui/components/directorypicker"
 
 	"github.com/charmbracelet/bubbles/textarea"
@@ -14,6 +17,66 @@ import (
 )
 
 type errMsg struct{ err error }
+
+type messageDraft struct {
+	text          string
+	images        []PendingImage
+	replyTo       *graph.Message
+	replyParentID string
+	threadReply   bool
+}
+
+type CapabilityState string
+
+func capabilityStateForError(err error) CapabilityState {
+	message := strings.ToLower(err.Error())
+	switch {
+	case strings.Contains(message, "missing credential"), strings.Contains(message, "missing cookie"):
+		return CapabilityMissing
+	case strings.Contains(message, "401"), strings.Contains(message, "expired"):
+		return CapabilityExpiredOrRevoked
+	case strings.Contains(message, "403"), strings.Contains(message, "permission"):
+		return CapabilityPermissionDenied
+	case strings.Contains(message, "network"), strings.Contains(message, "timeout"), strings.Contains(message, "connection"):
+		return CapabilityNetworkUnavailable
+	default:
+		return CapabilityUnknown
+	}
+}
+
+func (m *Model) setCapability(capability string, state CapabilityState) {
+	if m.capabilities == nil {
+		m.capabilities = make(map[string]CapabilityState)
+	}
+	m.capabilities[capability] = state
+}
+
+func (m *Model) setCapabilityError(capability string, err error) {
+	if m.capabilities == nil {
+		m.capabilities = make(map[string]CapabilityState)
+	}
+	m.capabilities[capability] = capabilityStateForError(err)
+}
+
+const (
+	CapabilityReady              CapabilityState = "ready"
+	CapabilityMissing            CapabilityState = "missing"
+	CapabilityExpiredOrRevoked   CapabilityState = "expired_or_revoked"
+	CapabilityInteractionNeeded  CapabilityState = "interaction_required"
+	CapabilityPermissionDenied   CapabilityState = "permission_denied"
+	CapabilityNetworkUnavailable CapabilityState = "network_unavailable"
+	CapabilityNotApplicable      CapabilityState = "not_applicable"
+	CapabilityUnknown            CapabilityState = "unknown"
+)
+
+const (
+	CapabilityGraph  = "graph"
+	CapabilityWeb    = "web"
+	CapabilityNotif  = "notif"
+	CapabilityEDU    = "edu"
+	CapabilitySpaces = "spaces"
+	CapabilityFabric = "fabric"
+)
 
 type PendingImage struct {
 	Data        []byte
@@ -42,6 +105,8 @@ type messagesErrMsg struct {
 type teamsMsg struct {
 	teams []graph.Team
 }
+
+type teamsErrMsg struct{ err error }
 
 type channelsMsg struct {
 	teamID   string
@@ -174,6 +239,7 @@ type Model struct {
 	focusList    int  // 0 = teams, 1 = channels (within left panel)
 	loading      bool
 	err          error
+	capabilities map[string]CapabilityState
 	width        int
 	height       int
 
@@ -248,6 +314,10 @@ type Model struct {
 	// Pending clipboard images (not uploaded yet)
 	pendingImages []PendingImage
 
+	// failedDraft is restored after a failed send; replay remains an explicit
+	// user action rather than an automatic retry.
+	failedDraft *messageDraft
+
 	// Reply-to message in DM cursor mode; nil when not replying
 	replyToMsg *graph.Message
 
@@ -264,11 +334,29 @@ type Model struct {
 	tokenRenewErr             string
 	tokenRenewalQueue         []string
 	tokenRenewFailures        []string
+	renewalAttemptGeneration  map[string]uint64
+	renewalAttempted          map[string]bool
+	renewalRetryable          map[string]bool
+	renewalFailureGeneration  map[string]uint64
 	tokenRenewalFrame         int
 	tokenRenewalSpinnerActive bool
 	debug                     bool
 	renewal                   *renewalOwner
 	eduRenewalPending         bool // helper succeeded; Assignments must still accept the token
+	renewalBatch              bool
+	batchProcess              *helpers.AuthProcess // owned by renewal; stopped on stream errors
+	batchID                   string
+	batchStarted              bool
+	batchTerminal             bool
+	batchTerminalState        string
+	batchGeneration           uint64
+	batchReadyProvider        string
+	batchPublishedProviders   map[string]bool
+	batchRequestedProviders   map[string]bool
+	batchEventScanner         *bufio.Scanner
+	batchEventWait            chan error
+	batchDraining             bool
+	batchStreamErr            error
 
 	// User
 	userName string
@@ -462,52 +550,105 @@ func New(client *graph.Client, userName string, debug bool) Model {
 
 	prefs := loadPrefs()
 
+	capabilities := map[string]CapabilityState{
+		CapabilityGraph: CapabilityMissing,
+		CapabilityWeb:   CapabilityMissing,
+		CapabilityNotif: CapabilityMissing,
+		CapabilityEDU:   CapabilityMissing,
+	}
+	credentials := client.Credentials()
+	if credentials.Graph.Token != "" {
+		capabilities[CapabilityGraph] = CapabilityReady
+	}
+	if credentials.Web.Token != "" {
+		capabilities[CapabilityWeb] = CapabilityReady
+	}
+	if credentials.Notif.Token != "" {
+		capabilities[CapabilityNotif] = CapabilityReady
+	}
+	if credentials.EDU.Token == "" {
+		capabilities[CapabilityEDU] = CapabilityMissing
+	} else if credentials.EDUCookie.Token == "" && credentials.Cookie.Token == "" {
+		capabilities[CapabilityEDU] = CapabilityMissing
+	} else {
+		capabilities[CapabilityEDU] = CapabilityReady
+	}
+
 	m := Model{
-		client:                  client,
-		focusLeft:               true,
-		focusList:               0,
-		loading:                 true,
-		input:                   ta,
-		searchInput:             searchInput,
-		editInput:               editInput,
-		createFolderInput:       createFolderInput,
-		newDMQuery:              newDMInput,
-		createTeamInput:         createTeamInput,
-		createChannelInput:      createChannelInput,
-		createChannelType:       "Standard",
-		addMemberInput:          addMemberInput,
-		addChannelMemberInput:   addChannelMemberInput,
-		assignFilter:            FilterUpcoming,
-		prefs:                   prefs,
-		notificationsRefreshing: true,
-		chatUnread:              make(map[string]bool),
-		presence:                make(map[string]string),
-		selectedFiles:           make(map[int]bool),
-		folderCache:             make(map[string][]graph.DriveItem),
-		channelToTeam:           make(map[string]string),
-		userName:                userName,
-		debug:                   debug,
-		renewal:                 &renewalOwner{},
-		presenceOptions:         []string{"Available", "Busy", "DoNotDisturb", "BeRightBack", "Away", "Reset (Automatic)"},
-		reactionOptions:         []string{"like", "heart", "laugh", "surprised", "sad", "angry"},
+		client:                   client,
+		focusLeft:                true,
+		focusList:                0,
+		loading:                  false,
+		capabilities:             capabilities,
+		input:                    ta,
+		searchInput:              searchInput,
+		editInput:                editInput,
+		createFolderInput:        createFolderInput,
+		newDMQuery:               newDMInput,
+		createTeamInput:          createTeamInput,
+		createChannelInput:       createChannelInput,
+		createChannelType:        "Standard",
+		addMemberInput:           addMemberInput,
+		addChannelMemberInput:    addChannelMemberInput,
+		assignFilter:             FilterUpcoming,
+		prefs:                    prefs,
+		notificationsRefreshing:  credentials.Notif.Token != "",
+		notifLoaded:              credentials.Notif.Token == "",
+		assignLoaded:             credentials.EDU.Token == "" || (credentials.EDUCookie.Token == "" && credentials.Cookie.Token == ""),
+		chatUnread:               make(map[string]bool),
+		presence:                 make(map[string]string),
+		selectedFiles:            make(map[int]bool),
+		folderCache:              make(map[string][]graph.DriveItem),
+		channelToTeam:            make(map[string]string),
+		userName:                 userName,
+		debug:                    debug,
+		renewal:                  &renewalOwner{},
+		renewalAttemptGeneration: make(map[string]uint64),
+		renewalAttempted:         make(map[string]bool),
+		renewalRetryable:         make(map[string]bool),
+		renewalFailureGeneration: make(map[string]uint64),
+		presenceOptions:          []string{"Available", "Busy", "DoNotDisturb", "BeRightBack", "Away", "Reset (Automatic)"},
+		reactionOptions:          []string{"like", "heart", "laugh", "surprised", "sad", "angry"},
 	}
 	loadPrefsIntoModel(&m, prefs)
 	return m
 }
 
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(
-		checkTokensCmd(m.client),
-		loadTeamsCmd(m.client),
-		loadChatsCmd(m.client),
-		loadMeCmd(m.client),
-		refreshTickCmd(),
-		initialPresenceTickCmd(),
-		unreadSweepCmd(),
-		filesRefreshTickCmd(),
-		loadNotificationsCmd(m.client),
-		checkUpdateCmd(),
-	)
+	cmds := []tea.Cmd{
+		refreshTickCmd(), initialPresenceTickCmd(), unreadSweepCmd(),
+		filesRefreshTickCmd(), checkUpdateCmd(),
+	}
+	credentials := m.client.Credentials()
+	if credentials.Graph.Token != "" {
+		cmds = append(cmds, loadTeamsCmd(m.client), loadChatsCmd(m.client), loadMeCmd(m.client))
+	}
+	if credentials.Notif.Token != "" {
+		cmds = append(cmds, loadNotificationsCmd(m.client))
+	}
+	if credentials.EDU.Token != "" && (credentials.EDUCookie.Token != "" || credentials.Cookie.Token != "") {
+		cmds = append(cmds, loadAssignmentsCmd(m.client, false, m.assignGeneration))
+	}
+	if renewal := scheduleNextRenewal(&m, time.Now()); renewal != nil {
+		cmds = append(cmds, renewal)
+	}
+	return tea.Batch(cmds...)
+}
+
+func (m *Model) restoreFailedDraft() {
+	if m.failedDraft == nil {
+		return
+	}
+	draft := m.failedDraft
+	m.input.SetValue(draft.text)
+	m.pendingImages = append([]PendingImage(nil), draft.images...)
+	m.replyToMsg = draft.replyTo
+	m.threadParentID = draft.replyParentID
+	m.isTyping = !draft.threadReply
+	m.isReplyTyping = draft.threadReply
+	m.showThread = draft.threadReply || m.showThread
+	m.input.Focus()
+	m.failedDraft = nil
 }
 
 func (m Model) activeConversationID() string {

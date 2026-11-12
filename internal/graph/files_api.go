@@ -209,12 +209,13 @@ func (c *Client) GetItemChildren(driveID, itemID string) ([]DriveItem, error) {
 
 // DeleteItem deletes a file or folder from a team's drive.
 func (c *Client) DeleteItem(teamID, itemID string) error {
+	credentials := c.Credentials()
 	endpoint := fmt.Sprintf("%s/groups/%s/drive/items/%s", baseURL, teamID, itemID)
 	req, err := http.NewRequest("DELETE", endpoint, nil)
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+c.GraphToken)
+	req.Header.Set("Authorization", "Bearer "+credentials.Graph.Token)
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
 		return err
@@ -229,12 +230,13 @@ func (c *Client) DeleteItem(teamID, itemID string) error {
 
 // DeleteRemoteItem deletes a file or folder from an arbitrary drive (for remoteItems).
 func (c *Client) DeleteRemoteItem(driveID, itemID string) error {
+	credentials := c.Credentials()
 	endpoint := fmt.Sprintf("%s/drives/%s/items/%s", baseURL, driveID, itemID)
 	req, err := http.NewRequest("DELETE", endpoint, nil)
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+c.GraphToken)
+	req.Header.Set("Authorization", "Bearer "+credentials.Graph.Token)
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
 		return err
@@ -290,6 +292,7 @@ func (c *Client) GetChannelFolder(teamID, channelID, channelName string, isPriva
 
 // CreateFolder creates a new folder inside a team's drive channel folder.
 func (c *Client) CreateFolder(teamID, parentID, folderName string) (DriveItem, error) {
+	credentials := c.Credentials()
 	endpoint := fmt.Sprintf("%s/groups/%s/drive/items/%s/children", baseURL, teamID, parentID)
 	payload := map[string]any{
 		"name":                              folderName,
@@ -304,7 +307,7 @@ func (c *Client) CreateFolder(teamID, parentID, folderName string) (DriveItem, e
 	if err != nil {
 		return DriveItem{}, err
 	}
-	req.Header.Set("Authorization", "Bearer "+c.GraphToken)
+	req.Header.Set("Authorization", "Bearer "+credentials.Graph.Token)
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
