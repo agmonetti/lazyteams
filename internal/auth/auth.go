@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/agmonetti/lazyteams/internal/helpers"
 )
@@ -579,6 +580,57 @@ func ParseUserNameFromToken(token string) string {
 		}
 	}
 	return ""
+}
+
+// ParseAccountFromToken returns the user principal name an account picker
+// shows for this token. It is only a selector hint, never a credential: the
+// token itself is never written next to it.
+func ParseAccountFromToken(token string) string {
+	parts := strings.Split(normalizeToken(token), ".")
+	if len(parts) < 2 {
+		return ""
+	}
+	payload := parts[1]
+	if padding := len(payload) % 4; padding != 0 {
+		payload += strings.Repeat("=", 4-padding)
+	}
+	decoded, err := base64.RawURLEncoding.DecodeString(strings.TrimRight(payload, "="))
+	if err != nil {
+		decoded, err = base64.URLEncoding.DecodeString(payload)
+	}
+	if err != nil {
+		return ""
+	}
+	var claims map[string]interface{}
+	if json.Unmarshal(decoded, &claims) != nil {
+		return ""
+	}
+	for _, key := range []string{"upn", "preferred_username", "unique_name", "email"} {
+		value, ok := claims[key].(string)
+		if !ok {
+			continue
+		}
+		if account := normalizeAccountHint(value); account != "" {
+			return account
+		}
+	}
+	return ""
+}
+
+// normalizeAccountHint keeps only values that can be an account name and not
+// arbitrary page text: a single line containing "@", without spaces, quotes
+// or markup that a selector could match by accident.
+func normalizeAccountHint(value string) string {
+	value = strings.TrimSpace(value)
+	if len(value) < 3 || len(value) > 255 || !strings.Contains(value, "@") {
+		return ""
+	}
+	for _, r := range value {
+		if unicode.IsSpace(r) || unicode.IsControl(r) || strings.ContainsRune(`<>"'`, r) {
+			return ""
+		}
+	}
+	return value
 }
 
 // MetadataCompatible rejects a replacement when known identity or access

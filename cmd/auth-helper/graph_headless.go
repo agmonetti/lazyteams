@@ -8,12 +8,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/agmonetti/lazyteams/internal/auth"
 	"github.com/agmonetti/lazyteams/internal/helpers"
 	playwright "github.com/mxschmitt/playwright-go"
 )
 
-// The account is designated by the user in a private file (0600) in the config
-// directory, never inferred from a selector. Without it Graph sign-in stays manual.
+// The account is recorded automatically upon first validated Graph sign-in
+// or designated manually in a private file (0600) in the config directory,
+// never inferred from a selector. Without it Graph sign-in stays manual.
 func graphAccount() string {
 	path := filepath.Join(helpers.ConfigDir(), "graph-account")
 	info, err := os.Lstat(path)
@@ -25,6 +27,46 @@ func graphAccount() string {
 		return ""
 	}
 	return strings.TrimSpace(string(data))
+}
+
+// rememberGraphAccount records the authenticated account identity into graph-account
+// (permissions 0600) so future headless Graph Explorer renewals can automatically
+// select this account. It only saves the minimal identifier (UPN/email), never tokens.
+func rememberGraphAccount(configDir, token string) {
+	account := auth.ParseAccountFromToken(token)
+	if account == "" {
+		return
+	}
+	if configDir == "" {
+		configDir = helpers.ConfigDir()
+	}
+	path := filepath.Join(configDir, "graph-account")
+	if info, err := os.Lstat(path); err == nil && info.Mode().IsRegular() && info.Mode().Perm() == 0600 {
+		if data, err := os.ReadFile(path); err == nil && strings.TrimSpace(string(data)) == account {
+			return
+		}
+	}
+	if err := os.MkdirAll(configDir, 0700); err != nil {
+		return
+	}
+	tmp, err := os.CreateTemp(configDir, ".graph-account-*")
+	if err != nil {
+		return
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName)
+	if err := tmp.Chmod(0600); err != nil {
+		_ = tmp.Close()
+		return
+	}
+	if _, err := tmp.WriteString(account + "\n"); err != nil {
+		_ = tmp.Close()
+		return
+	}
+	if err := tmp.Close(); err != nil {
+		return
+	}
+	_ = os.Rename(tmpName, path)
 }
 
 func graphUniqueVisible(l playwright.Locator) bool {

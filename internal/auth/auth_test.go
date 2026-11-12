@@ -39,6 +39,34 @@ func TestParseUserNameFromToken(t *testing.T) {
 	}
 }
 
+func TestParseAccountFromToken(t *testing.T) {
+	tests := []struct{ name, token, want string }{
+		{"upn claim", jwtToken(map[string]interface{}{"upn": "alice@contoso.com"}), "alice@contoso.com"},
+		{"preferred_username claim", jwtToken(map[string]interface{}{"preferred_username": "bob@contoso.com"}), "bob@contoso.com"},
+		{"unique_name claim", jwtToken(map[string]interface{}{"unique_name": "charlie@contoso.com"}), "charlie@contoso.com"},
+		{"email claim", jwtToken(map[string]interface{}{"email": "dana@contoso.com"}), "dana@contoso.com"},
+		{"upn wins over preferred_username and email", jwtToken(map[string]interface{}{"upn": "alice@contoso.com", "preferred_username": "bob@contoso.com", "email": "dana@contoso.com"}), "alice@contoso.com"},
+		{"preferred_username wins over unique_name", jwtToken(map[string]interface{}{"preferred_username": "bob@contoso.com", "unique_name": "charlie@contoso.com"}), "bob@contoso.com"},
+		{"guest account upn", jwtToken(map[string]interface{}{"upn": "user_domain.com#EXT#@tenant.onmicrosoft.com"}), "user_domain.com#EXT#@tenant.onmicrosoft.com"},
+		{"display name rejected without @", jwtToken(map[string]interface{}{"name": "Alice Johnson", "upn": "Alice Johnson"}), ""},
+		{"whitespace rejected", jwtToken(map[string]interface{}{"upn": "alice @contoso.com"}), ""},
+		{"newline rejected", jwtToken(map[string]interface{}{"upn": "alice\n@contoso.com"}), ""},
+		{"quotes rejected", jwtToken(map[string]interface{}{"upn": "\"alice\"@contoso.com"}), ""},
+		{"angle brackets rejected", jwtToken(map[string]interface{}{"upn": "<alice@contoso.com>"}), ""},
+		{"too long rejected", jwtToken(map[string]interface{}{"upn": strings.Repeat("a", 250) + "@example.com"}), ""},
+		{"bearer prefix normalized", "Bearer " + jwtToken(map[string]interface{}{"upn": "alice@contoso.com"}), "alice@contoso.com"},
+		{"no account claim", jwtToken(map[string]interface{}{"aud": "https://graph.microsoft.com", "oid": "acct-id"}), ""},
+		{"invalid token", "not.a.jwt", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ParseAccountFromToken(tt.token); got != tt.want {
+				t.Errorf("ParseAccountFromToken() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func isolateConfigDir(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()

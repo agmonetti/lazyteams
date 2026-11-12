@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -400,6 +401,104 @@ func TestProductionGraphBatchPreservesIncompatibleCredential(t *testing.T) {
 	defer captured.mu.Unlock()
 	if captured.graphToken != "valid" || !captured.graphPersisted || persistCalls != 2 {
 		t.Fatalf("capture = token:%q persisted:%v calls:%d", captured.graphToken, captured.graphPersisted, persistCalls)
+	}
+}
+
+func TestRunBatchJobsStateRecordsAuthenticatedGraphAccount(t *testing.T) {
+	oldLifecycle, oldPersist := runGraphLifecycleRunner, persistGraphCandidate
+	t.Cleanup(func() { runGraphLifecycleRunner, persistGraphCandidate = oldLifecycle, oldPersist })
+
+	configDir := t.TempDir()
+	validToken := testJWT(map[string]interface{}{"upn": "validated@example.com"})
+
+	persistGraphCandidate = func(dir string, candidate auth.GraphCandidate) (*auth.CredentialSet, error) {
+		return &auth.CredentialSet{Generation: 5, Graph: auth.Credential{Token: candidate.Token}}, nil
+	}
+
+	captured := &tokens{graphCandidate: &auth.GraphCandidate{Token: validToken}}
+	runGraphLifecycleRunner = func(_ time.Duration, _ func() (string, error), _ func() (string, error), persist func() error, _ func() error, _ func() bool) error {
+		return persist()
+	}
+
+	if _, _, err := runBatchJobsState(nil, t.TempDir(), "graph", nil, nil, captured, configDir); err != nil {
+		t.Fatalf("runBatchJobsState error = %v", err)
+	}
+
+	accountPath := filepath.Join(configDir, "graph-account")
+	info, err := os.Lstat(accountPath)
+	if err != nil {
+		t.Fatalf("graph-account was not created: %v", err)
+	}
+	if perm := info.Mode().Perm(); perm != 0600 {
+		t.Fatalf("graph-account perm = %o, want 0600", perm)
+	}
+
+	data, err := os.ReadFile(accountPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), validToken) {
+		t.Fatal("graph-account must never contain tokens")
+	}
+	if got := strings.TrimSpace(string(data)); got != "validated@example.com" {
+		t.Fatalf("graph-account = %q, want validated@example.com", got)
+	}
+}
+
+func TestRunBatchJobsStateDoesNotRecordUnauthenticatedAccount(t *testing.T) {
+	oldLifecycle, oldPersist := runGraphLifecycleRunner, persistGraphCandidate
+	t.Cleanup(func() { runGraphLifecycleRunner, persistGraphCandidate = oldLifecycle, oldPersist })
+
+	configDir := t.TempDir()
+	suggestedToken := testJWT(map[string]interface{}{"upn": "unvalidated@example.com"})
+
+	persistGraphCandidate = func(dir string, candidate auth.GraphCandidate) (*auth.CredentialSet, error) {
+		return nil, auth.ErrIncompatibleCredential
+	}
+
+	captured := &tokens{graphCandidate: &auth.GraphCandidate{Token: suggestedToken}}
+	runGraphLifecycleRunner = func(_ time.Duration, _ func() (string, error), _ func() (string, error), persist func() error, _ func() error, _ func() bool) error {
+		return persist()
+	}
+
+	_, _, _ = runBatchJobsState(nil, t.TempDir(), "graph", nil, nil, captured, configDir)
+
+	accountPath := filepath.Join(configDir, "graph-account")
+	if _, err := os.Lstat(accountPath); !os.IsNotExist(err) {
+		t.Fatalf("unauthenticated account must not be recorded, err = %v", err)
+	}
+}
+
+func TestRunBatchJobsStateUpdatesAccountOnAccountSwitch(t *testing.T) {
+	oldLifecycle, oldPersist := runGraphLifecycleRunner, persistGraphCandidate
+	t.Cleanup(func() { runGraphLifecycleRunner, persistGraphCandidate = oldLifecycle, oldPersist })
+
+	configDir := t.TempDir()
+	accountPath := filepath.Join(configDir, "graph-account")
+	if err := os.WriteFile(accountPath, []byte("old-user@example.com\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	newToken := testJWT(map[string]interface{}{"upn": "new-user@example.com"})
+	persistGraphCandidate = func(dir string, candidate auth.GraphCandidate) (*auth.CredentialSet, error) {
+		return &auth.CredentialSet{Generation: 6, Graph: auth.Credential{Token: candidate.Token}}, nil
+	}
+
+	captured := &tokens{graphCandidate: &auth.GraphCandidate{Token: newToken}}
+	runGraphLifecycleRunner = func(_ time.Duration, _ func() (string, error), _ func() (string, error), persist func() error, _ func() error, _ func() bool) error {
+		return persist()
+	}
+
+	if _, _, err := runBatchJobsState(nil, t.TempDir(), "graph", nil, nil, captured, configDir); err != nil {
+		t.Fatalf("runBatchJobsState error = %v", err)
+	}
+
+	data, err := os.ReadFile(accountPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.TrimSpace(string(data)); got != "new-user@example.com" {
+		t.Fatalf("graph-account = %q, want new-user@example.com after switch", got)
 	}
 }
 

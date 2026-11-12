@@ -1,6 +1,8 @@
 package main
 
 import (
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -40,6 +42,68 @@ func TestGraphAccountPrivate(t *testing.T) {
 	}
 	if got := graphAccount(); got != "" {
 		t.Fatal("symlink account accepted")
+	}
+}
+
+func testJWT(claims map[string]interface{}) string {
+	b, _ := json.Marshal(claims)
+	return "eyJhbGciOiJub25lIn0." + base64.RawURLEncoding.EncodeToString(b) + ".sig"
+}
+
+func TestRememberGraphAccount(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	configDir := filepath.Join(home, ".config", "lazyteams")
+
+	token1 := testJWT(map[string]interface{}{"upn": "alice@contoso.com"})
+	rememberGraphAccount(configDir, token1)
+
+	if got := graphAccount(); got != "alice@contoso.com" {
+		t.Fatalf("graphAccount() = %q, want alice@contoso.com", got)
+	}
+
+	path := filepath.Join(configDir, "graph-account")
+	info, err := os.Lstat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if perm := info.Mode().Perm(); perm != 0600 {
+		t.Fatalf("file permissions = %o, want 0600", perm)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), token1) {
+		t.Fatal("graph-account must never contain tokens")
+	}
+	if string(data) != "alice@contoso.com\n" {
+		t.Fatalf("graph-account contents = %q, want alice@contoso.com\\n", string(data))
+	}
+
+	token2 := testJWT(map[string]interface{}{"preferred_username": "bob@fabrikam.com"})
+	rememberGraphAccount(configDir, token2)
+	if got := graphAccount(); got != "bob@fabrikam.com" {
+		t.Fatalf("graphAccount() after account change = %q, want bob@fabrikam.com", got)
+	}
+	info, err = os.Lstat(path)
+	if err != nil || info.Mode().Perm() != 0600 {
+		t.Fatalf("file permissions after account change = %o, want 0600", info.Mode().Perm())
+	}
+
+	if err := os.Chmod(path, 0644); err != nil {
+		t.Fatal(err)
+	}
+	rememberGraphAccount(configDir, token2)
+	info, err = os.Lstat(path)
+	if err != nil || info.Mode().Perm() != 0600 {
+		t.Fatalf("file permissions after tightening = %o, want 0600", info.Mode().Perm())
+	}
+
+	rememberGraphAccount(configDir, "invalid.token")
+	if got := graphAccount(); got != "bob@fabrikam.com" {
+		t.Fatalf("graphAccount() after invalid token = %q, want bob@fabrikam.com", got)
 	}
 }
 

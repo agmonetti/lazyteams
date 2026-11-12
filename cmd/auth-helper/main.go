@@ -506,9 +506,10 @@ OPTIONS:
   --clear-session    Delete browser session
   --clear-tokens     Delete saved tokens
 
-Graph Explorer sign-in is automated only for the account written in
-~/.config/lazyteams/graph-account (one line, file mode 0600). Without that
-file, or on MFA/consent prompts, a visible window waits for you instead.
+Graph Explorer sign-in is automated for the account recorded in
+~/.config/lazyteams/graph-account (one line, file mode 0600), written
+after the first validated sign-in. Without it, or on MFA/consent
+prompts, a visible window waits for you instead.
 
 EDU renewal saves only an unexpired token accepted by the Assignments API.
 Use --show when interactive login is required. Failed EDU renewals close the
@@ -980,6 +981,7 @@ func persistBatchCheckpointWithCandidate(configDir, job string, values auth.Toke
 		if _, err := auth.PersistGraphCandidate(configDir, *candidate); err != nil {
 			return false, err
 		}
+		rememberGraphAccount(configDir, candidate.Token)
 	} else {
 		delta := auth.TokenValues{Graph: changed["graph"], Web: changed["web"], Notif: changed["notif"], EDU: changed["edu"], Cookie: changed["cookie"], Spaces: changed["spaces"]}
 		if err := persistBatchCredential(configDir, delta); err != nil {
@@ -1138,6 +1140,7 @@ func runBatchJobsState(pw *playwright.Playwright, sessionDir, raw string, page p
 						}
 						return err
 					}
+					rememberGraphAccount(configDir, candidate.Token)
 					captured.mu.Lock()
 					captured.graphToken = candidate.Token
 					captured.graphPersisted = true
