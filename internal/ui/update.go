@@ -239,6 +239,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.updateErr = nil
 			m.latestVersion = ""
 			m.updateBannerUntil = time.Time{}
+			m.Close()
+			return m, tea.Quit
 		}
 		return m, nil
 
