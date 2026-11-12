@@ -78,7 +78,7 @@ func TestLatestReleaseInfo(t *testing.T) {
 	var srv *httptest.Server
 	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch filepath.Base(r.URL.Path) {
-		case "sums":
+		case "SHA256SUMS":
 			fmt.Fprint(w, sumsContent)
 		case tuiName:
 			fmt.Fprint(w, "binary-a")
@@ -92,7 +92,7 @@ func TestLatestReleaseInfo(t *testing.T) {
 				tag,
 				tuiName, srv.URL+"/releases/download/"+tag+"/"+tuiName,
 				authName, srv.URL+"/releases/download/"+tag+"/"+authName,
-				srv.URL+"/releases/download/"+tag+"/sums",
+				srv.URL+"/releases/download/"+tag+"/SHA256SUMS",
 			)
 		default:
 			w.WriteHeader(http.StatusNotFound)
@@ -204,15 +204,6 @@ func TestVerifyNoPublishedChecksum(t *testing.T) {
 	os.WriteFile(file, []byte("x"), 0o755)
 	if err := info.VerifyFileSHA256(file, "lazyteams-linux-amd64"); err == nil {
 		t.Error("expected error when no published checksum")
-	}
-}
-
-func TestResolverUsesDownloadBase(t *testing.T) {
-	info := ReleaseInfo{TagName: "v1.0.0", DownloadBase: "https://github.com/o/r/releases/download/v1.0.0"}
-	got := info.resolveDownloadURL("lazyteams-linux-amd64")
-	want := "https://github.com/o/r/releases/download/v1.0.0/lazyteams-linux-amd64"
-	if got != want {
-		t.Errorf("got %q want %q", got, want)
 	}
 }
 

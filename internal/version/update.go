@@ -16,6 +16,11 @@ import (
 	"time"
 )
 
+// ErrUpdatePending means a Windows stager has taken responsibility for the
+// verified pair. The caller must exit promptly; completion is reported on
+// restart through ConsumeUpdateResult, not at staging time.
+var ErrUpdatePending = errors.New("paired update staged; exit to complete installation")
+
 // allowedDownloadHost checks that a download/redirect target is a GitHub host
 // over HTTPS. The self-updater only ever fetches release assets from GitHub,
 // which may redirect to release-assets.githubusercontent.com or
@@ -87,13 +92,12 @@ func AuthHelperAssetBaseName(goos, goarch string) (string, error) {
 	return strings.Replace(name, "lazyteams-", "lazyteams-auth-", 1), nil
 }
 
-// ReleaseInfo is the metadata needed to perform a self-update. digestByName
-// maps asset filenames to their lowercase SHA-256 hex digest as published in
-// the release's SHA256SUMS asset.
+// ReleaseInfo contains the assets and published checksums from one release.
 type ReleaseInfo struct {
 	TagName          string
-	DownloadBase     string // GitHub releases download base, e.g. .../releases/download/<tag>
+	DownloadBase     string
 	digestByName     map[string]string
+	assetURLs        map[string]string
 	hasChecksumAsset bool
 }
 
@@ -113,22 +117,8 @@ func (r ReleaseInfo) Digests() map[string]string {
 	return out
 }
 
-// resolveDownloadURL returns the deterministic GitHub releases download URL
-// for an asset:
-//
-//	https://github.com/<owner>/<repo>/releases/download/<tag>/<asset>
-func (r ReleaseInfo) resolveDownloadURL(asset string) string {
-	return r.DownloadBase + "/" + asset
-}
-
-// LatestReleaseInfo queries the GitHub releases API for the latest release
-// (including its assets) and returns a ReleaseInfo with the tag, the package
-// download base URL and, when present, the SHA256SUMS digests.
-//
-// If the release exposes a SHA256SUMS asset its contents are parsed and used
-// for verification. Otherwise every binary asset is downloaded and hashed to
-// obtain its digest (verified against the same-GitHub TLS source). The caller
-// passes the API URL so tests can point at an httptest server.
+// LatestReleaseInfo obtains one release and its published SHA256SUMS.
+// Binary downloads are restricted to assets explicitly listed in that release.
 func LatestReleaseInfo(apiURL string) (ReleaseInfo, error) {
 	req, err := http.NewRequest(http.MethodGet, apiURL, nil)
 	if err != nil {
@@ -166,29 +156,47 @@ func LatestReleaseInfo(apiURL string) (ReleaseInfo, error) {
 	info := ReleaseInfo{
 		TagName:      payload.TagName,
 		digestByName: map[string]string{},
+		assetURLs:    map[string]string{},
 	}
 
-	// Derive the GitHub releases download base from a known asset, or build
-	// it deterministically from the API URL and tag.
-	suffix := "/releases/download/" + payload.TagName + "/"
-	for _, a := range payload.Assets {
-		if idx := strings.Index(a.BrowserDownload, suffix); idx >= 0 {
-			info.DownloadBase = a.BrowserDownload[:idx+len(suffix)-1]
-			break
-		}
+	// Every asset URL must belong to this exact release. Do not synthesize
+	// URLs: an absent binary in the API response must not be installed.
+	api, err := url.Parse(apiURL)
+	if err != nil {
+		return ReleaseInfo{}, err
 	}
-	if info.DownloadBase == "" {
-		repo := strings.TrimPrefix(strings.TrimSuffix(apiURL, "/releases/latest"), "https://api.github.com/repos/")
-		info.DownloadBase = "https://github.com/" + repo + "/releases/download/" + payload.TagName
+	suffix := "/releases/download/" + url.PathEscape(payload.TagName) + "/"
+	for _, a := range payload.Assets {
+		u, err := url.Parse(a.BrowserDownload)
+		if err != nil || a.Name == "" || u.RawQuery != "" || u.Fragment != "" ||
+			!strings.HasSuffix(u.EscapedPath(), suffix+url.PathEscape(a.Name)) {
+			return ReleaseInfo{}, fmt.Errorf("invalid release asset URL for %q", a.Name)
+		}
+		if api.Hostname() == "api.github.com" {
+			repo := strings.TrimPrefix(strings.TrimSuffix(api.EscapedPath(), "/releases/latest"), "/repos/")
+			if u.Scheme != "https" || u.Hostname() != "github.com" ||
+				u.EscapedPath() != "/"+repo+suffix+url.PathEscape(a.Name) {
+				return ReleaseInfo{}, fmt.Errorf("release asset %q is not from the queried GitHub release", a.Name)
+			}
+		} else if u.Scheme != api.Scheme || u.Host != api.Host {
+			return ReleaseInfo{}, fmt.Errorf("release asset %q is not from the queried release host", a.Name)
+		}
+		base := strings.TrimSuffix(a.BrowserDownload, "/"+url.PathEscape(a.Name))
+		if info.DownloadBase != "" && base != info.DownloadBase {
+			return ReleaseInfo{}, fmt.Errorf("release asset %q belongs to another release", a.Name)
+		}
+		info.DownloadBase = base
+		if _, exists := info.assetURLs[a.Name]; exists {
+			return ReleaseInfo{}, fmt.Errorf("duplicate release asset %q", a.Name)
+		}
+		info.assetURLs[a.Name] = a.BrowserDownload
 	}
 
 	// Parse SHA256SUMS if it's present as an asset.
 	for _, a := range payload.Assets {
-		if strings.EqualFold(a.Name, "SHA256SUMS") {
+		if a.Name == "SHA256SUMS" {
 			sums, err := downloadSHA256SUMS(a.BrowserDownload)
 			if err != nil {
-				// A broken checksum file must not silently disable integrity
-				// verification; treat it as a fatal error.
 				return ReleaseInfo{}, fmt.Errorf("reading SHA256SUMS: %w", err)
 			}
 			info.digestByName = sums
@@ -327,34 +335,44 @@ func (r ReleaseInfo) VerifyFileSHA256(file, name string) error {
 	return VerifySHA256(file, digest)
 }
 
-// AuthHelperSiblingPath returns the expected path of the auth-helper binary
-// installed alongside the TUI binary (selfExe). It is a best-effort guess so
-// the updater can keep both binaries in sync.
+// AuthHelperSiblingPath returns the conventional helper location next to selfExe.
 func AuthHelperSiblingPath(selfExe string) string {
-	dir := filepath.Dir(selfExe)
 	ext := ""
 	if runtime.GOOS == "windows" {
 		ext = ".exe"
 	}
-	return filepath.Join(dir, "lazyteams-auth"+ext)
+	return filepath.Join(filepath.Dir(selfExe), "lazyteams-auth"+ext)
 }
 
-// UpdateCmd runs the version checks against the passed API URL (instead of
-// the compiled-in URL) and performs the update if a newer release exists.
-// current is the running version, selfExe is the path of the currently
-// running binary, and confirm is called (returning true) before replacing
-// binaries. It returns (updated bool, err error).
-//
-// It updates both the TUI and auth-helper binaries, verifying each against
-// the release's published SHA-256 checksums before replacing them.
-func (r ReleaseInfo) UpdateCmd(current, selfExe, authExe string, confirm func(string) bool, progress func(string)) (bool, error) {
-	// Ensure the checksums were actually published before downloading
-	// anything. Without them we refuse to self-update rather than install a
-	// possibly-corrupted binary.
-	if !r.hasChecksumAsset || len(r.Digests()) == 0 {
-		return false, errors.New("release does not publish SHA256SUMS; refusing to self-update")
+// ResolveAuthHelperPath locates the helper the UI actually launches: next to
+// the raw executable path, which can differ from the symlink-resolved TUI.
+// It never invents a new installation location.
+func ResolveAuthHelperPath(selfExe string) (string, error) {
+	raw, err := os.Executable()
+	if err != nil {
+		return "", err
 	}
+	for _, candidate := range []string{AuthHelperSiblingPath(raw), AuthHelperSiblingPath(selfExe)} {
+		fi, err := os.Stat(candidate)
+		if err == nil {
+			if !fi.Mode().IsRegular() || (runtime.GOOS != "windows" && fi.Mode().Perm()&0o111 == 0) {
+				return "", fmt.Errorf("auth helper %s is not executable", candidate)
+			}
+			return filepath.EvalSymlinks(candidate)
+		}
+		if !errors.Is(err, os.ErrNotExist) {
+			return "", fmt.Errorf("locating auth helper %s: %w", candidate, err)
+		}
+	}
+	return "", errors.New("lazyteams-auth is not installed alongside the launcher or TUI")
+}
 
+// UpdateCmd installs both verified assets from the same newer release, or
+// leaves both existing binaries untouched on failure.
+func (r ReleaseInfo) UpdateCmd(current, selfExe, authExe string, confirm func(string) bool, progress func(string)) (bool, error) {
+	if Compare(current, r.TagName) >= 0 {
+		return false, nil
+	}
 	tuiName, err := AssetBaseName(runtime.GOOS, runtime.GOARCH)
 	if err != nil {
 		return false, err
@@ -363,72 +381,71 @@ func (r ReleaseInfo) UpdateCmd(current, selfExe, authExe string, confirm func(st
 	if err != nil {
 		return false, err
 	}
-
-	if confirm != nil {
-		if !confirm(fmt.Sprintf("Release %s available. Update lazyteams and lazyteams-auth?", r.TagName)) {
-			if progress != nil {
-				progress("Update cancelled.\n")
-			}
-			return false, nil
+	if !r.hasChecksumAsset {
+		return false, errors.New("release does not publish SHA256SUMS; refusing to self-update")
+	}
+	for _, name := range []string{tuiName, authName} {
+		if r.assetURLs[name] == "" || r.digestByName[name] == "" {
+			return false, fmt.Errorf("release %s lacks asset or SHA-256 checksum for %s", r.TagName, name)
 		}
 	}
-
-	downloadTUI := r.resolveDownloadURL(tuiName)
-	downloadAuth := r.resolveDownloadURL(authName)
-
+	// Check ownership, identity, symlinks and both writable directories before
+	// requesting confirmation or downloading anything.
+	self, err := prepareUpdateTarget(selfExe, "lazyteams", current)
+	if err != nil {
+		return false, err
+	}
+	auth, err := prepareUpdateTarget(authExe, "lazyteams-auth", current)
+	if err != nil {
+		return false, err
+	}
+	if self.path == auth.path {
+		return false, errors.New("TUI and auth helper resolve to the same file")
+	}
+	if confirm != nil && !confirm(fmt.Sprintf("Release %s available. Update lazyteams and lazyteams-auth?", r.TagName)) {
+		if progress != nil {
+			progress("Update cancelled.\n")
+		}
+		return false, nil
+	}
 	tuiTmp, err := os.CreateTemp("", "lazyteams-new-*")
 	if err != nil {
 		return false, err
 	}
 	tuiTmp.Close()
+	defer os.Remove(tuiTmp.Name())
 	authTmp, err := os.CreateTemp("", "lazyteams-auth-new-*")
 	if err != nil {
 		return false, err
 	}
 	authTmp.Close()
-	defer os.Remove(tuiTmp.Name())
 	defer os.Remove(authTmp.Name())
 
-	if progress != nil {
-		progress("Downloading lazyteams...\n")
+	for _, asset := range []struct{ name, path, kind string }{
+		{tuiName, tuiTmp.Name(), "lazyteams"},
+		{authName, authTmp.Name(), "lazyteams-auth"},
+	} {
+		if progress != nil {
+			progress(fmt.Sprintf("Downloading %s...\n", asset.name))
+		}
+		if err := DownloadFile(r.assetURLs[asset.name], asset.path, nil); err != nil {
+			return false, err
+		}
+		if err := r.VerifyFileSHA256(asset.path, asset.name); err != nil {
+			return false, err
+		}
+		if err := checkBinaryIdentity(asset.path, asset.kind, r.TagName); err != nil {
+			return false, fmt.Errorf("release %s contains an invalid %s build: %w", r.TagName, asset.kind, err)
+		}
 	}
-	if err := DownloadFile(downloadTUI, tuiTmp.Name(), nil); err != nil {
-		return false, err
-	}
-	if err := r.VerifyFileSHA256(tuiTmp.Name(), tuiName); err != nil {
-		return false, err
-	}
-
-	if progress != nil {
-		progress("Downloading lazyteams-auth...\n")
-	}
-	if err := DownloadFile(downloadAuth, authTmp.Name(), nil); err != nil {
-		return false, err
-	}
-	if err := r.VerifyFileSHA256(authTmp.Name(), authName); err != nil {
-		return false, err
-	}
-
 	if progress != nil {
 		progress("Installing...\n")
 	}
-	if err := ReplaceBinary(tuiTmp.Name(), selfExe); err != nil {
+	if err := installBinaryPair(self, tuiTmp.Name(), auth, authTmp.Name()); err != nil {
 		return false, err
 	}
-	// The auth-helper is optional at runtime but we always keep it in sync
-	// when we update the TUI.
-	if authExe != "" {
-		if err := ReplaceBinary(authTmp.Name(), authExe); err != nil {
-			// Non-fatal: the TUI already updated; report but continue.
-			if progress != nil {
-				progress(fmt.Sprintf("Note: could not replace auth-helper: %v\n", err))
-			}
-		}
-	}
-
 	if progress != nil {
 		progress(fmt.Sprintf("Updated to %s.\n", r.TagName))
 	}
-	// Restart is handled by the caller so it can control the exit sequence.
 	return true, nil
 }
