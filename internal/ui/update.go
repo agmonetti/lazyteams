@@ -1674,7 +1674,7 @@ func queueTokenRenewal(m *Model, tokenType string) tea.Cmd {
 		return nil
 	}
 	generation := m.credentialGeneration()
-	if m.renewalFailureGeneration != nil && m.renewalFailureGeneration[tokenType] == generation {
+	if failedGeneration, ok := m.renewalFailureGeneration[tokenType]; ok && failedGeneration == generation {
 		return nil
 	}
 	if m.renewalAttempted == nil {

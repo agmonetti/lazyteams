@@ -146,6 +146,25 @@ func TestStartupGraphRenewalRecoveryCompletes(t *testing.T) {
 	}
 }
 
+// TestStartupLegacySnapshotRenewsGraph covers a tokens.env written before
+// credential metadata existed: generation stays zero, so an empty failure map
+// must not be mistaken for "graph already failed at generation zero".
+func TestStartupLegacySnapshotRenewsGraph(t *testing.T) {
+	client := graph.NewClient(&auth.CredentialSet{
+		Graph: auth.Credential{Token: "expired-graph-token"},
+	})
+	client.HTTPClient = &http.Client{Transport: graphExpiredTransport()}
+
+	m, jobs := runStartupGraphLoads(t, client)
+
+	if !sameStrings(jobs, []string{CapabilityGraph}) {
+		t.Fatalf("startup renewal jobs = %v, want [graph]", jobs)
+	}
+	if !m.tokenRenewing || m.tokenRenewingType != CapabilityGraph {
+		t.Fatalf("renewal state = %v/%q, want graph renewing", m.tokenRenewing, m.tokenRenewingType)
+	}
+}
+
 // TestStartupValidGraphDoesNotRenew keeps the complementary invariant: a live
 // credential must not start the helper at all.
 func TestStartupValidGraphDoesNotRenew(t *testing.T) {
